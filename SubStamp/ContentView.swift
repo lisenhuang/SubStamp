@@ -21,8 +21,8 @@ struct ContentView: View {
     @StateObject private var orchestrator = PipelineOrchestrator()
 
     @State private var transcriptionLocaleIdentifier: String = Locale.current.identifier
-    @State private var subtitleMode: SubtitleMode = .single
-    @State private var translationLocaleIdentifier: String?
+    @State private var language1Identifier: String = Locale.current.identifier
+    @State private var language2Identifier: String?
     @State private var isTestClip = false
 
     @State private var selectedVideoURL: URL?
@@ -37,6 +37,11 @@ struct ContentView: View {
     @State private var resumeTranslated: [SubtitleCue]?
 
     private let jobStore = JobStore()
+    
+    /// Derived subtitle mode based on whether language2 is selected
+    private var subtitleMode: SubtitleMode {
+        language2Identifier != nil ? .bilingual : .single
+    }
 
     var body: some View {
         ZStack {
@@ -46,8 +51,8 @@ struct ContentView: View {
                 SetupView(
                     assetManager: assetManager,
                     transcriptionLocaleIdentifier: $transcriptionLocaleIdentifier,
-                    subtitleMode: $subtitleMode,
-                    translationLocaleIdentifier: $translationLocaleIdentifier
+                    language1Identifier: $language1Identifier,
+                    language2Identifier: $language2Identifier
                 ) {
                     saveSetupSelections()
                     step = .pickVideo
@@ -100,6 +105,8 @@ struct ContentView: View {
                         activeJob = updated
                         orchestrator.job = updated
                         try? jobStore.save(job: updated)
+                        // Also save to preferences for persistence across app launches
+                        SetupPreferences.saveSubtitleStyle(newValue)
                     }
                 )
                 SubtitleReviewView(
@@ -148,34 +155,34 @@ struct ContentView: View {
 
     private var transcriptionLocale: Locale { Locale(identifier: transcriptionLocaleIdentifier) }
     private var translationTargetLocale: Locale.Language? {
-        translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
+        language2Identifier.map { Locale.Language(identifier: $0) }
     }
 
     private func loadSetupSelections() {
         transcriptionLocaleIdentifier = SetupPreferences.loadTranscriptionLocale() ?? Locale.current.identifier
-        if let mode = SetupPreferences.loadSubtitleMode() {
-            subtitleMode = mode
-        }
-        translationLocaleIdentifier = SetupPreferences.loadTranslationTarget()
+        language1Identifier = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
+        language2Identifier = SetupPreferences.loadLanguage2()
     }
 
     private func saveSetupSelections() {
         SetupPreferences.save(
             transcriptionLocale: transcriptionLocaleIdentifier,
             subtitleMode: subtitleMode,
-            translationTarget: translationLocaleIdentifier
+            translationTarget: language2Identifier
         )
+        SetupPreferences.saveLanguages(language1: language1Identifier, language2: language2Identifier)
     }
 
     private func createJobAndStart() {
         guard let selectedVideoURL else { return }
+        let savedStyle = SetupPreferences.loadSubtitleStyle()
         let job = JobModel(
             videoURL: selectedVideoURL,
             transcriptionLocale: transcriptionLocaleIdentifier,
             subtitleMode: subtitleMode,
-            translationTargetLocale: translationLocaleIdentifier,
+            translationTargetLocale: language2Identifier,
             subtitleLayout: subtitleMode == .bilingual ? .stacked : .single,
-            subtitleStyle: SubtitleStyle(),
+            subtitleStyle: savedStyle,
             exportPreset: .balanced,
             isTestClip: isTestClip
         )
@@ -205,8 +212,9 @@ struct ContentView: View {
         activeJob = job
         selectedVideoURL = job.videoURL
         transcriptionLocaleIdentifier = job.transcriptionLocale
-        subtitleMode = job.subtitleMode
-        translationLocaleIdentifier = job.translationTargetLocale
+        // Derive language1 from transcription locale when resuming
+        language1Identifier = job.transcriptionLocale
+        language2Identifier = job.translationTargetLocale
 
         resumeTranscribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
         resumeTranslated = jobStore.loadCues(id: job.id, type: .translated)

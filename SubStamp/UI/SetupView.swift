@@ -5,8 +5,8 @@ import SwiftUI
 struct SetupView: View {
     @ObservedObject var assetManager: AssetReadinessManager
     @Binding var transcriptionLocaleIdentifier: String
-    @Binding var subtitleMode: SubtitleMode
-    @Binding var translationLocaleIdentifier: String?
+    @Binding var language1Identifier: String
+    @Binding var language2Identifier: String?
     var onContinue: () -> Void
 
     @State private var supportedLocales: [Locale] = []
@@ -14,6 +14,11 @@ struct SetupView: View {
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
+    
+    /// Derived subtitle mode based on whether language2 is selected
+    private var subtitleMode: SubtitleMode {
+        language2Identifier != nil ? .bilingual : .single
+    }
 
     var body: some View {
         ScrollView {
@@ -26,7 +31,7 @@ struct SetupView: View {
                 )
 
                 transcriptionLocaleCard
-                subtitleModeCard
+                languageSelectionCard
                 readinessCard
 
                 downloadAssetsButton
@@ -46,18 +51,18 @@ struct SetupView: View {
             } else if !supportedLocales.contains(where: { $0.identifier == transcriptionLocaleIdentifier }) {
                 transcriptionLocaleIdentifier = supportedLocales.first?.identifier ?? Locale.current.identifier
             }
-            if translationLocaleIdentifier == nil, let first = supportedLocales.first {
-                translationLocaleIdentifier = first.identifier
-            } else if let tid = translationLocaleIdentifier, !supportedLocales.contains(where: { $0.identifier == tid }) {
-                let match = supportedLocales.first { loc in
-                    loc.identifier == tid || loc.identifier.hasPrefix(tid + "-") || loc.identifier.hasPrefix(tid + "_")
-                }
-                translationLocaleIdentifier = match?.identifier ?? supportedLocales.first?.identifier
+            // Initialize language1 to audio language if not set
+            if !supportedLocales.contains(where: { $0.identifier == language1Identifier }) {
+                language1Identifier = transcriptionLocaleIdentifier
+            }
+            // Validate language2 if set
+            if let lang2 = language2Identifier, !supportedLocales.contains(where: { $0.identifier == lang2 }) {
+                language2Identifier = nil
             }
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                 subtitleMode: subtitleMode,
-                translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
+                translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
             )
             await assetManager.check()
         }
@@ -72,19 +77,19 @@ struct SetupView: View {
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: newValue),
                 subtitleMode: subtitleMode,
-                translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
+                translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
             )
             Task { await assetManager.check() }
         }
-        .onChange(of: subtitleMode) { _, newValue in
+        .onChange(of: language1Identifier) { _, _ in
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                subtitleMode: newValue,
-                translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
+                subtitleMode: subtitleMode,
+                translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
             )
             Task { await assetManager.check() }
         }
-        .onChange(of: translationLocaleIdentifier) { _, newValue in
+        .onChange(of: language2Identifier) { _, newValue in
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                 subtitleMode: subtitleMode,
@@ -128,28 +133,35 @@ struct SetupView: View {
         )
     }
 
-    private var subtitleModeCard: some View {
+    private var languageSelectionCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
-            Text("Subtitle mode")
+            Text("Language 1")
                 .font(AppTypography.bodyEmphasis)
-            Picker("Subtitle mode", selection: $subtitleMode) {
-                Text("Transcript only").tag(SubtitleMode.single)
-                Text("Bilingual").tag(SubtitleMode.bilingual)
-            }
-            .pickerStyle(.segmented)
-
-            if subtitleMode == .bilingual {
-                Text("Translation language")
-                    .font(AppTypography.bodyEmphasis)
-                    .padding(.top, AppSpacing.s)
-                Picker("Translation target", selection: translationLocaleIdentifierBinding) {
-                    ForEach(supportedLocales, id: \.identifier) { locale in
-                        Text(localeLabel(locale))
-                            .tag(locale.identifier)
-                    }
+            Picker("Language 1", selection: $language1Identifier) {
+                ForEach(supportedLocales, id: \.identifier) { locale in
+                    Text(localeLabel(locale))
+                        .tag(locale.identifier)
                 }
-                .pickerStyle(.menu)
             }
+            .pickerStyle(.menu)
+            Text("Primary subtitle language")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.secondaryText)
+
+            Text("Language 2 (optional)")
+                .font(AppTypography.bodyEmphasis)
+                .padding(.top, AppSpacing.s)
+            Picker("Language 2", selection: language2IdentifierBinding) {
+                Text("None").tag("")
+                ForEach(supportedLocales, id: \.identifier) { locale in
+                    Text(localeLabel(locale))
+                        .tag(locale.identifier)
+                }
+            }
+            .pickerStyle(.menu)
+            Text("Add a second language for bilingual subtitles")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.secondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -191,14 +203,14 @@ struct SetupView: View {
                 assetManager.configure(
                     transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                     subtitleMode: subtitleMode,
-                    translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
+                    translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
                 )
                 await assetManager.downloadSpeechAssets()
-                if subtitleMode == .bilingual {
+                if subtitleMode == .bilingual, let lang2 = language2Identifier {
                     shouldPrepareTranslation = true
                     translationConfig = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: transcriptionLocaleIdentifier),
-                        target: Locale.Language(identifier: translationLocaleIdentifier ?? "en")
+                        source: Locale.Language(identifier: language1Identifier),
+                        target: Locale.Language(identifier: lang2)
                     )
                 }
             }
@@ -215,18 +227,15 @@ struct SetupView: View {
         }
     }
 
-    /// Non-optional binding for translation picker; coerces short codes (e.g. "zh") to a valid tag (e.g. "zh-Hans").
-    private var translationLocaleIdentifierBinding: Binding<String> {
+    /// Binding for Language 2 picker - maps empty string to nil for the optional
+    private var language2IdentifierBinding: Binding<String> {
         Binding(
             get: {
-                let raw = translationLocaleIdentifier ?? supportedLocales.first?.identifier ?? Locale.current.identifier
-                if supportedLocales.contains(where: { $0.identifier == raw }) { return raw }
-                let langPrefix = raw.split(separator: "-").first.map(String.init) ?? raw.split(separator: "_").first.map(String.init) ?? raw
-                return supportedLocales.first { loc in
-                    loc.identifier == raw || loc.identifier.hasPrefix(langPrefix + "-") || loc.identifier.hasPrefix(langPrefix + "_")
-                }?.identifier ?? supportedLocales.first?.identifier ?? Locale.current.identifier
+                language2Identifier ?? ""
             },
-            set: { translationLocaleIdentifier = $0 }
+            set: { newValue in
+                language2Identifier = newValue.isEmpty ? nil : newValue
+            }
         )
     }
 
