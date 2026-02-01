@@ -103,61 +103,69 @@ struct ResultView: View {
         print("[SAVE] File exists: \(FileManager.default.fileExists(atPath: outputURL.path))")
         
         isSaving = true
-        saveStatus = "Requesting permission..."
+        saveStatus = "Saving to Photos..."
         
-        Task { @MainActor in
-            print("[SAVE] Task started on MainActor")
-            
-            // Request photo library authorization first
-            print("[SAVE] Requesting authorization...")
-            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            print("[SAVE] Authorization status: \(status.rawValue)")
-            
-            guard status == .authorized || status == .limited else {
-                isSaving = false
-                switch status {
-                case .denied, .restricted:
-                    saveStatus = "Photo library access denied. Please enable in Settings."
-                case .notDetermined:
-                    saveStatus = "Photo library access not determined."
-                default:
-                    saveStatus = "Cannot access photo library (status: \(status.rawValue))."
-                }
-                print("[SAVE] Authorization failed: \(saveStatus ?? "")")
-                return
-            }
-            
-            // Check if file exists before saving
-            let fileExists = FileManager.default.fileExists(atPath: outputURL.path)
-            print("[SAVE] File exists before save: \(fileExists)")
-            
-            guard fileExists else {
-                isSaving = false
-                saveStatus = "Video file not found at expected location."
-                print("[SAVE] ERROR: File does not exist at \(outputURL.path)")
-                return
-            }
-            
-            // Perform the save operation
-            saveStatus = "Saving to Photos..."
-            print("[SAVE] Starting PHPhotoLibrary.performChanges...")
+        // Use a plain Task (not @MainActor) to avoid the Swift 6 libdispatch crash
+        Task.detached { [outputURL] in
+            print("[SAVE] Detached task started")
             
             do {
-                try await PHPhotoLibrary.shared().performChanges {
-                    print("[SAVE] Inside performChanges block - creating asset request")
-                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: self.outputURL)
+                try await PhotoSaver.saveVideoToPhotos(fileURL: outputURL)
+                print("[SAVE] Save completed successfully")
+                
+                await MainActor.run {
+                    self.isSaving = false
+                    self.saveStatus = "Saved to Photos!"
                 }
-                print("[SAVE] performChanges completed successfully")
-                isSaving = false
-                saveStatus = "Saved to Photos!"
             } catch {
-                print("[SAVE] performChanges FAILED: \(error)")
-                print("[SAVE] Error type: \(type(of: error))")
-                isSaving = false
-                saveStatus = "Failed to save: \(error.localizedDescription)"
+                print("[SAVE] Save failed: \(error)")
+                
+                await MainActor.run {
+                    self.isSaving = false
+                    self.saveStatus = "Failed: \(error.localizedDescription)"
+                }
             }
-            
-            print("[SAVE] saveToPhotos() completed")
         }
+    }
+}
+
+/// Non-actor helper to avoid Swift 6 MainActor + PHPhotoLibrary crash
+enum PhotoSaver {
+    static func saveVideoToPhotos(fileURL: URL) async throws {
+        print("[PhotoSaver] Starting save for: \(fileURL.lastPathComponent)")
+        
+        // Request authorization
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        print("[PhotoSaver] Authorization status: \(status.rawValue)")
+        
+        guard status == .authorized || status == .limited else {
+            throw NSError(
+                domain: "PhotoSaver",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Photo library access not authorized"]
+            )
+        }
+        
+        // Check file exists
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw NSError(
+                domain: "PhotoSaver",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Video file not found"]
+            )
+        }
+        
+        print("[PhotoSaver] Calling performChanges...")
+        
+        // Perform the save
+        try await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCreationRequest.forAsset()
+            let options = PHAssetResourceCreationOptions()
+            options.shouldMoveFile = false
+            request.addResource(with: .video, fileURL: fileURL, options: options)
+            print("[PhotoSaver] Asset creation request added")
+        }
+        
+        print("[PhotoSaver] performChanges completed")
     }
 }
