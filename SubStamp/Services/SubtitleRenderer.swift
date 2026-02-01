@@ -245,14 +245,31 @@ final class SubtitleRenderer {
         let start = cue.start.seconds
         let end = cue.end.seconds
         let total = max(0.01, duration.seconds)
-        let startKey = NSNumber(value: max(0, min(1, start / total)))
-        let endKey = NSNumber(value: max(0, min(1, end / total)))
-        animation.values = [0, 1, 1, 0]
-        animation.keyTimes = [0, startKey, endKey, 1]
+        
+        // Calculate normalized key times
+        // Add small epsilon to prevent rounding issues
+        let epsilon = 0.0001
+        let startNorm = max(0, min(1 - epsilon, start / total))
+        let endNorm = max(startNorm + epsilon, min(1, end / total))
+        
+        // Fade in just before start, fade out just after end
+        let fadeInStart = max(0, startNorm - epsilon)
+        let fadeOutEnd = min(1, endNorm + epsilon)
+        
+        animation.values = [0, 0, 1, 1, 0, 0] as [NSNumber]
+        animation.keyTimes = [
+            0,
+            NSNumber(value: fadeInStart),
+            NSNumber(value: startNorm),
+            NSNumber(value: endNorm),
+            NSNumber(value: fadeOutEnd),
+            1
+        ]
         animation.duration = total
         animation.beginTime = AVCoreAnimationBeginTimeAtZero
         animation.isRemovedOnCompletion = false
-        animation.fillMode = .forwards
+        // Use .both to respect both initial and final states of the animation
+        animation.fillMode = .both
         layer.add(animation, forKey: "subtitleOpacity")
     }
     
