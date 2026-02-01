@@ -42,6 +42,7 @@ struct VideoPickerView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showLog = false
 
     var body: some View {
         ScrollView {
@@ -55,6 +56,13 @@ struct VideoPickerView: View {
                             .foregroundStyle(AppColors.secondaryText)
                     }
                     Spacer()
+                    Button {
+                        showLog = true
+                    } label: {
+                        Image(systemName: "doc.text")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
                 }
 
                 WizardHeaderView(
@@ -145,6 +153,9 @@ struct VideoPickerView: View {
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
+        .sheet(isPresented: $showLog) {
+            LogView()
+        }
         .onChange(of: pickerItem) { _, newValue in
             guard let newValue else { return }
             isLoading = true

@@ -14,10 +14,21 @@ struct SetupView: View {
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
+    @State private var showLog = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
+                HStack {
+                    Spacer()
+                    Button {
+                        showLog = true
+                    } label: {
+                        Image(systemName: "doc.text")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
+                }
                 WizardHeaderView(
                     step: 1,
                     total: 4,
@@ -46,8 +57,8 @@ struct SetupView: View {
             } else if !supportedLocales.contains(where: { $0.identifier == transcriptionLocale.identifier }) {
                 transcriptionLocale = supportedLocales.first ?? transcriptionLocale
             }
-            if translationTarget == nil {
-                translationTarget = translationLanguages.first
+            if translationTarget == nil, let first = supportedLocales.first {
+                translationTarget = Locale.Language(identifier: first.identifier)
             }
             assetManager.configure(
                 transcriptionLocale: transcriptionLocale,
@@ -86,6 +97,9 @@ struct SetupView: View {
                 translationTargetLocale: newValue
             )
             Task { await assetManager.check() }
+        }
+        .sheet(isPresented: $showLog) {
+            LogView()
         }
     }
 
@@ -134,11 +148,10 @@ struct SetupView: View {
                 Text("Translation language")
                     .font(AppTypography.bodyEmphasis)
                     .padding(.top, AppSpacing.s)
-                Picker("Translation target", selection: translationSelection) {
-                    ForEach(translationLanguages, id: \.minimalIdentifier) { language in
-                        let languageCode = language.languageCode?.identifier ?? language.minimalIdentifier
-                        Text(Locale.current.localizedString(forLanguageCode: languageCode) ?? language.minimalIdentifier)
-                            .tag(language)
+                Picker("Translation target", selection: translationLocaleSelection) {
+                    ForEach(supportedLocales, id: \.identifier) { locale in
+                        Text(localeLabel(locale))
+                            .tag(locale)
                     }
                 }
                 .pickerStyle(.menu)
@@ -208,10 +221,17 @@ struct SetupView: View {
         }
     }
 
-    private var translationSelection: Binding<Locale.Language> {
+    /// Translation target as a Locale so we can use the same list and labels as Audio language.
+    private var translationLocaleSelection: Binding<Locale> {
         Binding(
-            get: { translationTarget ?? translationLanguages.first ?? Locale.Language(identifier: "en") },
-            set: { translationTarget = $0 }
+            get: {
+                guard let target = translationTarget else {
+                    return supportedLocales.first ?? Locale.current
+                }
+                return supportedLocales.first { Locale.Language(identifier: $0.identifier) == target }
+                    ?? supportedLocales.first ?? Locale.current
+            },
+            set: { translationTarget = Locale.Language(identifier: $0.identifier) }
         )
     }
 

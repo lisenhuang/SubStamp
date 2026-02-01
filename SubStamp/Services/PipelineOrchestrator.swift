@@ -113,6 +113,7 @@ final class PipelineOrchestrator: ObservableObject {
             try jobStore.save(job: updatedJob)
             currentStage = .transcribing
             stageStates[.transcribing] = .active
+            AppLog.append("Starting transcribing for locale \(job.transcriptionLocale)")
 
             let asset = AVAsset(url: job.videoURL)
             let range = timeRange(for: job, asset: asset)
@@ -160,9 +161,13 @@ final class PipelineOrchestrator: ObservableObject {
             currentStage = .rendering
         } catch let error as SubStampError {
             self.error = error
+            AppLog.append("\(currentStage.rawValue) failed: \(error.localizedDescription)")
+            if let suggestion = error.recoverySuggestion { AppLog.append("  \(suggestion)") }
             markFailed()
         } catch {
             self.error = .exportFailed(underlying: error)
+            AppLog.append("\(currentStage.rawValue) failed: \(error.localizedDescription)")
+            AppLog.append(error: error)
             markFailed()
         }
     }
@@ -223,9 +228,11 @@ final class PipelineOrchestrator: ObservableObject {
             isRunning = false
         } catch let error as SubStampError {
             self.error = error
+            AppLog.append("Rendering/Export failed: \(error.localizedDescription)")
             markFailed()
         } catch {
             self.error = .exportFailed(underlying: error)
+            AppLog.append(error: error)
             markFailed()
         }
     }
@@ -259,9 +266,11 @@ final class PipelineOrchestrator: ObservableObject {
             currentStage = .rendering
         } catch let error as SubStampError {
             self.error = error
+            AppLog.append("Translation failed: \(error.localizedDescription)")
             markFailed()
         } catch {
             self.error = .translationError(underlying: error)
+            AppLog.append(error: error)
             markFailed()
         }
     }

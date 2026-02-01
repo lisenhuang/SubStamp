@@ -19,6 +19,7 @@ struct ProcessingView: View {
     @State private var didResume = false
     @State private var keepScreenAwake = false
     @State private var showBackDialog = false
+    @State private var showLog = false
 
     var body: some View {
         ScrollView {
@@ -32,6 +33,13 @@ struct ProcessingView: View {
                             .foregroundStyle(AppColors.secondaryText)
                     }
                     Spacer()
+                    Button {
+                        showLog = true
+                    } label: {
+                        Image(systemName: "doc.text")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
                 }
                 WizardHeaderView(
                     step: 3,
@@ -60,6 +68,9 @@ struct ProcessingView: View {
                 BackgroundTaskManager.shared.end(success: false)
                 onBack()
             }
+        }
+        .sheet(isPresented: $showLog) {
+            LogView()
         }
         .onAppear {
             startPipelineIfNeeded()

@@ -49,6 +49,7 @@ struct ContentView: View {
                     subtitleMode: $subtitleMode,
                     translationTarget: $translationTarget
                 ) {
+                    saveSetupSelections()
                     step = .pickVideo
                 }
             case .pickVideo:
@@ -133,12 +134,33 @@ struct ContentView: View {
             Text("We found a previous job that didn't finish. Would you like to resume?")
         }
         .task {
+            loadSetupSelections()
             let jobs = jobStore.loadAllJobs().filter { $0.stage != .completed }
             if let job = jobs.first {
                 resumeJob = job
                 showResumeAlert = true
             }
         }
+    }
+
+    private func loadSetupSelections() {
+        if let id = SetupPreferences.loadTranscriptionLocale() {
+            transcriptionLocale = Locale(identifier: id)
+        }
+        if let mode = SetupPreferences.loadSubtitleMode() {
+            subtitleMode = mode
+        }
+        if let id = SetupPreferences.loadTranslationTarget() {
+            translationTarget = Locale.Language(identifier: id)
+        }
+    }
+
+    private func saveSetupSelections() {
+        SetupPreferences.save(
+            transcriptionLocale: transcriptionLocale.identifier,
+            subtitleMode: subtitleMode,
+            translationTarget: translationTarget?.minimalIdentifier
+        )
     }
 
     private func createJobAndStart() {

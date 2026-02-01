@@ -29,6 +29,14 @@ struct VideoPreviewView: View {
             guard let url else { return }
             player = AVPlayer(url: url)
         }
+        .onChange(of: url) { _, newURL in
+            if let u = newURL {
+                player = AVPlayer(url: u)
+            } else {
+                player?.pause()
+                player = nil
+            }
+        }
         .onDisappear {
             player?.pause()
             player = nil
