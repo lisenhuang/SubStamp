@@ -99,15 +99,40 @@ struct ResultView: View {
 
     private func saveToPhotos() {
         isSaving = true
-        PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputURL)
-        } completionHandler: { success, error in
-            DispatchQueue.main.async {
-                isSaving = false
-                if success {
-                    saveStatus = "Saved to Photos."
-                } else {
-                    saveStatus = error?.localizedDescription ?? "Unable to save."
+        saveStatus = nil
+        
+        Task {
+            // Request photo library authorization first
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            
+            guard status == .authorized || status == .limited else {
+                await MainActor.run {
+                    isSaving = false
+                    switch status {
+                    case .denied, .restricted:
+                        saveStatus = "Photo library access denied. Please enable in Settings."
+                    case .notDetermined:
+                        saveStatus = "Photo library access not determined."
+                    default:
+                        saveStatus = "Cannot access photo library."
+                    }
+                }
+                return
+            }
+            
+            // Perform the save operation
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputURL)
+                }
+                await MainActor.run {
+                    isSaving = false
+                    saveStatus = "Saved to Photos!"
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    saveStatus = "Failed to save: \(error.localizedDescription)"
                 }
             }
         }
