@@ -90,6 +90,10 @@ final class AssetReadinessManager: ObservableObject {
 
     private func checkSpeechAssets(for locale: Locale) async {
         let supported = await SpeechTranscriber.supportedLocales
+        if supported.isEmpty {
+            speechAssetsState = .failed(message: "Speech transcription isn't available.")
+            return
+        }
         let supportedIdentifiers = Set(supported.map { $0.identifier(.bcp47) })
         guard supportedIdentifiers.contains(locale.identifier(.bcp47)) else {
             speechAssetsState = .failed(message: "Language not supported.")

@@ -5,6 +5,7 @@ struct VideoPickerView: View {
     @Binding var selectedVideoURL: URL?
     @Binding var metadata: VideoMetadata?
     @Binding var isTestClip: Bool
+    var onBack: () -> Void
     var onGenerate: () -> Void
 
     @State private var pickerItem: PhotosPickerItem?
@@ -14,6 +15,17 @@ struct VideoPickerView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
+                HStack {
+                    Button {
+                        onBack()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
+                    Spacer()
+                }
+
                 WizardHeaderView(
                     step: 2,
                     total: 4,

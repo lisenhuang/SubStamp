@@ -55,7 +55,8 @@ struct ContentView: View {
                 VideoPickerView(
                     selectedVideoURL: $selectedVideoURL,
                     metadata: $metadata,
-                    isTestClip: $isTestClip
+                    isTestClip: $isTestClip,
+                    onBack: { step = .setup }
                 ) {
                     createJobAndStart()
                 }
@@ -66,6 +67,10 @@ struct ContentView: View {
                         job: job,
                         resumeTranscribed: resumeTranscribed,
                         resumeTranslated: resumeTranslated,
+                        onBack: {
+                            orchestrator.cancel()
+                            step = .pickVideo
+                        },
                         onChangeSettings: { resetToSetup() },
                         onCompleted: { url in
                             outputURL = url

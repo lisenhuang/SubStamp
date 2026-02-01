@@ -8,6 +8,7 @@ struct ProcessingView: View {
     let job: JobModel
     var resumeTranscribed: [SubtitleCue]? = nil
     var resumeTranslated: [SubtitleCue]? = nil
+    var onBack: () -> Void
     var onChangeSettings: () -> Void
     var onCompleted: (URL) -> Void
 
@@ -17,10 +18,21 @@ struct ProcessingView: View {
     @State private var backgroundTaskIdentifier: String?
     @State private var didResume = false
     @State private var keepScreenAwake = false
+    @State private var showBackDialog = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
+                HStack {
+                    Button {
+                        showBackDialog = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
+                    Spacer()
+                }
                 WizardHeaderView(
                     step: 3,
                     total: 4,
@@ -40,6 +52,13 @@ struct ProcessingView: View {
                 orchestrator.cancel()
                 BackgroundTaskManager.shared.end(success: false)
                 onChangeSettings()
+            }
+        }
+        .confirmationDialog("Go back to previous step?", isPresented: $showBackDialog) {
+            Button("Stop processing and go back", role: .destructive) {
+                orchestrator.cancel()
+                BackgroundTaskManager.shared.end(success: false)
+                onBack()
             }
         }
         .onAppear {

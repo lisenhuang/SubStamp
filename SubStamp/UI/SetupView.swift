@@ -13,6 +13,7 @@ struct SetupView: View {
     @State private var translationLanguages: [Locale.Language] = []
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
+    @State private var speechAvailable = true
 
     var body: some View {
         ScrollView {
@@ -35,10 +36,16 @@ struct SetupView: View {
         }
         .background(AppColors.background)
         .task {
+            speechAvailable = SpeechTranscriber.isAvailable
             supportedLocales = await SpeechTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
             let availability = LanguageAvailability()
             let languages = await availability.supportedLanguages
             translationLanguages = languages.sorted { $0.minimalIdentifier < $1.minimalIdentifier }
+            if supportedLocales.isEmpty {
+                supportedLocales = [transcriptionLocale]
+            } else if !supportedLocales.contains(where: { $0.identifier == transcriptionLocale.identifier }) {
+                transcriptionLocale = supportedLocales.first ?? transcriptionLocale
+            }
             if translationTarget == nil {
                 translationTarget = translationLanguages.first
             }
@@ -88,11 +95,20 @@ struct SetupView: View {
                 .font(AppTypography.bodyEmphasis)
             Picker("Transcription language", selection: $transcriptionLocale) {
                 ForEach(supportedLocales, id: \.identifier) { locale in
-                    Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                    Text(localeLabel(locale))
                         .tag(locale)
                 }
             }
             .pickerStyle(.menu)
+            if !speechAvailable {
+                Text("Speech transcription isn't available on this device.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.warning)
+            } else if supportedLocales.isEmpty {
+                Text("No language list available yet. Using device language.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -197,5 +213,13 @@ struct SetupView: View {
             get: { translationTarget ?? translationLanguages.first ?? Locale.Language(identifier: "en") },
             set: { translationTarget = $0 }
         )
+    }
+
+    private func localeLabel(_ locale: Locale) -> String {
+        let label = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+        if locale.identifier == Locale.current.identifier {
+            return "Device language (\(label))"
+        }
+        return label
     }
 }
