@@ -130,42 +130,56 @@ struct ResultView: View {
 }
 
 /// Non-actor helper to avoid Swift 6 MainActor + PHPhotoLibrary crash
-enum PhotoSaver {
+/// Uses performChangesAndWait on a dedicated serial queue as recommended workaround
+enum PhotoSaveError: Error {
+    case notAuthorized
+    case fileNotFound
+    case saveFailed(Error)
+}
+
+final class PhotoSaver: Sendable {
+    private static let queue = DispatchQueue(label: "substamp.photos.save")
+    
     static func saveVideoToPhotos(fileURL: URL) async throws {
         print("[PhotoSaver] Starting save for: \(fileURL.lastPathComponent)")
         
-        // Request authorization
+        // Request authorization (this is fine to do async)
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         print("[PhotoSaver] Authorization status: \(status.rawValue)")
         
         guard status == .authorized || status == .limited else {
-            throw NSError(
-                domain: "PhotoSaver",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Photo library access not authorized"]
-            )
+            throw PhotoSaveError.notAuthorized
         }
         
         // Check file exists
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            throw NSError(
-                domain: "PhotoSaver",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Video file not found"]
-            )
+            print("[PhotoSaver] ERROR: File not found at \(fileURL.path)")
+            throw PhotoSaveError.fileNotFound
         }
         
-        print("[PhotoSaver] Calling performChanges...")
+        print("[PhotoSaver] Calling performChangesAndWait on serial queue...")
         
-        // Perform the save
-        try await PHPhotoLibrary.shared().performChanges {
-            let request = PHAssetCreationRequest.forAsset()
-            let options = PHAssetResourceCreationOptions()
-            options.shouldMoveFile = false
-            request.addResource(with: .video, fileURL: fileURL, options: options)
-            print("[PhotoSaver] Asset creation request added")
+        // Use performChangesAndWait on a dedicated queue to avoid Swift 6 crash
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                do {
+                    try PHPhotoLibrary.shared().performChangesAndWait {
+                        print("[PhotoSaver] Inside performChangesAndWait block")
+                        let request = PHAssetCreationRequest.forAsset()
+                        let options = PHAssetResourceCreationOptions()
+                        options.shouldMoveFile = false
+                        request.addResource(with: .video, fileURL: fileURL, options: options)
+                        print("[PhotoSaver] Asset creation request added")
+                    }
+                    print("[PhotoSaver] performChangesAndWait completed successfully")
+                    continuation.resume()
+                } catch {
+                    print("[PhotoSaver] performChangesAndWait FAILED: \(error)")
+                    continuation.resume(throwing: PhotoSaveError.saveFailed(error))
+                }
+            }
         }
         
-        print("[PhotoSaver] performChanges completed")
+        print("[PhotoSaver] Save operation completed")
     }
 }
