@@ -1,5 +1,36 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Used to load a video from PhotosPickerItem; `URL.self` does not work for library videos.
+private struct ImportedVideo: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { received in
+            try copyReceivedVideo(received)
+        }
+        FileRepresentation(importedContentType: .mpeg4Movie) { received in
+            try copyReceivedVideo(received)
+        }
+    }
+
+    private static func copyReceivedVideo(_ received: ReceivedTransferredFile) throws -> Self {
+        let destDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("SubStamp/uploads", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: destDir.path) {
+            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        }
+        let ext = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
+        let dest = destDir
+            .appendingPathComponent("video_\(UUID().uuidString)")
+            .appendingPathExtension(ext)
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.copyItem(at: received.file, to: dest)
+        return Self(url: dest)
+    }
+}
 
 struct VideoPickerView: View {
     @Binding var selectedVideoURL: URL?
@@ -118,34 +149,20 @@ struct VideoPickerView: View {
             guard let newValue else { return }
             isLoading = true
             errorMessage = nil
-            Task {
+            Task { @MainActor in
                 do {
-                    let url = try await newValue.loadTransferable(type: URL.self)
-                    guard let url else { throw SubStampError.exportFailed(underlying: NSError(domain: "SubStamp", code: -30)) }
-                    let localURL = try copyToLocal(url: url)
-                    selectedVideoURL = localURL
-                    metadata = await VideoMetadata.load(from: localURL)
+                    guard let imported = try await newValue.loadTransferable(type: ImportedVideo.self) else {
+                        errorMessage = "Could not load video. Try another clip."
+                        isLoading = false
+                        return
+                    }
+                    selectedVideoURL = imported.url
+                    metadata = await VideoMetadata.load(from: imported.url)
                 } catch {
-                    errorMessage = error.localizedDescription
+                    errorMessage = "Could not load video. Try another clip."
                 }
                 isLoading = false
             }
         }
-    }
-
-    private func copyToLocal(url: URL) throws -> URL {
-        let destinationDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("SubStamp/uploads", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: destinationDirectory.path) {
-            try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-        }
-        let destinationURL = destinationDirectory
-            .appendingPathComponent("video_\(UUID().uuidString)")
-            .appendingPathExtension(url.pathExtension.isEmpty ? "mov" : url.pathExtension)
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
-        try FileManager.default.copyItem(at: url, to: destinationURL)
-        return destinationURL
     }
 }
