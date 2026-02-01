@@ -4,9 +4,9 @@ import SwiftUI
 
 struct SetupView: View {
     @ObservedObject var assetManager: AssetReadinessManager
-    @Binding var transcriptionLocale: Locale
+    @Binding var transcriptionLocaleIdentifier: String
     @Binding var subtitleMode: SubtitleMode
-    @Binding var translationTarget: Locale.Language?
+    @Binding var translationLocaleIdentifier: String?
     var onContinue: () -> Void
 
     @State private var supportedLocales: [Locale] = []
@@ -14,21 +14,10 @@ struct SetupView: View {
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
-    @State private var showLog = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
-                HStack {
-                    Spacer()
-                    Button {
-                        showLog = true
-                    } label: {
-                        Image(systemName: "doc.text")
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(AppColors.secondaryText)
-                    }
-                }
                 WizardHeaderView(
                     step: 1,
                     total: 4,
@@ -53,17 +42,19 @@ struct SetupView: View {
             let languages = await availability.supportedLanguages
             translationLanguages = languages.sorted { $0.minimalIdentifier < $1.minimalIdentifier }
             if supportedLocales.isEmpty {
-                supportedLocales = [transcriptionLocale]
-            } else if !supportedLocales.contains(where: { $0.identifier == transcriptionLocale.identifier }) {
-                transcriptionLocale = supportedLocales.first ?? transcriptionLocale
+                supportedLocales = [Locale(identifier: transcriptionLocaleIdentifier)]
+            } else if !supportedLocales.contains(where: { $0.identifier == transcriptionLocaleIdentifier }) {
+                transcriptionLocaleIdentifier = supportedLocales.first?.identifier ?? Locale.current.identifier
             }
-            if translationTarget == nil, let first = supportedLocales.first {
-                translationTarget = Locale.Language(identifier: first.identifier)
+            if translationLocaleIdentifier == nil, let first = supportedLocales.first {
+                translationLocaleIdentifier = first.identifier
+            } else if let tid = translationLocaleIdentifier, !supportedLocales.contains(where: { $0.identifier == tid }) {
+                translationLocaleIdentifier = supportedLocales.first?.identifier
             }
             assetManager.configure(
-                transcriptionLocale: transcriptionLocale,
+                transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                 subtitleMode: subtitleMode,
-                translationTargetLocale: translationTarget
+                translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
             )
             await assetManager.check()
         }
@@ -74,32 +65,29 @@ struct SetupView: View {
                 shouldPrepareTranslation = false
             }
         }
-        .onChange(of: transcriptionLocale) { _, newValue in
+        .onChange(of: transcriptionLocaleIdentifier) { _, newValue in
             assetManager.configure(
-                transcriptionLocale: newValue,
+                transcriptionLocale: Locale(identifier: newValue),
                 subtitleMode: subtitleMode,
-                translationTargetLocale: translationTarget
+                translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
             )
             Task { await assetManager.check() }
         }
         .onChange(of: subtitleMode) { _, newValue in
             assetManager.configure(
-                transcriptionLocale: transcriptionLocale,
+                transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                 subtitleMode: newValue,
-                translationTargetLocale: translationTarget
+                translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
             )
             Task { await assetManager.check() }
         }
-        .onChange(of: translationTarget) { _, newValue in
+        .onChange(of: translationLocaleIdentifier) { _, newValue in
             assetManager.configure(
-                transcriptionLocale: transcriptionLocale,
+                transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                 subtitleMode: subtitleMode,
-                translationTargetLocale: newValue
+                translationTargetLocale: newValue.map { Locale.Language(identifier: $0) }
             )
             Task { await assetManager.check() }
-        }
-        .sheet(isPresented: $showLog) {
-            LogView()
         }
     }
 
@@ -107,13 +95,16 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             Text("Audio language")
                 .font(AppTypography.bodyEmphasis)
-            Picker("Transcription language", selection: $transcriptionLocale) {
+            Picker("Transcription language", selection: $transcriptionLocaleIdentifier) {
                 ForEach(supportedLocales, id: \.identifier) { locale in
                     Text(localeLabel(locale))
-                        .tag(locale)
+                        .tag(locale.identifier)
                 }
             }
             .pickerStyle(.menu)
+            Text("Choose the language spoken in the video so the AI can produce accurate subtitles.")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.secondaryText)
             if !speechAvailable {
                 Text("Speech transcription isn't available on this device.")
                     .font(AppTypography.caption)
@@ -148,10 +139,10 @@ struct SetupView: View {
                 Text("Translation language")
                     .font(AppTypography.bodyEmphasis)
                     .padding(.top, AppSpacing.s)
-                Picker("Translation target", selection: translationLocaleSelection) {
+                Picker("Translation target", selection: translationLocaleIdentifierBinding) {
                     ForEach(supportedLocales, id: \.identifier) { locale in
                         Text(localeLabel(locale))
-                            .tag(locale)
+                            .tag(locale.identifier)
                     }
                 }
                 .pickerStyle(.menu)
@@ -195,16 +186,16 @@ struct SetupView: View {
         ) {
             Task {
                 assetManager.configure(
-                    transcriptionLocale: transcriptionLocale,
+                    transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                     subtitleMode: subtitleMode,
-                    translationTargetLocale: translationTarget
+                    translationTargetLocale: translationLocaleIdentifier.map { Locale.Language(identifier: $0) }
                 )
                 await assetManager.downloadSpeechAssets()
                 if subtitleMode == .bilingual {
                     shouldPrepareTranslation = true
                     translationConfig = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: transcriptionLocale.identifier),
-                        target: translationTarget ?? Locale.Language(identifier: "en")
+                        source: Locale.Language(identifier: transcriptionLocaleIdentifier),
+                        target: Locale.Language(identifier: translationLocaleIdentifier ?? "en")
                     )
                 }
             }
@@ -221,17 +212,13 @@ struct SetupView: View {
         }
     }
 
-    /// Translation target as a Locale so we can use the same list and labels as Audio language.
-    private var translationLocaleSelection: Binding<Locale> {
+    /// Non-optional binding for translation picker; uses first locale when nil.
+    private var translationLocaleIdentifierBinding: Binding<String> {
         Binding(
             get: {
-                guard let target = translationTarget else {
-                    return supportedLocales.first ?? Locale.current
-                }
-                return supportedLocales.first { Locale.Language(identifier: $0.identifier) == target }
-                    ?? supportedLocales.first ?? Locale.current
+                translationLocaleIdentifier ?? supportedLocales.first?.identifier ?? Locale.current.identifier
             },
-            set: { translationTarget = Locale.Language(identifier: $0.identifier) }
+            set: { translationLocaleIdentifier = $0 }
         )
     }
 
