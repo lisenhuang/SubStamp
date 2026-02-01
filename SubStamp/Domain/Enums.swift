@@ -71,6 +71,14 @@ enum SubtitleSecondaryStyle: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum SubtitlePosition: String, Codable, CaseIterable, Identifiable {
+    case top
+    case middle
+    case bottom
+
+    var id: String { rawValue }
+}
+
 struct SubtitleStyle: Codable, Hashable {
     var fontSize: SubtitleFontSize = .medium
     var background: SubtitleBackground = .translucent
@@ -78,6 +86,7 @@ struct SubtitleStyle: Codable, Hashable {
     var usesShadow: Bool = true
     var padding: Double = 10
     var lineSpacing: Double = 2
+    var position: SubtitlePosition = .bottom
 }
 
 enum SubStampError: LocalizedError {

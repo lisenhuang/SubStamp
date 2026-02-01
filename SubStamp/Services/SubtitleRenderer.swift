@@ -122,7 +122,8 @@ final class SubtitleRenderer {
                 font: primaryFont,
                 maxWidth: maxWidth,
                 renderSize: renderSize,
-                bottomOffset: margin,
+                margin: margin,
+                position: style.position,
                 lineSpacing: style.lineSpacing,
                 background: style.background,
                 usesShadow: style.usesShadow,
@@ -137,11 +138,13 @@ final class SubtitleRenderer {
                     font: secondaryFont,
                     maxWidth: maxWidth,
                     renderSize: renderSize,
-                    bottomOffset: margin + extraOffset,
+                    margin: margin,
+                    position: style.position,
                     lineSpacing: style.lineSpacing,
                     background: style.background == .none ? .none : .translucent,
                     usesShadow: style.usesShadow,
-                    padding: CGFloat(style.padding)
+                    padding: CGFloat(style.padding),
+                    extraOffset: extraOffset
                 )
             } else {
                 secondaryLayer = nil
@@ -163,11 +166,13 @@ final class SubtitleRenderer {
         font: UIFont,
         maxWidth: CGFloat,
         renderSize: CGSize,
-        bottomOffset: CGFloat,
+        margin: CGFloat,
+        position: SubtitlePosition,
         lineSpacing: Double,
         background: SubtitleBackground,
         usesShadow: Bool,
-        padding: CGFloat
+        padding: CGFloat,
+        extraOffset: CGFloat = 0
     ) -> CALayer {
         let attributed = attributedText(text: text, font: font, lineSpacing: lineSpacing)
         let boundingRect = attributed.boundingRect(
@@ -185,7 +190,13 @@ final class SubtitleRenderer {
         let height = ceil(boundingRect.height)
         let width = ceil(min(maxWidth, boundingRect.width))
         let x = (renderSize.width - width) / 2
-        let y = renderSize.height - bottomOffset - height
+        let y = calculateYPosition(
+            for: position,
+            height: height,
+            renderSize: renderSize,
+            margin: margin,
+            extraOffset: extraOffset
+        )
         textLayer.frame = CGRect(x: x, y: y, width: width, height: height)
 
         if usesShadow {
@@ -227,6 +238,9 @@ final class SubtitleRenderer {
     }
 
     private func applyTimingAnimation(_ layer: CALayer, cue: SubtitleCue, duration: CMTime) {
+        // Start hidden - animation will control visibility
+        layer.opacity = 0
+        
         let animation = CAKeyframeAnimation(keyPath: "opacity")
         let start = cue.start.seconds
         let end = cue.end.seconds
@@ -240,6 +254,23 @@ final class SubtitleRenderer {
         animation.isRemovedOnCompletion = false
         animation.fillMode = .forwards
         layer.add(animation, forKey: "subtitleOpacity")
+    }
+    
+    private func calculateYPosition(
+        for position: SubtitlePosition,
+        height: CGFloat,
+        renderSize: CGSize,
+        margin: CGFloat,
+        extraOffset: CGFloat
+    ) -> CGFloat {
+        switch position {
+        case .bottom:
+            return margin + extraOffset  // From bottom (Y increases downward in video coords)
+        case .middle:
+            return (renderSize.height - height) / 2 + extraOffset
+        case .top:
+            return renderSize.height - margin - height - extraOffset  // From top
+        }
     }
 
     private func fontSize(for size: SubtitleFontSize, renderSize: CGSize) -> CGFloat {

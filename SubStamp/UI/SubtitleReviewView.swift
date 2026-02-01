@@ -46,6 +46,12 @@ struct SubtitleReviewView: View {
                     }
                     .pickerStyle(.menu)
                     Toggle("Text shadow", isOn: $style.usesShadow)
+                    Picker("Position", selection: $style.position) {
+                        ForEach(SubtitlePosition.allCases) { pos in
+                            Text(pos.rawValue.capitalized).tag(pos)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                     HStack {
                         Text("Padding")
                         Slider(value: $style.padding, in: 4...18, step: 1)
