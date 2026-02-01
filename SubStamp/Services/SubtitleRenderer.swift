@@ -300,7 +300,7 @@ final class SubtitleRenderer {
     }
 
     private func fontSize(for size: SubtitleFontSize, renderSize: CGSize) -> CGFloat {
-        let base = renderSize.height * 0.055
+        let base = renderSize.height * 0.0275 // Reduced from 0.055 to halve the size
         switch size {
         case .small:
             return base * 0.85
