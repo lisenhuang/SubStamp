@@ -30,22 +30,41 @@ final class TranscriptionService {
         guard frameCount > 0 else {
             throw SubStampError.speechAnalyzerError(underlying: NSError(domain: "SubStamp", code: -10, userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples. The video may have no audible track or export failed."]))
         }
-        try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
+        do {
+            try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
+        } catch {
+            AppLog.append("SpeechAnalyzer failed to start: \(error.localizedDescription)")
+            AppLog.append(error: error)
+            throw SubStampError.speechAnalyzerError(underlying: error)
+        }
 
         var cues: [SubtitleCue] = []
-        for try await result in transcriber.results {
-            let rawText = String(result.text.characters)
-            let cleaned = normalizeText(rawText)
-            guard !cleaned.isEmpty else { continue }
-            let timeRange = result.range
-            let start = timeRange.start
-            let end = timeRange.end
-            let formattedText = cleaned
-            let cue = SubtitleCue(start: start, end: end, primaryText: formattedText)
-            cues.append(cue)
+        do {
+            for try await result in transcriber.results {
+                let rawText = String(result.text.characters)
+                let cleaned = normalizeText(rawText)
+                guard !cleaned.isEmpty else { continue }
+                let timeRange = result.range
+                let start = timeRange.start
+                let end = timeRange.end
+                let formattedText = cleaned
+                let cue = SubtitleCue(start: start, end: end, primaryText: formattedText)
+                cues.append(cue)
 
-            let progress = duration.seconds > 0 ? min(1.0, end.seconds / duration.seconds) : 0
-            progressHandler(progress, cues.count)
+                let progress = duration.seconds > 0 ? min(1.0, end.seconds / duration.seconds) : 0
+                progressHandler(progress, cues.count)
+            }
+        } catch {
+            // SpeechAnalyzer can fail with Foundation._GenericObjCError.nilError
+            // when the speech services crash or are interrupted (XPC invalidation)
+            AppLog.append("SpeechAnalyzer: Input loop ending with error: \(error.localizedDescription)")
+            AppLog.append(error: error)
+            // If we got some cues before the error, continue with what we have
+            if cues.isEmpty {
+                throw SubStampError.speechAnalyzerError(underlying: error)
+            }
+            // Otherwise, log the error but continue processing with partial results
+            AppLog.append("Continuing with \(cues.count) partial cues after speech analyzer error")
         }
 
         let processed = postProcess(cues: cues)
