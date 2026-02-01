@@ -28,9 +28,14 @@ final class ExportService {
         }
 
         let progressTask = Task {
-            while exporter.status == .exporting {
-                progressHandler(Double(exporter.progress))
-                try? await Task.sleep(nanoseconds: 200_000_000)
+            while !Task.isCancelled {
+                let status = exporter.status
+                if status == .exporting || status == .waiting {
+                    progressHandler(Double(exporter.progress))
+                } else if status == .completed || status == .failed || status == .cancelled {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s update frequency
             }
         }
 

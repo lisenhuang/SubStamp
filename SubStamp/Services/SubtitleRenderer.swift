@@ -211,11 +211,20 @@ final class SubtitleRenderer {
             return textLayer
         case .translucent, .solid:
             let bgLayer = CALayer()
-            bgLayer.frame = textLayer.frame.insetBy(dx: -padding, dy: -padding)
+            // The background frame should encompass the text with padding
+            let containerFrame = textLayer.frame.insetBy(dx: -padding, dy: -padding)
+            
+            // bgLayer is local to container, so it's at (0,0) inside the container
+            bgLayer.frame = CGRect(origin: .zero, size: containerFrame.size)
             bgLayer.backgroundColor = (background == .solid ? UIColor.black : UIColor.black.withAlphaComponent(0.5)).cgColor
             bgLayer.cornerRadius = 10
+            
             let container = CALayer()
-            container.frame = CGRect(origin: .zero, size: renderSize)
+            container.frame = containerFrame
+            
+            // Adjust text layer frame to be local to the container
+            textLayer.frame = CGRect(x: padding, y: padding, width: width, height: height)
+            
             container.addSublayer(bgLayer)
             container.addSublayer(textLayer)
             return container
