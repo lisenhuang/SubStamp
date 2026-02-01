@@ -98,43 +98,66 @@ struct ResultView: View {
     }
 
     private func saveToPhotos() {
-        isSaving = true
-        saveStatus = nil
+        print("[SAVE] saveToPhotos() called")
+        print("[SAVE] outputURL: \(outputURL)")
+        print("[SAVE] File exists: \(FileManager.default.fileExists(atPath: outputURL.path))")
         
-        Task {
+        isSaving = true
+        saveStatus = "Requesting permission..."
+        
+        Task { @MainActor in
+            print("[SAVE] Task started on MainActor")
+            
             // Request photo library authorization first
+            print("[SAVE] Requesting authorization...")
             let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            print("[SAVE] Authorization status: \(status.rawValue)")
             
             guard status == .authorized || status == .limited else {
-                await MainActor.run {
-                    isSaving = false
-                    switch status {
-                    case .denied, .restricted:
-                        saveStatus = "Photo library access denied. Please enable in Settings."
-                    case .notDetermined:
-                        saveStatus = "Photo library access not determined."
-                    default:
-                        saveStatus = "Cannot access photo library."
-                    }
+                isSaving = false
+                switch status {
+                case .denied, .restricted:
+                    saveStatus = "Photo library access denied. Please enable in Settings."
+                case .notDetermined:
+                    saveStatus = "Photo library access not determined."
+                default:
+                    saveStatus = "Cannot access photo library (status: \(status.rawValue))."
                 }
+                print("[SAVE] Authorization failed: \(saveStatus ?? "")")
+                return
+            }
+            
+            // Check if file exists before saving
+            let fileExists = FileManager.default.fileExists(atPath: outputURL.path)
+            print("[SAVE] File exists before save: \(fileExists)")
+            
+            guard fileExists else {
+                isSaving = false
+                saveStatus = "Video file not found at expected location."
+                print("[SAVE] ERROR: File does not exist at \(outputURL.path)")
                 return
             }
             
             // Perform the save operation
+            saveStatus = "Saving to Photos..."
+            print("[SAVE] Starting PHPhotoLibrary.performChanges...")
+            
             do {
                 try await PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputURL)
+                    print("[SAVE] Inside performChanges block - creating asset request")
+                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: self.outputURL)
                 }
-                await MainActor.run {
-                    isSaving = false
-                    saveStatus = "Saved to Photos!"
-                }
+                print("[SAVE] performChanges completed successfully")
+                isSaving = false
+                saveStatus = "Saved to Photos!"
             } catch {
-                await MainActor.run {
-                    isSaving = false
-                    saveStatus = "Failed to save: \(error.localizedDescription)"
-                }
+                print("[SAVE] performChanges FAILED: \(error)")
+                print("[SAVE] Error type: \(type(of: error))")
+                isSaving = false
+                saveStatus = "Failed to save: \(error.localizedDescription)"
             }
+            
+            print("[SAVE] saveToPhotos() completed")
         }
     }
 }
