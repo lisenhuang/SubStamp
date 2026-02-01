@@ -1,26 +1,25 @@
 import AVFoundation
+import Combine
 import Foundation
-import Observation
 import Translation
 
 @MainActor
-@Observable
-final class PipelineOrchestrator {
+final class PipelineOrchestrator: ObservableObject {
     private let transcriptionService = TranscriptionService()
     private let translationService = TranslationService()
     private let subtitleRenderer = SubtitleRenderer()
     private let exportService = ExportService()
     private let jobStore = JobStore()
 
-    var stageStates: [ProcessingStage: PipelineStageState] = [:]
-    var stageProgress: [ProcessingStage: Double] = [:]
-    var currentStage: ProcessingStage = .idle
-    var cues: [SubtitleCue] = []
-    var outputURL: URL?
-    var error: SubStampError?
-    var job: JobModel?
-    var isRunning = false
-    var readyForReview = false
+    @Published var stageStates: [ProcessingStage: PipelineStageState] = [:]
+    @Published var stageProgress: [ProcessingStage: Double] = [:]
+    @Published var currentStage: ProcessingStage = .idle
+    @Published var cues: [SubtitleCue] = []
+    @Published var outputURL: URL?
+    @Published var error: SubStampError?
+    @Published var job: JobModel?
+    @Published var isRunning = false
+    @Published var readyForReview = false
 
     private var task: Task<Void, Never>?
 

@@ -17,8 +17,8 @@ struct ContentView: View {
     }
 
     @State private var step: WizardStep = .setup
-    @State private var assetManager = AssetReadinessManager()
-    @State private var orchestrator = PipelineOrchestrator()
+    @StateObject private var assetManager = AssetReadinessManager()
+    @StateObject private var orchestrator = PipelineOrchestrator()
 
     @State private var transcriptionLocale: Locale = .current
     @State private var subtitleMode: SubtitleMode = .single
@@ -82,7 +82,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showReview) {
-            if let job = activeJob, let videoURL = selectedVideoURL {
+            if activeJob != nil, let videoURL = selectedVideoURL {
                 let styleBinding = Binding<SubtitleStyle>(
                     get: { activeJob?.subtitleStyle ?? SubtitleStyle() },
                     set: { newValue in
@@ -142,7 +142,7 @@ struct ContentView: View {
             videoURL: selectedVideoURL,
             transcriptionLocale: transcriptionLocale.identifier,
             subtitleMode: subtitleMode,
-            translationTargetLocale: translationTarget?.identifier,
+            translationTargetLocale: translationTarget?.minimalIdentifier,
             subtitleLayout: subtitleMode == .bilingual ? .stacked : .single,
             subtitleStyle: SubtitleStyle(),
             exportPreset: .balanced,
@@ -183,6 +183,8 @@ struct ContentView: View {
     }
 }
 
-#Preview {
-    ContentView()
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }

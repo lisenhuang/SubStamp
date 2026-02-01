@@ -1,19 +1,18 @@
 import Foundation
-import Observation
+import Combine
 import Speech
 import Translation
 
 @MainActor
-@Observable
-final class AssetReadinessManager {
-    var transcriptionLocale: Locale = .current
-    var subtitleMode: SubtitleMode = .single
-    var translationTargetLocale: Locale.Language?
+final class AssetReadinessManager: ObservableObject {
+    @Published var transcriptionLocale: Locale = .current
+    @Published var subtitleMode: SubtitleMode = .single
+    @Published var translationTargetLocale: Locale.Language?
 
-    var speechAssetsState: AssetState = .notInstalled
-    var translationAssetsState: AssetState = .notInstalled
-    var lastError: SubStampError?
-    var lowStorageWarning: String?
+    @Published var speechAssetsState: AssetState = .notInstalled
+    @Published var translationAssetsState: AssetState = .notInstalled
+    @Published var lastError: SubStampError?
+    @Published var lowStorageWarning: String?
 
     var isReadyToProceed: Bool {
         let speechReady = speechAssetsState == .ready
@@ -54,7 +53,12 @@ final class AssetReadinessManager {
     }
 
     func downloadSpeechAssets() async {
-        let transcriber = SpeechTranscriber(locale: transcriptionLocale, preset: .offlineTranscription)
+        let transcriber = SpeechTranscriber(
+            locale: transcriptionLocale,
+            transcriptionOptions: [],
+            reportingOptions: [],
+            attributeOptions: [.audioTimeRange]
+        )
         speechAssetsState = .downloading(progress: 0)
         do {
             if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
@@ -67,18 +71,20 @@ final class AssetReadinessManager {
         }
     }
 
-    func downloadTranslationAssets(session: TranslationSession) async {
-        guard subtitleMode == .bilingual, let target = translationTargetLocale else {
-            translationAssetsState = .ready
-            return
+    nonisolated func downloadTranslationAssets(session: TranslationSession) async {
+        await MainActor.run {
+            self.translationAssetsState = .downloading(progress: 0)
         }
-        translationAssetsState = .downloading(progress: 0)
         do {
             try await session.prepareTranslation()
-            translationAssetsState = .ready
+            await MainActor.run {
+                self.translationAssetsState = .ready
+            }
         } catch {
-            lastError = .translationError(underlying: error)
-            translationAssetsState = .failed(message: error.localizedDescription)
+            await MainActor.run {
+                self.lastError = .translationError(underlying: error)
+                self.translationAssetsState = .failed(message: error.localizedDescription)
+            }
         }
     }
 
@@ -109,7 +115,8 @@ final class AssetReadinessManager {
         case .supported:
             translationAssetsState = .notInstalled
         case .unsupported:
-            lastError = .unsupportedLanguagePair(from: source.identifier, to: target.identifier)
+            let targetLabel = target.languageCode?.identifier ?? String(describing: target)
+            lastError = .unsupportedLanguagePair(from: source.identifier, to: targetLabel)
             translationAssetsState = .failed(message: "Language pair unsupported.")
         @unknown default:
             translationAssetsState = .failed(message: "Unknown translation availability.")

@@ -34,11 +34,7 @@ final class ExportService {
         }
 
         do {
-            try await withTaskCancellationHandler {
-                exporter.cancelExport()
-            } operation: {
-                try await export(exporter)
-            }
+            try await export(exporter)
             progressTask.cancel()
             progressHandler(1.0)
             return outputURL

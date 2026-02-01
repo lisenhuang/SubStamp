@@ -17,7 +17,8 @@ final class TranslationService {
             let stream = session.translate(batch: requests)
             var completed = 0
             for try await response in stream {
-                if let id = UUID(uuidString: response.clientIdentifier),
+                if let clientIdentifier = response.clientIdentifier,
+                   let id = UUID(uuidString: clientIdentifier),
                    let index = output.firstIndex(where: { $0.id == id }) {
                     output[index].secondaryText = response.targetText
                     output[index].hasTranslationError = false

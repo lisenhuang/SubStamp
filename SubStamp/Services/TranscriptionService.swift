@@ -16,22 +16,27 @@ final class TranscriptionService {
     ) async throws -> Result {
         let audioURL = try await extractAudio(from: asset, timeRange: timeRange)
         defer { try? FileManager.default.removeItem(at: audioURL) }
-        let transcriber = SpeechTranscriber(locale: locale, preset: .offlineTranscription)
+        let transcriber = SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [],
+            attributeOptions: [.audioTimeRange]
+        )
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let duration = timeRange?.duration ?? asset.duration
 
-        try await analyzer.start(inputAudioFile: audioURL, finishAfterFile: true)
+        let audioFile = try AVAudioFile(forReading: audioURL)
+        try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
 
         var cues: [SubtitleCue] = []
         for try await result in transcriber.results {
-            guard result.isFinal else { continue }
-            guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            let fallbackStart = cues.last?.end ?? .zero
-            let fallbackRange = CMTimeRange(start: fallbackStart, duration: CMTime(seconds: 1, preferredTimescale: 600))
-            let timeRange = result.audioTimeRange ?? fallbackRange
+            let rawText = String(result.text.characters)
+            let cleaned = normalizeText(rawText)
+            guard !cleaned.isEmpty else { continue }
+            let timeRange = result.range
             let start = timeRange.start
             let end = timeRange.end
-            let formattedText = normalizeText(result.text)
+            let formattedText = cleaned
             let cue = SubtitleCue(start: start, end: end, primaryText: formattedText)
             cues.append(cue)
 

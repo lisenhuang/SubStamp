@@ -1,9 +1,10 @@
+import Combine
 import SwiftUI
 import Translation
 import UIKit
 
 struct ProcessingView: View {
-    @Bindable var orchestrator: PipelineOrchestrator
+    @ObservedObject var orchestrator: PipelineOrchestrator
     let job: JobModel
     var resumeTranscribed: [SubtitleCue]? = nil
     var resumeTranslated: [SubtitleCue]? = nil
@@ -27,88 +28,9 @@ struct ProcessingView: View {
                     subtitle: "We'll continue even if the screen locks."
                 )
 
-                PipelineStageRow(
-                    title: "Speech assets",
-                    state: orchestrator.stageStates[.assets] ?? .pending,
-                    progress: orchestrator.stageProgress[.assets] ?? 0,
-                    detail: "Ensuring required models are ready."
-                )
-
-                PipelineStageRow(
-                    title: "Transcribing",
-                    state: orchestrator.stageStates[.transcribing] ?? .pending,
-                    progress: orchestrator.stageProgress[.transcribing] ?? 0,
-                    detail: "Generating time-coded subtitles."
-                )
-
-                PipelineStageRow(
-                    title: "Translating",
-                    state: orchestrator.stageStates[.translating] ?? .pending,
-                    progress: orchestrator.stageProgress[.translating] ?? 0,
-                    detail: job.subtitleMode == .bilingual ? "Translating each cue." : "Skipped for transcript-only mode."
-                )
-
-                PipelineStageRow(
-                    title: "Rendering",
-                    state: orchestrator.stageStates[.rendering] ?? .pending,
-                    progress: orchestrator.stageProgress[.rendering] ?? 0,
-                    detail: "Burning subtitles into the video."
-                )
-
-                PipelineStageRow(
-                    title: "Exporting",
-                    state: orchestrator.stageStates[.exporting] ?? .pending,
-                    progress: orchestrator.stageProgress[.exporting] ?? 0,
-                    detail: "Writing the new file."
-                )
-
-                VStack(alignment: .leading, spacing: AppSpacing.s) {
-                    Text("Tips")
-                        .font(AppTypography.bodyEmphasis)
-                    Text("You can lock the phone; we’ll continue when possible.")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.secondaryText)
-                    Text("If iOS stops background work, you can resume here.")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.secondaryText)
-                    Toggle("Keep screen awake", isOn: $keepScreenAwake)
-                        .font(AppTypography.caption)
-                }
-                .padding()
-                .background(AppColors.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                        .stroke(AppColors.cardBorder, lineWidth: 1)
-                )
-
-                if let error = orchestrator.error {
-                    Text(error.errorDescription ?? "Processing failed.")
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(AppColors.error)
-                    if let suggestion = error.recoverySuggestion {
-                        Text(suggestion)
-                            .font(AppTypography.caption)
-                            .foregroundStyle(AppColors.secondaryText)
-                    }
-                    HStack(spacing: AppSpacing.s) {
-                        PrimaryButton(title: "Retry stage", systemImage: "arrow.clockwise") {
-                            restartPipeline()
-                        }
-                        PrimaryButton(title: "Change settings", systemImage: "slider.horizontal.3") {
-                            onChangeSettings()
-                        }
-                    }
-                } else {
-                    HStack(spacing: AppSpacing.s) {
-                        PrimaryButton(title: "Cancel", systemImage: "xmark.circle") {
-                            showCancelDialog = true
-                        }
-                        PrimaryButton(title: "Run in background", systemImage: "moon.stars") {
-                            submitBackgroundTask()
-                        }
-                    }
-                }
+                stageList
+                tipsCard
+                actionSection
             }
             .padding(AppSpacing.l)
         }
@@ -133,7 +55,7 @@ struct ProcessingView: View {
             translationSession = session
             startPipelineIfNeeded()
         }
-        .onChange(of: orchestrator.error) { _, error in
+        .onReceive(orchestrator.$error) { error in
             if error != nil {
                 BackgroundTaskManager.shared.end(success: false)
             }
@@ -146,6 +68,98 @@ struct ProcessingView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
+    private var stageList: some View {
+        VStack(spacing: AppSpacing.l) {
+            stageRow(
+                title: "Speech assets",
+                stage: .assets,
+                detail: "Ensuring required models are ready."
+            )
+            stageRow(
+                title: "Transcribing",
+                stage: .transcribing,
+                detail: "Generating time-coded subtitles."
+            )
+            stageRow(
+                title: "Translating",
+                stage: .translating,
+                detail: job.subtitleMode == .bilingual ? "Translating each cue." : "Skipped for transcript-only mode."
+            )
+            stageRow(
+                title: "Rendering",
+                stage: .rendering,
+                detail: "Burning subtitles into the video."
+            )
+            stageRow(
+                title: "Exporting",
+                stage: .exporting,
+                detail: "Writing the new file."
+            )
+        }
+    }
+
+    private func stageRow(title: String, stage: ProcessingStage, detail: String) -> some View {
+        PipelineStageRow(
+            title: title,
+            state: orchestrator.stageStates[stage] ?? .pending,
+            progress: orchestrator.stageProgress[stage] ?? 0,
+            detail: detail
+        )
+    }
+
+    private var tipsCard: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.s) {
+            Text("Tips")
+                .font(AppTypography.bodyEmphasis)
+            Text("You can lock the phone; we’ll continue when possible.")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.secondaryText)
+            Text("If iOS stops background work, you can resume here.")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.secondaryText)
+            Toggle("Keep screen awake", isOn: $keepScreenAwake)
+                .font(AppTypography.caption)
+        }
+        .padding()
+        .background(AppColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var actionSection: some View {
+        if let error = orchestrator.error {
+            Text(error.errorDescription ?? "Processing failed.")
+                .font(AppTypography.bodyEmphasis)
+                .foregroundStyle(AppColors.error)
+            if let suggestion = error.recoverySuggestion {
+                Text(suggestion)
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            }
+            HStack(spacing: AppSpacing.s) {
+                PrimaryButton(title: "Retry stage", systemImage: "arrow.clockwise") {
+                    restartPipeline()
+                }
+                PrimaryButton(title: "Change settings", systemImage: "slider.horizontal.3") {
+                    onChangeSettings()
+                }
+            }
+        } else {
+            HStack(spacing: AppSpacing.s) {
+                PrimaryButton(title: "Cancel", systemImage: "xmark.circle") {
+                    showCancelDialog = true
+                }
+                PrimaryButton(title: "Run in background", systemImage: "moon.stars") {
+                    submitBackgroundTask()
+                }
+            }
         }
     }
 
