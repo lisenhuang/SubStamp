@@ -26,6 +26,10 @@ final class TranscriptionService {
         let duration = timeRange?.duration ?? asset.duration
 
         let audioFile = try AVAudioFile(forReading: audioURL)
+        let frameCount = audioFile.length
+        guard frameCount > 0 else {
+            throw SubStampError.speechAnalyzerError(underlying: NSError(domain: "SubStamp", code: -10, userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples. The video may have no audible track or export failed."]))
+        }
         try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
 
         var cues: [SubtitleCue] = []

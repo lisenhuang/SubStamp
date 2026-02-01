@@ -49,7 +49,10 @@ struct SetupView: View {
             if translationLocaleIdentifier == nil, let first = supportedLocales.first {
                 translationLocaleIdentifier = first.identifier
             } else if let tid = translationLocaleIdentifier, !supportedLocales.contains(where: { $0.identifier == tid }) {
-                translationLocaleIdentifier = supportedLocales.first?.identifier
+                let match = supportedLocales.first { loc in
+                    loc.identifier == tid || loc.identifier.hasPrefix(tid + "-") || loc.identifier.hasPrefix(tid + "_")
+                }
+                translationLocaleIdentifier = match?.identifier ?? supportedLocales.first?.identifier
             }
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
@@ -212,11 +215,16 @@ struct SetupView: View {
         }
     }
 
-    /// Non-optional binding for translation picker; uses first locale when nil.
+    /// Non-optional binding for translation picker; coerces short codes (e.g. "zh") to a valid tag (e.g. "zh-Hans").
     private var translationLocaleIdentifierBinding: Binding<String> {
         Binding(
             get: {
-                translationLocaleIdentifier ?? supportedLocales.first?.identifier ?? Locale.current.identifier
+                let raw = translationLocaleIdentifier ?? supportedLocales.first?.identifier ?? Locale.current.identifier
+                if supportedLocales.contains(where: { $0.identifier == raw }) { return raw }
+                let langPrefix = raw.split(separator: "-").first.map(String.init) ?? raw.split(separator: "_").first.map(String.init) ?? raw
+                return supportedLocales.first { loc in
+                    loc.identifier == raw || loc.identifier.hasPrefix(langPrefix + "-") || loc.identifier.hasPrefix(langPrefix + "_")
+                }?.identifier ?? supportedLocales.first?.identifier ?? Locale.current.identifier
             },
             set: { translationLocaleIdentifier = $0 }
         )
