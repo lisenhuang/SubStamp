@@ -76,6 +76,9 @@ struct ContentView: View {
                         onCompleted: { url in
                             outputURL = url
                             step = .result
+                        },
+                        onReview: {
+                            showReview = true
                         }
                     )
                 }

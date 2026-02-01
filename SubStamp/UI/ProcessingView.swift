@@ -11,6 +11,7 @@ struct ProcessingView: View {
     var onBack: () -> Void
     var onChangeSettings: () -> Void
     var onCompleted: (URL) -> Void
+    var onReview: (() -> Void)? = nil
 
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var translationSession: TranslationSession?
@@ -110,7 +111,8 @@ struct ProcessingView: View {
             stageRow(
                 title: "Rendering",
                 stage: .rendering,
-                detail: "Burning subtitles into the video."
+                detail: "Burning subtitles into the video.",
+                showReviewButton: orchestrator.readyForReview
             )
             stageRow(
                 title: "Exporting",
@@ -120,13 +122,28 @@ struct ProcessingView: View {
         }
     }
 
-    private func stageRow(title: String, stage: ProcessingStage, detail: String) -> some View {
-        PipelineStageRow(
-            title: title,
-            state: orchestrator.stageStates[stage] ?? .pending,
-            progress: orchestrator.stageProgress[stage] ?? 0,
-            detail: detail
-        )
+    private func stageRow(title: String, stage: ProcessingStage, detail: String, showReviewButton: Bool = false) -> some View {
+        HStack {
+            PipelineStageRow(
+                title: title,
+                state: orchestrator.stageStates[stage] ?? .pending,
+                progress: orchestrator.stageProgress[stage] ?? 0,
+                detail: detail
+            )
+            if showReviewButton, let onReview {
+                Button {
+                    onReview()
+                } label: {
+                    Text("Review")
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.accent)
+                        .padding(.horizontal, AppSpacing.s)
+                        .padding(.vertical, 4)
+                        .background(AppColors.accent.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+        }
     }
 
     private var tipsCard: some View {
