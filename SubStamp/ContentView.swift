@@ -13,6 +13,7 @@ struct ContentView: View {
         case setup
         case pickVideo
         case processing
+        case review
         case result
     }
 
@@ -29,7 +30,6 @@ struct ContentView: View {
     @State private var metadata: VideoMetadata?
     @State private var activeJob: JobModel?
     @State private var outputURL: URL?
-    @State private var showReview = false
 
     @State private var resumeJob: JobModel?
     @State private var showResumeAlert = false
@@ -83,7 +83,34 @@ struct ContentView: View {
                             step = .result
                         },
                         onReview: {
-                            showReview = true
+                            step = .review
+                        }
+                    )
+                }
+            case .review:
+                if activeJob != nil, let videoURL = selectedVideoURL {
+                    let styleBinding = Binding<SubtitleStyle>(
+                        get: { activeJob?.subtitleStyle ?? SubtitleStyle() },
+                        set: { newValue in
+                            guard var updated = activeJob else { return }
+                            updated.subtitleStyle = newValue
+                            activeJob = updated
+                            orchestrator.job = updated
+                            try? jobStore.save(job: updated)
+                            SetupPreferences.saveSubtitleStyle(newValue)
+                        }
+                    )
+                    SubtitleReviewView(
+                        cues: $orchestrator.cues,
+                        style: styleBinding,
+                        videoURL: videoURL,
+                        translationTarget: translationTargetLocale,
+                        sourceLocaleIdentifier: transcriptionLocaleIdentifier,
+                        onContinue: {
+                            orchestrator.continueAfterReview()
+                        },
+                        onBack: {
+                            step = .processing
                         }
                     )
                 }
@@ -95,39 +122,9 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showReview) {
-            if activeJob != nil, let videoURL = selectedVideoURL {
-                let styleBinding = Binding<SubtitleStyle>(
-                    get: { activeJob?.subtitleStyle ?? SubtitleStyle() },
-                    set: { newValue in
-                        guard var updated = activeJob else { return }
-                        updated.subtitleStyle = newValue
-                        activeJob = updated
-                        orchestrator.job = updated
-                        try? jobStore.save(job: updated)
-                        // Also save to preferences for persistence across app launches
-                        SetupPreferences.saveSubtitleStyle(newValue)
-                    }
-                )
-                SubtitleReviewView(
-                    cues: $orchestrator.cues,
-                    style: styleBinding,
-                    videoURL: videoURL,
-                    translationTarget: translationTargetLocale,
-                    sourceLocaleIdentifier: transcriptionLocaleIdentifier,
-                    onContinue: {
-                        showReview = false
-                        orchestrator.continueAfterReview()
-                    },
-                    onDismiss: {
-                        showReview = false
-                    }
-                )
-            }
-        }
         .onChange(of: orchestrator.readyForReview) { _, ready in
             if ready {
-                showReview = true
+                step = .review
             }
         }
         .alert("Resume unfinished job?", isPresented: $showResumeAlert) {

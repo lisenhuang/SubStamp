@@ -30,10 +30,13 @@ final class AssetReadinessManager: ObservableObject {
         subtitleMode: SubtitleMode,
         translationTargetLocale: Locale.Language?
     ) {
+        let localeChanged = self.transcriptionLocale.identifier != transcriptionLocale.identifier
         self.transcriptionLocale = transcriptionLocale
         self.subtitleMode = subtitleMode
         self.translationTargetLocale = translationTargetLocale
-        reset()
+        if localeChanged {
+            reset()
+        }
     }
 
     func reset() {
@@ -64,7 +67,8 @@ final class AssetReadinessManager: ObservableObject {
             if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
                 try await downloader.downloadAndInstall()
             }
-            speechAssetsState = .ready
+            // Verify the asset is actually installed after download
+            await checkSpeechAssets(for: transcriptionLocale)
         } catch {
             lastError = .assetInstallFailed(locale: transcriptionLocale.identifier)
             speechAssetsState = .failed(message: error.localizedDescription)
@@ -77,8 +81,15 @@ final class AssetReadinessManager: ObservableObject {
         }
         do {
             try await session.prepareTranslation()
+            // Verify the translation asset is actually ready
             await MainActor.run {
-                self.translationAssetsState = .ready
+                if let target = self.translationTargetLocale {
+                    Task {
+                        await self.checkTranslationAssets(source: self.transcriptionLocale, target: target)
+                    }
+                } else {
+                    self.translationAssetsState = .ready
+                }
             }
         } catch {
             await MainActor.run {

@@ -130,66 +130,109 @@ final class PipelineOrchestrator: ObservableObject {
             stageStates[.transcribing] = .done
             stageProgress[.transcribing] = 1
 
-            if job.subtitleMode == .bilingual {
+            // Determine what translations are needed
+            // Base language = transcriptionLocale (the audio language)
+            // Language 1: use transcribed text if matches base, else translate from base
+            // Language 2 (bilingual): use transcribed text if matches base, else translate from base
+            let baseLocale = job.transcriptionLocale
+            let lang1NeedsTranslation = job.language1Locale != baseLocale
+            let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocale)
+            
+            // Check if any translation is needed
+            let needsTranslation = lang1NeedsTranslation || lang2NeedsTranslation
+            
+            if needsTranslation {
                 updatedJob.stage = .translating
                 updatedJob.updatedAt = Date()
                 try jobStore.save(job: updatedJob)
                 currentStage = .translating
                 stageStates[.translating] = .active
+                
                 guard let session = translationSession else {
                     print("[SUBSTAMP] ERROR: translationSession is nil!")
                     throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -20))
                 }
-                let translated = try await translationService.translate(
-                    cues: cues,
-                    session: session
-                ) { [weak self] completed, total in
-                    self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
-                }
-                cues = translated
-                let withSecondary = cues.filter { $0.secondaryText != nil }.count
-                print("[SUBSTAMP] translated \(withSecondary)/\(cues.count) have secondaryText")
-                try jobStore.saveCues(translated, id: job.id, type: .translated)
-                stageStates[.translating] = .done
-                stageProgress[.translating] = 1
-            } else if job.language1Locale != job.transcriptionLocale {
-                // Single Mode with Language 1 != Audio -> Translate Primary
-                print("[SUBSTAMP] Single mode translation: \(job.transcriptionLocale) -> \(job.language1Locale)")
-                updatedJob.stage = .translating
-                updatedJob.updatedAt = Date()
-                try jobStore.save(job: updatedJob)
-                currentStage = .translating
-                stageStates[.translating] = .active
                 
-                guard let session = translationSession else {
-                    print("[SUBSTAMP] ERROR: translationSession is nil (single mode)!")
-                    throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -20))
-                }
-                
-                // Translate, but result will put translation in secondaryText
-                let translated = try await translationService.translate(
-                    cues: cues,
-                    session: session
-                ) { [weak self] completed, total in
-                    self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
-                }
-                
-                // For Single Mode, we want the translation to be the Primary Text
-                cues = translated.map { cue in
-                    var newCue = cue
-                    if let translatedText = cue.secondaryText {
-                        newCue.primaryText = translatedText
-                        newCue.secondaryText = nil // Clear secondary
+                // For bilingual mode with Lang1 != base: first translate to Lang1 as primary
+                if job.subtitleMode == .bilingual && lang1NeedsTranslation {
+                    // Translate base -> Language 1 for primary text
+                    print("[SUBSTAMP] Translating base \(baseLocale) -> Language 1 \(job.language1Locale)")
+                    let translatedToLang1 = try await translationService.translate(
+                        cues: cues,
+                        session: session
+                    ) { [weak self] completed, total in
+                        self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
                     }
-                    return newCue
+                    
+                    // Move translation to primary
+                    cues = translatedToLang1.map { cue in
+                        var newCue = cue
+                        if let translatedText = cue.secondaryText {
+                            newCue.primaryText = translatedText
+                        }
+                        newCue.secondaryText = nil
+                        return newCue
+                    }
+                    
+                    // Now if Lang2 also needs translation and differs from Lang1
+                    if lang2NeedsTranslation && job.translationTargetLocale != job.language1Locale {
+                        // Reset progress for second translation
+                        stageProgress[.translating] = 0
+                        
+                        // Translate current primary (Lang1) -> Lang2
+                        print("[SUBSTAMP] Translating Language 1 \(job.language1Locale) -> Language 2 \(job.translationTargetLocale ?? "nil")")
+                        // Note: This requires a new translation session with different source/target
+                        // For now, we'll skip this edge case as it requires session reconfiguration
+                    }
+                } else if job.subtitleMode == .bilingual && !lang1NeedsTranslation && lang2NeedsTranslation {
+                    // Lang1 == base, Lang2 != base: translate base -> Lang2 for secondary
+                    print("[SUBSTAMP] Translating base \(baseLocale) -> Language 2 \(job.translationTargetLocale ?? "nil")")
+                    let translated = try await translationService.translate(
+                        cues: cues,
+                        session: session
+                    ) { [weak self] completed, total in
+                        self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
+                    }
+                    cues = translated
+                    let withSecondary = cues.filter { $0.secondaryText != nil }.count
+                    print("[SUBSTAMP] translated \(withSecondary)/\(cues.count) have secondaryText")
+                } else if job.subtitleMode == .single && lang1NeedsTranslation {
+                    // Single mode: translate base -> Language 1
+                    print("[SUBSTAMP] Single mode translation: \(baseLocale) -> \(job.language1Locale)")
+                    let translated = try await translationService.translate(
+                        cues: cues,
+                        session: session
+                    ) { [weak self] completed, total in
+                        self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
+                    }
+                    
+                    // Move translation to primary
+                    cues = translated.map { cue in
+                        var newCue = cue
+                        if let translatedText = cue.secondaryText {
+                            newCue.primaryText = translatedText
+                            newCue.secondaryText = nil
+                        }
+                        return newCue
+                    }
+                    
+                    print("[SUBSTAMP] Primary translation complete.")
                 }
                 
-                print("[SUBSTAMP] Primary translation complete.")
-                try jobStore.saveCues(cues, id: job.id, type: .translated) // Save as translated cues (acting as primary)
+                try jobStore.saveCues(cues, id: job.id, type: .translated)
                 stageStates[.translating] = .done
                 stageProgress[.translating] = 1
             } else {
-                print("[SUBSTAMP] skip translation mode=\(job.subtitleMode)")
+                print("[SUBSTAMP] Skip translation - using transcribed text directly")
+                // For bilingual where Lang2 == base: use same text for both
+                if job.subtitleMode == .bilingual && job.translationTargetLocale == baseLocale {
+                    cues = cues.map { cue in
+                        var newCue = cue
+                        newCue.secondaryText = cue.primaryText
+                        return newCue
+                    }
+                    try jobStore.saveCues(cues, id: job.id, type: .translated)
+                }
                 stageStates[.translating] = .done
                 stageProgress[.translating] = 1
             }

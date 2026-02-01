@@ -10,7 +10,7 @@ struct SubtitleReviewView: View {
     var translationTarget: Locale.Language?
     var sourceLocaleIdentifier: String?
     var onContinue: () -> Void
-    var onDismiss: () -> Void
+    var onBack: () -> Void
 
     @State private var player: AVPlayer?
     @State private var isPlayingPreview = false
@@ -98,8 +98,8 @@ struct SubtitleReviewView: View {
                         PrimaryButton(title: "Continue to export", systemImage: "arrow.right.circle") {
                             onContinue()
                         }
-                        PrimaryButton(title: "Close", systemImage: "xmark") {
-                            onDismiss()
+                        PrimaryButton(title: "Back", systemImage: "chevron.left") {
+                            onBack()
                         }
                     }
                 }
