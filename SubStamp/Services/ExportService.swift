@@ -17,13 +17,14 @@ final class ExportService {
 
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("substamp_export_\(UUID().uuidString)")
-            .appendingPathExtension("mov")
+            .appendingPathExtension("mp4")
         exporter.outputURL = outputURL
 
-        if exporter.supportedFileTypes.contains(.mov) {
-            exporter.outputFileType = .mov
-        } else if exporter.supportedFileTypes.contains(.mp4) {
+        // Prefer mp4 for better compatibility with social apps
+        if exporter.supportedFileTypes.contains(.mp4) {
             exporter.outputFileType = .mp4
+        } else if exporter.supportedFileTypes.contains(.mov) {
+            exporter.outputFileType = .mov
         }
 
         let progressTask = Task {

@@ -201,6 +201,10 @@ final class PipelineOrchestrator: ObservableObject {
                             newCue.secondaryText = nil
                             return newCue
                         }
+                    } else if job.subtitleMode == .bilingual && job.translationTargetLocale != nil {
+                        // Lang2 matches Audio - use original transcribed text as secondary
+                        print("[SUBSTAMP] Lang2 matches Audio - copying transcribed text to secondary")
+                        // secondaryCues already contains original transcribed cues, no change needed
                     }
                     
                     // Combine primary and secondary texts
@@ -329,7 +333,9 @@ final class PipelineOrchestrator: ObservableObject {
                 videoComposition: renderResult.videoComposition,
                 preset: job.exportPreset
             ) { [weak self] progress in
-                self?.stageProgress[.exporting] = progress
+                Task { @MainActor in
+                    self?.stageProgress[.exporting] = progress
+                }
             }
             stageStates[.exporting] = .done
             stageProgress[.exporting] = 1

@@ -34,7 +34,9 @@ struct SetupView: View {
                 languageSelectionCard
                 readinessCard
 
-                downloadAssetsButton
+                if !assetManager.isReadyToProceed {
+                    downloadAssetsButton
+                }
                 continueButton
             }
             .padding(AppSpacing.l)
