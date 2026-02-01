@@ -15,7 +15,9 @@ final class TranscriptionService {
         progressHandler: @escaping (Double, Int) -> Void
     ) async throws -> Result {
         let audioURL = try await extractAudio(from: asset, timeRange: timeRange)
-        defer { try? FileManager.default.removeItem(at: audioURL) }
+        // Note: We defer file cleanup until AFTER all processing is complete
+        // to ensure the audio file remains valid during SpeechAnalyzer processing
+        
         let transcriber = SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
@@ -25,20 +27,37 @@ final class TranscriptionService {
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let duration = timeRange?.duration ?? asset.duration
 
-        let audioFile = try AVAudioFile(forReading: audioURL)
+        let audioFile: AVAudioFile
+        do {
+            audioFile = try AVAudioFile(forReading: audioURL)
+        } catch {
+            // Clean up the audio file if we can't read it
+            try? FileManager.default.removeItem(at: audioURL)
+            AppLog.append("Failed to open audio file: \(error.localizedDescription)")
+            throw SubStampError.speechAnalyzerError(underlying: error)
+        }
+        
         let frameCount = audioFile.length
         guard frameCount > 0 else {
+            try? FileManager.default.removeItem(at: audioURL)
             throw SubStampError.speechAnalyzerError(underlying: NSError(domain: "SubStamp", code: -10, userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples. The video may have no audible track or export failed."]))
         }
+        
+        // Log audio file details for debugging
+        AppLog.append("Audio file ready: \(frameCount) frames, format: \(audioFile.processingFormat)")
+        
         do {
             try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
         } catch {
+            try? FileManager.default.removeItem(at: audioURL)
             AppLog.append("SpeechAnalyzer failed to start: \(error.localizedDescription)")
             AppLog.append(error: error)
             throw SubStampError.speechAnalyzerError(underlying: error)
         }
 
         var cues: [SubtitleCue] = []
+        var processingError: Error?
+        
         do {
             for try await result in transcriber.results {
                 let rawText = String(result.text.characters)
@@ -55,15 +74,22 @@ final class TranscriptionService {
                 progressHandler(progress, cues.count)
             }
         } catch {
+            processingError = error
             // SpeechAnalyzer can fail with Foundation._GenericObjCError.nilError
             // when the speech services crash or are interrupted (XPC invalidation)
             AppLog.append("SpeechAnalyzer: Input loop ending with error: \(error.localizedDescription)")
             AppLog.append(error: error)
-            // If we got some cues before the error, continue with what we have
+        }
+        
+        // Clean up the audio file now that processing is complete
+        try? FileManager.default.removeItem(at: audioURL)
+        
+        // Handle any errors that occurred during processing
+        if let error = processingError {
             if cues.isEmpty {
                 throw SubStampError.speechAnalyzerError(underlying: error)
             }
-            // Otherwise, log the error but continue processing with partial results
+            // Log but continue with partial results
             AppLog.append("Continuing with \(cues.count) partial cues after speech analyzer error")
         }
 
