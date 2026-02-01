@@ -56,6 +56,7 @@ final class PipelineOrchestrator: ObservableObject {
         self.job = job
         isRunning = true
         readyForReview = false
+        print("[SUBSTAMP] start() mode=\(job.subtitleMode) lang1=\(job.language1Locale) lang2=\(job.translationTargetLocale ?? "nil") session=\(translationSession != nil)")
         task = Task { [weak self] in
             guard let self else { return }
             await self.runPipeline(job: job, translationSession: translationSession)
@@ -136,6 +137,7 @@ final class PipelineOrchestrator: ObservableObject {
                 currentStage = .translating
                 stageStates[.translating] = .active
                 guard let session = translationSession else {
+                    print("[SUBSTAMP] ERROR: translationSession is nil!")
                     throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -20))
                 }
                 let translated = try await translationService.translate(
@@ -145,10 +147,49 @@ final class PipelineOrchestrator: ObservableObject {
                     self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
                 }
                 cues = translated
+                let withSecondary = cues.filter { $0.secondaryText != nil }.count
+                print("[SUBSTAMP] translated \(withSecondary)/\(cues.count) have secondaryText")
                 try jobStore.saveCues(translated, id: job.id, type: .translated)
                 stageStates[.translating] = .done
                 stageProgress[.translating] = 1
+            } else if job.language1Locale != job.transcriptionLocale {
+                // Single Mode with Language 1 != Audio -> Translate Primary
+                print("[SUBSTAMP] Single mode translation: \(job.transcriptionLocale) -> \(job.language1Locale)")
+                updatedJob.stage = .translating
+                updatedJob.updatedAt = Date()
+                try jobStore.save(job: updatedJob)
+                currentStage = .translating
+                stageStates[.translating] = .active
+                
+                guard let session = translationSession else {
+                    print("[SUBSTAMP] ERROR: translationSession is nil (single mode)!")
+                    throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -20))
+                }
+                
+                // Translate, but result will put translation in secondaryText
+                let translated = try await translationService.translate(
+                    cues: cues,
+                    session: session
+                ) { [weak self] completed, total in
+                    self?.stageProgress[.translating] = total == 0 ? 0 : Double(completed) / Double(total)
+                }
+                
+                // For Single Mode, we want the translation to be the Primary Text
+                cues = translated.map { cue in
+                    var newCue = cue
+                    if let translatedText = cue.secondaryText {
+                        newCue.primaryText = translatedText
+                        newCue.secondaryText = nil // Clear secondary
+                    }
+                    return newCue
+                }
+                
+                print("[SUBSTAMP] Primary translation complete.")
+                try jobStore.saveCues(cues, id: job.id, type: .translated) // Save as translated cues (acting as primary)
+                stageStates[.translating] = .done
+                stageProgress[.translating] = 1
             } else {
+                print("[SUBSTAMP] skip translation mode=\(job.subtitleMode)")
                 stageStates[.translating] = .done
                 stageProgress[.translating] = 1
             }
@@ -193,6 +234,10 @@ final class PipelineOrchestrator: ObservableObject {
             updatedJob.updatedAt = Date()
             try jobStore.save(job: updatedJob)
             let range = timeRange(for: job, asset: asset)
+            
+            let withSecondary = cues.filter { $0.secondaryText != nil }.count
+            print("[SUBSTAMP] render cues=\(cues.count) withSecondary=\(withSecondary) mode=\(job.subtitleMode)")
+            
             let renderResult = try await subtitleRenderer.createComposition(
                 asset: asset,
                 cues: cues,

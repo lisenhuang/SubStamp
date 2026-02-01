@@ -6,6 +6,7 @@ struct JobModel: Identifiable, Codable {
     var updatedAt: Date
     var videoURL: URL
     var transcriptionLocale: String
+    var language1Locale: String
     var subtitleMode: SubtitleMode
     var translationTargetLocale: String?
     var subtitleLayout: SubtitleLayout
@@ -22,6 +23,7 @@ struct JobModel: Identifiable, Codable {
         updatedAt: Date = Date(),
         videoURL: URL,
         transcriptionLocale: String,
+        language1Locale: String? = nil,
         subtitleMode: SubtitleMode,
         translationTargetLocale: String?,
         subtitleLayout: SubtitleLayout = .stacked,
@@ -37,6 +39,7 @@ struct JobModel: Identifiable, Codable {
         self.updatedAt = updatedAt
         self.videoURL = videoURL
         self.transcriptionLocale = transcriptionLocale
+        self.language1Locale = language1Locale ?? transcriptionLocale
         self.subtitleMode = subtitleMode
         self.translationTargetLocale = translationTargetLocale
         self.subtitleLayout = subtitleLayout
@@ -56,6 +59,7 @@ private extension JobModel {
         case updatedAt
         case videoURL
         case transcriptionLocale
+        case language1Locale
         case subtitleMode
         case translationTargetLocale
         case subtitleLayout
@@ -76,6 +80,8 @@ extension JobModel {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         videoURL = try container.decode(URL.self, forKey: .videoURL)
         transcriptionLocale = try container.decode(String.self, forKey: .transcriptionLocale)
+        // Default language1 to transcription locale for backward compatibility
+        language1Locale = try container.decodeIfPresent(String.self, forKey: .language1Locale) ?? transcriptionLocale
         subtitleMode = try container.decode(SubtitleMode.self, forKey: .subtitleMode)
         translationTargetLocale = try container.decodeIfPresent(String.self, forKey: .translationTargetLocale)
         subtitleLayout = try container.decodeIfPresent(SubtitleLayout.self, forKey: .subtitleLayout) ?? .stacked
@@ -94,6 +100,7 @@ extension JobModel {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(videoURL, forKey: .videoURL)
         try container.encode(transcriptionLocale, forKey: .transcriptionLocale)
+        try container.encode(language1Locale, forKey: .language1Locale)
         try container.encode(subtitleMode, forKey: .subtitleMode)
         try container.encodeIfPresent(translationTargetLocale, forKey: .translationTargetLocale)
         try container.encode(subtitleLayout, forKey: .subtitleLayout)

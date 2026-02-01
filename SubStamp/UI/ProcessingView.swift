@@ -228,6 +228,17 @@ struct ProcessingView: View {
             if let session = translationSession {
                 orchestrator.start(job: job, translationSession: session)
             }
+        } else if job.language1Locale != job.transcriptionLocale {
+            // Single mode but Language 1 differs from Audio -> Primary Translation
+            if translationConfig == nil {
+                translationConfig = TranslationSession.Configuration(
+                    source: Locale.Language(identifier: job.transcriptionLocale),
+                    target: Locale.Language(identifier: job.language1Locale)
+                )
+            }
+            if let session = translationSession {
+                orchestrator.start(job: job, translationSession: session)
+            }
         } else {
             orchestrator.start(job: job, translationSession: nil)
         }

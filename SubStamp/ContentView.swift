@@ -179,6 +179,7 @@ struct ContentView: View {
         let job = JobModel(
             videoURL: selectedVideoURL,
             transcriptionLocale: transcriptionLocaleIdentifier,
+            language1Locale: language1Identifier,
             subtitleMode: subtitleMode,
             translationTargetLocale: language2Identifier,
             subtitleLayout: subtitleMode == .bilingual ? .stacked : .single,
@@ -212,8 +213,7 @@ struct ContentView: View {
         activeJob = job
         selectedVideoURL = job.videoURL
         transcriptionLocaleIdentifier = job.transcriptionLocale
-        // Derive language1 from transcription locale when resuming
-        language1Identifier = job.transcriptionLocale
+        language1Identifier = job.language1Locale
         language2Identifier = job.translationTargetLocale
 
         resumeTranscribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
