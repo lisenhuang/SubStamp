@@ -13,8 +13,10 @@ struct ProcessingView: View {
     var onCompleted: (URL) -> Void
     var onReview: (() -> Void)? = nil
 
-    @State private var translationConfig: TranslationSession.Configuration?
-    @State private var translationSession: TranslationSession?
+    @State private var translationConfig1: TranslationSession.Configuration?
+    @State private var translationConfig2: TranslationSession.Configuration?
+    @State private var translationSession1: TranslationSession?
+    @State private var translationSession2: TranslationSession?
     @State private var showCancelDialog = false
     @State private var backgroundTaskIdentifier: String?
     @State private var didResume = false
@@ -71,8 +73,12 @@ struct ProcessingView: View {
                 onCompleted(url)
             }
         }
-        .translationTask(translationConfig) { session in
-            translationSession = session
+        .translationTask(translationConfig1) { session in
+            translationSession1 = session
+            startPipelineIfNeeded()
+        }
+        .translationTask(translationConfig2) { session in
+            translationSession2 = session
             startPipelineIfNeeded()
         }
         .onReceive(orchestrator.$error) { error in
@@ -201,51 +207,134 @@ struct ProcessingView: View {
 
     private func startPipelineIfNeeded() {
         guard orchestrator.isRunning == false else { return }
+        
+        // Determine what translations are needed
+        let baseLocale = job.transcriptionLocale
+        let lang1NeedsTranslation = job.language1Locale != baseLocale
+        let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocale)
+        
         if let resumeTranscribed, didResume == false {
-            if job.subtitleMode == .bilingual, translationSession == nil {
-                translationConfig = TranslationSession.Configuration(
-                    source: Locale.Language(identifier: job.transcriptionLocale),
-                    target: Locale.Language(identifier: job.translationTargetLocale ?? "en")
+            // Resume case - configure sessions if needed
+            if job.subtitleMode == .bilingual {
+                // For bilingual resume, we may need up to 2 sessions
+                var needsSession1 = false
+                var needsSession2 = false
+                
+                if lang1NeedsTranslation && translationSession1 == nil {
+                    translationConfig1 = TranslationSession.Configuration(
+                        source: Locale.Language(identifier: baseLocale),
+                        target: Locale.Language(identifier: job.language1Locale)
+                    )
+                    needsSession1 = true
+                }
+                if lang2NeedsTranslation && translationSession2 == nil {
+                    translationConfig2 = TranslationSession.Configuration(
+                        source: Locale.Language(identifier: baseLocale),
+                        target: Locale.Language(identifier: job.translationTargetLocale!)
+                    )
+                    needsSession2 = true
+                }
+                
+                // Wait for sessions to be ready
+                if needsSession1 && translationSession1 == nil { return }
+                if needsSession2 && translationSession2 == nil { return }
+                
+                orchestrator.resume(
+                    job: job,
+                    translationSession1: translationSession1,
+                    translationSession2: translationSession2,
+                    transcribed: resumeTranscribed,
+                    translated: resumeTranslated
+                )
+            } else if lang1NeedsTranslation && translationSession1 == nil {
+                translationConfig1 = TranslationSession.Configuration(
+                    source: Locale.Language(identifier: baseLocale),
+                    target: Locale.Language(identifier: job.language1Locale)
                 )
                 return
+            } else {
+                orchestrator.resume(
+                    job: job,
+                    translationSession1: translationSession1,
+                    translationSession2: nil,
+                    transcribed: resumeTranscribed,
+                    translated: resumeTranslated
+                )
             }
-            orchestrator.resume(
-                job: job,
-                translationSession: translationSession,
-                transcribed: resumeTranscribed,
-                translated: resumeTranslated
-            )
             didResume = true
             return
         }
+        
+        // Fresh start case
         if job.subtitleMode == .bilingual {
-            if translationConfig == nil {
-                translationConfig = TranslationSession.Configuration(
-                    source: Locale.Language(identifier: job.transcriptionLocale),
-                    target: Locale.Language(identifier: job.translationTargetLocale ?? "en")
-                )
+            // Bilingual mode - may need up to 2 sessions
+            var needsSession1 = false
+            var needsSession2 = false
+            
+            if lang1NeedsTranslation {
+                if translationConfig1 == nil {
+                    translationConfig1 = TranslationSession.Configuration(
+                        source: Locale.Language(identifier: baseLocale),
+                        target: Locale.Language(identifier: job.language1Locale)
+                    )
+                }
+                if translationSession1 == nil {
+                    needsSession1 = true
+                }
             }
-            if let session = translationSession {
-                orchestrator.start(job: job, translationSession: session)
+            
+            if lang2NeedsTranslation {
+                if translationConfig2 == nil {
+                    translationConfig2 = TranslationSession.Configuration(
+                        source: Locale.Language(identifier: baseLocale),
+                        target: Locale.Language(identifier: job.translationTargetLocale!)
+                    )
+                }
+                if translationSession2 == nil {
+                    needsSession2 = true
+                }
             }
-        } else if job.language1Locale != job.transcriptionLocale {
-            // Single mode but Language 1 differs from Audio -> Primary Translation
-            if translationConfig == nil {
-                translationConfig = TranslationSession.Configuration(
-                    source: Locale.Language(identifier: job.transcriptionLocale),
+            
+            // Wait for sessions to be ready
+            if lang1NeedsTranslation && translationSession1 == nil { return }
+            if lang2NeedsTranslation && translationSession2 == nil { return }
+            
+            orchestrator.start(
+                job: job,
+                translationSession1: translationSession1,
+                translationSession2: translationSession2
+            )
+        } else if lang1NeedsTranslation {
+            // Single mode with translation needed
+            if translationConfig1 == nil {
+                translationConfig1 = TranslationSession.Configuration(
+                    source: Locale.Language(identifier: baseLocale),
                     target: Locale.Language(identifier: job.language1Locale)
                 )
             }
-            if let session = translationSession {
-                orchestrator.start(job: job, translationSession: session)
+            if let session = translationSession1 {
+                orchestrator.start(
+                    job: job,
+                    translationSession1: session,
+                    translationSession2: nil
+                )
             }
         } else {
-            orchestrator.start(job: job, translationSession: nil)
+            // No translation needed
+            orchestrator.start(
+                job: job,
+                translationSession1: nil,
+                translationSession2: nil
+            )
         }
     }
 
     private func restartPipeline() {
-        orchestrator.start(job: job, translationSession: translationSession)
+        orchestrator.start(
+            job: job,
+            translationSession1: translationSession1,
+            translationSession2: translationSession2
+        )
     }
 
     private func submitBackgroundTask() {

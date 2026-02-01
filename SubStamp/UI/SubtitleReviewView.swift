@@ -22,6 +22,17 @@ struct SubtitleReviewView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: AppSpacing.l) {
+                    HStack {
+                        Button {
+                            onBack()
+                        } label: {
+                            Label("Back", systemImage: "chevron.left")
+                                .font(AppTypography.bodyEmphasis)
+                                .foregroundStyle(AppColors.secondaryText)
+                        }
+                        Spacer()
+                    }
+
                     VideoPlayer(player: player)
                         .frame(height: 220)
                         .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
@@ -94,13 +105,8 @@ struct SubtitleReviewView: View {
                             .stroke(AppColors.cardBorder, lineWidth: 1)
                     )
 
-                    HStack(spacing: AppSpacing.s) {
-                        PrimaryButton(title: "Continue to export", systemImage: "arrow.right.circle") {
-                            onContinue()
-                        }
-                        PrimaryButton(title: "Back", systemImage: "chevron.left") {
-                            onBack()
-                        }
+                    PrimaryButton(title: "Continue to export", systemImage: "arrow.right.circle") {
+                        onContinue()
                     }
                 }
                 .padding(AppSpacing.l)

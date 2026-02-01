@@ -105,9 +105,10 @@ struct ContentView: View {
                         style: styleBinding,
                         videoURL: videoURL,
                         translationTarget: translationTargetLocale,
-                        sourceLocaleIdentifier: transcriptionLocaleIdentifier,
+                        sourceLocaleIdentifier: language1Identifier,
                         onContinue: {
                             orchestrator.continueAfterReview()
+                            step = .processing
                         },
                         onBack: {
                             step = .processing
