@@ -26,11 +26,14 @@ final class TranscriptionService {
         
         // Get supported locales and find a matching one
         let supportedLocales = await SpeechTranscriber.supportedLocales
-        AppLog.append("Supported locales count: \(supportedLocales.count)")
+        let installedLocales = await SpeechTranscriber.installedLocales
+        AppLog.append("[LOCALE] Supported: \(supportedLocales.count), Installed: \(installedLocales.count)")
+        AppLog.append("[LOCALE] Installed locale IDs: \(installedLocales.map { $0.identifier }.joined(separator: ", "))")
         
         // Find the best matching locale from supported locales
         let selectedLocale = findBestMatchingLocale(desired: locale, from: supportedLocales)
-        AppLog.append("Requested locale: \(locale.identifier), Selected locale: \(selectedLocale.identifier)")
+        let isInstalled = installedLocales.contains { $0.identifier == selectedLocale.identifier }
+        AppLog.append("[LOCALE] Requested: \(locale.identifier), Selected: \(selectedLocale.identifier), Installed: \(isInstalled)")
         
         // Step 2: Create transcriber with validated locale
         let transcriber = SpeechTranscriber(
@@ -56,42 +59,70 @@ final class TranscriptionService {
         }
         
         // Step 4: Extract audio from video
-        let audioURL = try await extractAudio(from: asset, timeRange: timeRange)
+        let rawAudioURL = try await extractAudioAsWav(from: asset, timeRange: timeRange)
         
-        // Step 5: Create analyzer and audio file
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        // Step 5: Convert audio to format compatible with SpeechAnalyzer
+        // SpeechAnalyzer works best with specific formats - let's query what it wants
+        let requiredFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: [transcriber],
+            considering: nil
+        )
+        if let fmt = requiredFormat {
+            AppLog.append("[FORMAT] Required: \(fmt.sampleRate) Hz, \(fmt.channelCount) ch, \(fmt.commonFormat.rawValue)")
+        } else {
+            AppLog.append("[FORMAT] Required: nil (will use source format)")
+        }
+        
+        // Convert audio to compatible format if needed
+        let audioURL: URL
+        if let format = requiredFormat {
+            AppLog.append("[CONVERT] Starting audio format conversion...")
+            audioURL = try await convertAudioFile(from: rawAudioURL, to: format)
+            try? FileManager.default.removeItem(at: rawAudioURL)
+            AppLog.append("[CONVERT] Conversion complete")
+        } else {
+            audioURL = rawAudioURL
+            AppLog.append("[CONVERT] No conversion needed, using source format")
+        }
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        
         let duration = timeRange?.duration ?? asset.duration
-
+        
+        // Step 6: Open audio file and verify
         let audioFile: AVAudioFile
         do {
             audioFile = try AVAudioFile(forReading: audioURL)
         } catch {
-            try? FileManager.default.removeItem(at: audioURL)
             AppLog.append("Failed to open audio file: \(error.localizedDescription)")
             throw SubStampError.speechAnalyzerError(underlying: error)
         }
         
         let frameCount = audioFile.length
         guard frameCount > 0 else {
-            try? FileManager.default.removeItem(at: audioURL)
             throw SubStampError.speechAnalyzerError(underlying: NSError(
                 domain: "SubStamp",
                 code: -10,
-                userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples. The video may have no audible track or export failed."]
+                userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples."]
             ))
         }
         
-        // Log audio file details for debugging
         let format = audioFile.processingFormat
-        AppLog.append("Audio file ready: \(frameCount) frames, \(format.sampleRate) Hz, \(format.channelCount) channels, format: \(format)")
+        let durationSecs = Double(frameCount) / format.sampleRate
+        AppLog.append("[AUDIO] Final file: \(frameCount) frames, \(format.sampleRate) Hz, \(format.channelCount) ch")
+        AppLog.append("[AUDIO] Duration: \(String(format: "%.2f", durationSecs))s, Format: \(format.commonFormat.rawValue), Interleaved: \(format.isInterleaved)")
+        AppLog.append("[AUDIO] File URL: \(audioURL.lastPathComponent)")
         
-        // Step 6: Start the speech analyzer
+        // Step 7: Create analyzer and start with audio file
+        AppLog.append("[ANALYZER] Creating SpeechAnalyzer with SpeechTranscriber module...")
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        
         do {
+            AppLog.append("[ANALYZER] Calling start(inputAudioFile:finishAfterFile:true)...")
             try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
+            AppLog.append("[ANALYZER] start() returned successfully, waiting for results...")
         } catch {
-            try? FileManager.default.removeItem(at: audioURL)
-            AppLog.append("SpeechAnalyzer failed to start: \(error.localizedDescription)")
-            AppLog.append(error: error)
+            AppLog.append("[ANALYZER] start() FAILED: \(error.localizedDescription)")
+            AppLog.append("[ANALYZER] Error type: \(type(of: error)), Full error: \(error)")
             throw SubStampError.speechAnalyzerError(underlying: error)
         }
 
@@ -99,11 +130,18 @@ final class TranscriptionService {
         var cues: [SubtitleCue] = []
         var processingError: Error?
         
+        AppLog.append("[RESULTS] Starting to iterate transcriber.results...")
+        var resultCount = 0
         do {
             for try await result in transcriber.results {
+                resultCount += 1
                 let rawText = String(result.text.characters)
                 let cleaned = normalizeText(rawText)
-                guard !cleaned.isEmpty else { continue }
+                AppLog.append("[RESULT #\(resultCount)] Raw: '\(rawText.prefix(50))...' at \(result.range.start.seconds)s-\(result.range.end.seconds)s")
+                guard !cleaned.isEmpty else { 
+                    AppLog.append("[RESULT #\(resultCount)] Skipped (empty after cleaning)")
+                    continue 
+                }
                 let timeRange = result.range
                 let start = timeRange.start
                 let end = timeRange.end
@@ -114,10 +152,11 @@ final class TranscriptionService {
                 let progress = duration.seconds > 0 ? min(1.0, end.seconds / duration.seconds) : 0
                 progressHandler(progress, cues.count)
             }
+            AppLog.append("[RESULTS] Iteration completed normally, got \(resultCount) results, \(cues.count) cues")
         } catch {
             processingError = error
-            AppLog.append("SpeechAnalyzer: Input loop ending with error: \(error.localizedDescription)")
-            AppLog.append(error: error)
+            AppLog.append("[RESULTS] Iteration FAILED after \(resultCount) results: \(error.localizedDescription)")
+            AppLog.append("[RESULTS] Error type: \(type(of: error)), Full: \(error)")
         }
         
         // Clean up the audio file now that processing is complete
@@ -126,10 +165,10 @@ final class TranscriptionService {
         // Handle any errors that occurred during processing
         if let error = processingError {
             if cues.isEmpty {
+                AppLog.append("[ERROR] No cues captured, throwing error")
                 throw SubStampError.speechAnalyzerError(underlying: error)
             }
-            // Log but continue with partial results
-            AppLog.append("Continuing with \(cues.count) partial cues after speech analyzer error")
+            AppLog.append("[RECOVERY] Continuing with \(cues.count) partial cues despite error")
         }
 
         AppLog.append("Transcription completed: \(cues.count) cues")
@@ -175,41 +214,240 @@ final class TranscriptionService {
         return desired
     }
 
-    private func extractAudio(from asset: AVAsset, timeRange: CMTimeRange?) async throws -> URL {
-        guard asset.tracks(withMediaType: .audio).isEmpty == false else {
+    private func extractAudioAsWav(from asset: AVAsset, timeRange: CMTimeRange?) async throws -> URL {
+        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
             throw SubStampError.noAudioTrack
         }
 
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("substamp_audio_\(UUID().uuidString)")
-            .appendingPathExtension("m4a")
-
-        if let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) {
-            exporter.outputURL = outputURL
-            exporter.outputFileType = .m4a
-            exporter.timeRange = timeRange ?? CMTimeRange(start: .zero, duration: asset.duration)
-            try await export(exporter)
-            return outputURL
-        } else {
-            throw SubStampError.exportFailed(underlying: NSError(domain: "SubStamp", code: -1))
+            .appendingPathExtension("wav")
+        
+        // Configure reader with time range
+        let reader: AVAssetReader
+        do {
+            reader = try AVAssetReader(asset: asset)
+        } catch {
+            AppLog.append("Failed to create AVAssetReader: \(error.localizedDescription)")
+            throw SubStampError.exportFailed(underlying: error)
         }
+        
+        if let range = timeRange {
+            reader.timeRange = range
+        }
+        
+        // Output settings: Mono, 16kHz, 16-bit Linear PCM (optimal for speech recognition)
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16000.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ]
+        
+        let trackOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
+        trackOutput.alwaysCopiesSampleData = false
+        
+        guard reader.canAdd(trackOutput) else {
+            AppLog.append("Cannot add track output to reader")
+            throw SubStampError.exportFailed(underlying: NSError(
+                domain: "SubStamp",
+                code: -4,
+                userInfo: [NSLocalizedDescriptionKey: "Cannot configure audio reader"]
+            ))
+        }
+        reader.add(trackOutput)
+        
+        // Start reading
+        guard reader.startReading() else {
+            let error = reader.error ?? NSError(domain: "SubStamp", code: -5)
+            AppLog.append("Failed to start reading: \(error.localizedDescription)")
+            throw SubStampError.exportFailed(underlying: error)
+        }
+        
+        // Create WAV file with proper header
+        let audioFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: true
+        )!
+        
+        let audioFile: AVAudioFile
+        do {
+            audioFile = try AVAudioFile(
+                forWriting: outputURL,
+                settings: audioFormat.settings,
+                commonFormat: .pcmFormatInt16,
+                interleaved: true
+            )
+        } catch {
+            AppLog.append("Failed to create output audio file: \(error.localizedDescription)")
+            throw SubStampError.exportFailed(underlying: error)
+        }
+        
+        // Read and write samples
+        var totalFrames: Int64 = 0
+        while let sampleBuffer = trackOutput.copyNextSampleBuffer() {
+            guard CMSampleBufferDataIsReady(sampleBuffer) else { continue }
+            
+            let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
+            guard numSamples > 0, let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
+                continue
+            }
+            
+            var length = 0
+            var dataPointer: UnsafeMutablePointer<Int8>?
+            let status = CMBlockBufferGetDataPointer(
+                blockBuffer,
+                atOffset: 0,
+                lengthAtOffsetOut: nil,
+                totalLengthOut: &length,
+                dataPointerOut: &dataPointer
+            )
+            
+            guard status == kCMBlockBufferNoErr, let pointer = dataPointer else {
+                continue
+            }
+            
+            // Create PCM buffer and write to file
+            let frameCount = AVAudioFrameCount(numSamples)
+            guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else {
+                continue
+            }
+            
+            pcmBuffer.frameLength = frameCount
+            if let int16Data = pcmBuffer.int16ChannelData {
+                memcpy(int16Data[0], pointer, length)
+            }
+            
+            do {
+                try audioFile.write(from: pcmBuffer)
+                totalFrames += Int64(frameCount)
+            } catch {
+                AppLog.append("Error writing audio buffer: \(error.localizedDescription)")
+            }
+        }
+        
+        // Check if reading completed successfully
+        if reader.status == .failed {
+            let error = reader.error ?? NSError(domain: "SubStamp", code: -6)
+            try? FileManager.default.removeItem(at: outputURL)
+            AppLog.append("Audio reading failed: \(error.localizedDescription)")
+            throw SubStampError.exportFailed(underlying: error)
+        }
+        
+        AppLog.append("Audio extracted: \(totalFrames) frames at 16kHz mono PCM")
+        
+        guard totalFrames > 0 else {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw SubStampError.speechAnalyzerError(underlying: NSError(
+                domain: "SubStamp",
+                code: -7,
+                userInfo: [NSLocalizedDescriptionKey: "No audio samples extracted from video"]
+            ))
+        }
+        
+        return outputURL
     }
-
-    private func export(_ exporter: AVAssetExportSession) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            exporter.exportAsynchronously {
-                switch exporter.status {
-                case .completed:
-                    continuation.resume()
-                case .failed:
-                    continuation.resume(throwing: exporter.error ?? SubStampError.exportFailed(underlying: NSError(domain: "SubStamp", code: -2)))
-                case .cancelled:
-                    continuation.resume(throwing: SubStampError.backgroundTaskCancelled)
-                default:
-                    continuation.resume(throwing: SubStampError.exportFailed(underlying: NSError(domain: "SubStamp", code: -3)))
+    
+    /// Convert audio file to the format required by SpeechAnalyzer
+    private func convertAudioFile(from sourceURL: URL, to targetFormat: AVAudioFormat) async throws -> URL {
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("substamp_converted_\(UUID().uuidString)")
+            .appendingPathExtension("caf")
+        
+        // Open source file
+        let sourceFile: AVAudioFile
+        do {
+            sourceFile = try AVAudioFile(forReading: sourceURL)
+        } catch {
+            AppLog.append("Failed to open source audio for conversion: \(error.localizedDescription)")
+            throw SubStampError.exportFailed(underlying: error)
+        }
+        
+        let sourceFormat = sourceFile.processingFormat
+        AppLog.append("Converting audio: \(sourceFormat.sampleRate) Hz \(sourceFormat.channelCount)ch -> \(targetFormat.sampleRate) Hz \(targetFormat.channelCount)ch")
+        
+        // Create converter
+        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+            AppLog.append("Could not create audio converter - using source format")
+            return sourceURL
+        }
+        
+        // Create output file
+        let outputFile: AVAudioFile
+        do {
+            outputFile = try AVAudioFile(
+                forWriting: outputURL,
+                settings: targetFormat.settings,
+                commonFormat: targetFormat.commonFormat,
+                interleaved: targetFormat.isInterleaved
+            )
+        } catch {
+            AppLog.append("Failed to create output audio file: \(error.localizedDescription)")
+            throw SubStampError.exportFailed(underlying: error)
+        }
+        
+        // Convert in chunks
+        let bufferSize: AVAudioFrameCount = 4096
+        var totalFrames: Int64 = 0
+        
+        while sourceFile.framePosition < sourceFile.length {
+            let remainingFrames = AVAudioFrameCount(sourceFile.length - sourceFile.framePosition)
+            let framesToRead = min(bufferSize, remainingFrames)
+            
+            guard let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: framesToRead) else {
+                continue
+            }
+            
+            do {
+                try sourceFile.read(into: sourceBuffer, frameCount: framesToRead)
+            } catch {
+                AppLog.append("Error reading source audio: \(error.localizedDescription)")
+                continue
+            }
+            
+            // Calculate output buffer size based on sample rate ratio
+            let ratio = targetFormat.sampleRate / sourceFormat.sampleRate
+            let outputCapacity = AVAudioFrameCount(Double(framesToRead) * ratio * 1.2) // 20% buffer
+            
+            guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputCapacity) else {
+                continue
+            }
+            
+            // Use simple convert method
+            do {
+                try converter.convert(to: outputBuffer, from: sourceBuffer)
+            } catch {
+                AppLog.append("Conversion error: \(error.localizedDescription)")
+                continue
+            }
+            
+            if outputBuffer.frameLength > 0 {
+                do {
+                    try outputFile.write(from: outputBuffer)
+                    totalFrames += Int64(outputBuffer.frameLength)
+                } catch {
+                    AppLog.append("Error writing converted audio: \(error.localizedDescription)")
                 }
             }
         }
+        
+        AppLog.append("Audio conversion complete: \(totalFrames) frames at \(targetFormat.sampleRate) Hz")
+        
+        guard totalFrames > 0 else {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw SubStampError.exportFailed(underlying: NSError(
+                domain: "SubStamp",
+                code: -8,
+                userInfo: [NSLocalizedDescriptionKey: "Audio conversion produced no output"]
+            ))
+        }
+        
+        return outputURL
     }
 
     private func postProcess(cues: [SubtitleCue]) -> [SubtitleCue] {
