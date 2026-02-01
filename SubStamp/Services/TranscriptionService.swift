@@ -14,16 +14,51 @@ final class TranscriptionService {
         timeRange: CMTimeRange? = nil,
         progressHandler: @escaping (Double, Int) -> Void
     ) async throws -> Result {
-        let audioURL = try await extractAudio(from: asset, timeRange: timeRange)
-        // Note: We defer file cleanup until AFTER all processing is complete
-        // to ensure the audio file remains valid during SpeechAnalyzer processing
+        // Step 1: Validate SpeechTranscriber availability and locale
+        guard SpeechTranscriber.isAvailable else {
+            AppLog.append("SpeechTranscriber is not available on this device")
+            throw SubStampError.speechAnalyzerError(underlying: NSError(
+                domain: "SubStamp",
+                code: -100,
+                userInfo: [NSLocalizedDescriptionKey: "Speech transcription is not available on this device."]
+            ))
+        }
         
+        // Get supported locales and find a matching one
+        let supportedLocales = await SpeechTranscriber.supportedLocales
+        AppLog.append("Supported locales count: \(supportedLocales.count)")
+        
+        // Find the best matching locale from supported locales
+        let selectedLocale = findBestMatchingLocale(desired: locale, from: supportedLocales)
+        AppLog.append("Requested locale: \(locale.identifier), Selected locale: \(selectedLocale.identifier)")
+        
+        // Step 2: Create transcriber with validated locale
         let transcriber = SpeechTranscriber(
-            locale: locale,
+            locale: selectedLocale,
             transcriptionOptions: [],
             reportingOptions: [],
             attributeOptions: [.audioTimeRange]
         )
+        
+        // Step 3: Ensure speech assets are installed via AssetInventory
+        AppLog.append("Checking speech asset installation...")
+        do {
+            if let installRequest = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                AppLog.append("Installing speech assets for locale: \(selectedLocale.identifier)")
+                try await installRequest.downloadAndInstall()
+                AppLog.append("Speech assets installed successfully")
+            } else {
+                AppLog.append("Speech assets already installed for locale: \(selectedLocale.identifier)")
+            }
+        } catch {
+            AppLog.append("Speech asset installation failed: \(error.localizedDescription)")
+            throw SubStampError.assetInstallFailed(locale: selectedLocale.identifier)
+        }
+        
+        // Step 4: Extract audio from video
+        let audioURL = try await extractAudio(from: asset, timeRange: timeRange)
+        
+        // Step 5: Create analyzer and audio file
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let duration = timeRange?.duration ?? asset.duration
 
@@ -31,7 +66,6 @@ final class TranscriptionService {
         do {
             audioFile = try AVAudioFile(forReading: audioURL)
         } catch {
-            // Clean up the audio file if we can't read it
             try? FileManager.default.removeItem(at: audioURL)
             AppLog.append("Failed to open audio file: \(error.localizedDescription)")
             throw SubStampError.speechAnalyzerError(underlying: error)
@@ -40,12 +74,18 @@ final class TranscriptionService {
         let frameCount = audioFile.length
         guard frameCount > 0 else {
             try? FileManager.default.removeItem(at: audioURL)
-            throw SubStampError.speechAnalyzerError(underlying: NSError(domain: "SubStamp", code: -10, userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples. The video may have no audible track or export failed."]))
+            throw SubStampError.speechAnalyzerError(underlying: NSError(
+                domain: "SubStamp",
+                code: -10,
+                userInfo: [NSLocalizedDescriptionKey: "Extracted audio has no samples. The video may have no audible track or export failed."]
+            ))
         }
         
         // Log audio file details for debugging
-        AppLog.append("Audio file ready: \(frameCount) frames, format: \(audioFile.processingFormat)")
+        let format = audioFile.processingFormat
+        AppLog.append("Audio file ready: \(frameCount) frames, \(format.sampleRate) Hz, \(format.channelCount) channels, format: \(format)")
         
+        // Step 6: Start the speech analyzer
         do {
             try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
         } catch {
@@ -55,6 +95,7 @@ final class TranscriptionService {
             throw SubStampError.speechAnalyzerError(underlying: error)
         }
 
+        // Step 7: Process transcription results
         var cues: [SubtitleCue] = []
         var processingError: Error?
         
@@ -75,8 +116,6 @@ final class TranscriptionService {
             }
         } catch {
             processingError = error
-            // SpeechAnalyzer can fail with Foundation._GenericObjCError.nilError
-            // when the speech services crash or are interrupted (XPC invalidation)
             AppLog.append("SpeechAnalyzer: Input loop ending with error: \(error.localizedDescription)")
             AppLog.append(error: error)
         }
@@ -93,8 +132,47 @@ final class TranscriptionService {
             AppLog.append("Continuing with \(cues.count) partial cues after speech analyzer error")
         }
 
+        AppLog.append("Transcription completed: \(cues.count) cues")
         let processed = postProcess(cues: cues)
         return Result(cues: processed, duration: duration)
+    }
+    
+    /// Find the best matching locale from supported locales
+    private func findBestMatchingLocale(desired: Locale, from supported: [Locale]) -> Locale {
+        // First, try exact match
+        if supported.contains(where: { $0.identifier == desired.identifier }) {
+            return desired
+        }
+        
+        // Try matching with BCP47 identifier
+        let desiredBCP47 = desired.identifier(.bcp47)
+        if let match = supported.first(where: { $0.identifier(.bcp47) == desiredBCP47 }) {
+            return match
+        }
+        
+        // Try matching just the language code (e.g., "en" from "en_US" or "en-US")
+        let desiredLanguage = desired.language.languageCode?.identifier ?? String(desired.identifier.prefix(2))
+        if let match = supported.first(where: { 
+            $0.language.languageCode?.identifier == desiredLanguage
+        }) {
+            AppLog.append("Using fallback locale: \(match.identifier) for requested: \(desired.identifier)")
+            return match
+        }
+        
+        // Last resort: use English if available, otherwise first supported locale
+        if let english = supported.first(where: { $0.identifier.hasPrefix("en") }) {
+            AppLog.append("No matching locale found, falling back to English: \(english.identifier)")
+            return english
+        }
+        
+        if let first = supported.first {
+            AppLog.append("No matching locale found, falling back to first supported: \(first.identifier)")
+            return first
+        }
+        
+        // If nothing is available, return the original (will likely fail)
+        AppLog.append("WARNING: No supported locales found, using original: \(desired.identifier)")
+        return desired
     }
 
     private func extractAudio(from asset: AVAsset, timeRange: CMTimeRange?) async throws -> URL {
