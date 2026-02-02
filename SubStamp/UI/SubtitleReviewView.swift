@@ -28,7 +28,6 @@ struct SubtitleReviewView: View {
                 VideoPlayer(player: player)
                     .frame(height: 220)
                     .background(Color.black)
-                    .ignoresSafeArea(edges: .top)
                 
                 ScrollView {
                     VStack(spacing: AppSpacing.l) {
@@ -43,95 +42,98 @@ struct SubtitleReviewView: View {
                             Spacer()
                         }
 
-                    VStack(alignment: .leading, spacing: AppSpacing.s) {
-                        Text("Subtitle style")
-                            .font(AppTypography.bodyEmphasis)
-                        Picker("Font size", selection: $style.fontSize) {
-                            ForEach(SubtitleFontSize.allCases) { size in
-                                Text(size.rawValue.capitalized).tag(size)
+                        VStack(alignment: .leading, spacing: AppSpacing.s) {
+                            Text("Subtitle style")
+                                .font(AppTypography.bodyEmphasis)
+                            Picker("Font size", selection: $style.fontSize) {
+                                ForEach(SubtitleFontSize.allCases) { size in
+                                    Text(size.rawValue.capitalized).tag(size)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            Picker("Background", selection: $style.background) {
+                                ForEach(SubtitleBackground.allCases) { background in
+                                    Text(background.rawValue.capitalized).tag(background)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            Picker("Secondary style", selection: $style.secondaryStyle) {
+                                ForEach(SubtitleSecondaryStyle.allCases) { style in
+                                    Text(style.rawValue.capitalized).tag(style)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            Toggle("Text shadow", isOn: $style.usesShadow)
+                            Picker("Position", selection: $style.position) {
+                                ForEach(SubtitlePosition.allCases) { pos in
+                                    Text(pos.rawValue.capitalized).tag(pos)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            HStack {
+                                Text("Padding")
+                                Slider(value: $style.padding, in: 4...18, step: 1)
+                                Text("\(Int(style.padding))")
+                                    .frame(width: 32)
+                                    .font(AppTypography.caption)
                             }
                         }
-                        .pickerStyle(.segmented)
-                        Picker("Background", selection: $style.background) {
-                            ForEach(SubtitleBackground.allCases) { background in
-                                Text(background.rawValue.capitalized).tag(background)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        Picker("Secondary style", selection: $style.secondaryStyle) {
-                            ForEach(SubtitleSecondaryStyle.allCases) { style in
-                                Text(style.rawValue.capitalized).tag(style)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        Toggle("Text shadow", isOn: $style.usesShadow)
-                        Picker("Position", selection: $style.position) {
-                            ForEach(SubtitlePosition.allCases) { pos in
-                                Text(pos.rawValue.capitalized).tag(pos)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        HStack {
-                            Text("Padding")
-                            Slider(value: $style.padding, in: 4...18, step: 1)
-                            Text("\(Int(style.padding))")
-                                .frame(width: 32)
-                                .font(AppTypography.caption)
-                        }
-                    }
-                    .font(AppTypography.caption)
-                    .padding()
-                    .background(AppColors.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                            .stroke(AppColors.cardBorder, lineWidth: 1)
-                    )
+                        .font(AppTypography.caption)
+                        .padding()
+                        .background(AppColors.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                                .stroke(AppColors.cardBorder, lineWidth: 1)
+                        )
 
-                    // Subtitle cues list (using ForEach instead of List for better scrolling)
-                    VStack(spacing: AppSpacing.s) {
-                        ForEach(Array(cues.indices), id: \.self) { index in
-                            SubtitleCueRow(
-                                cue: $cues[index],
-                                showSecondary: mode == .bilingual,
-                                onSplit: { splitCue(at: index) },
-                                onMergeNext: { mergeCue(at: index) },
-                                onShiftBack: { shiftCue(at: index, by: -0.1) },
-                                onShiftForward: { shiftCue(at: index, by: 0.1) },
-                                onPreview: { previewCue(cues[index]) },
-                                onRetryTranslation: { retryTranslation(at: index) }
-                            )
-                            .focused($isTextFieldFocused)
+                        // Subtitle cues list (using ForEach instead of List for better scrolling)
+                        VStack(spacing: AppSpacing.s) {
+                            ForEach(Array(cues.indices), id: \.self) { index in
+                                SubtitleCueRow(
+                                    cue: $cues[index],
+                                    showSecondary: mode == .bilingual,
+                                    onSplit: { splitCue(at: index) },
+                                    onMergeNext: { mergeCue(at: index) },
+                                    onShiftBack: { shiftCue(at: index, by: -0.1) },
+                                    onShiftForward: { shiftCue(at: index, by: 0.1) },
+                                    onPreview: { previewCue(cues[index]) },
+                                    onRetryTranslation: { retryTranslation(at: index) }
+                                )
+                                .focused($isTextFieldFocused)
+                            }
                         }
-                    }
-                    .padding()
-                    .background(AppColors.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                            .stroke(AppColors.cardBorder, lineWidth: 1)
-                    )
+                        .padding()
+                        .background(AppColors.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                                .stroke(AppColors.cardBorder, lineWidth: 1)
+                        )
 
-                    PrimaryButton(title: "Continue to export", systemImage: "arrow.right.circle") {
-                        onContinue()
-                    }
+                        PrimaryButton(title: "Continue to export", systemImage: "arrow.right.circle") {
+                            onContinue()
+                        }
 
-                    Button(role: .destructive) {
-                        showAbandonConfirmation = true
-                    } label: {
-                        Text("Abandon and restart")
-                            .font(AppTypography.bodyEmphasis)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, AppSpacing.m)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
-                                    .stroke(AppColors.error, lineWidth: 1)
-                            )
+                        Button(role: .destructive) {
+                            showAbandonConfirmation = true
+                        } label: {
+                            Text("Abandon and restart")
+                                .font(AppTypography.bodyEmphasis)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, AppSpacing.m)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                                        .stroke(AppColors.error, lineWidth: 1)
+                                )
+                        }
+                        .padding(.top, AppSpacing.m)
                     }
-                    .padding(.top, AppSpacing.m)
+                    .padding([.horizontal, .bottom], AppSpacing.l)
                 }
-                .padding(AppSpacing.l)
             }
+            .ignoresSafeArea(.all, edges: .top)
+            .toolbar(.hidden, for: .navigationBar)
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture {
                 isTextFieldFocused = false
@@ -144,7 +146,6 @@ struct SubtitleReviewView: View {
                     }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 player = AVPlayer(url: videoURL)
                 if let target = translationTarget {
@@ -156,24 +157,23 @@ struct SubtitleReviewView: View {
                 player?.pause()
                 player = nil
             }
-        }
-        .translationTask(translationConfig) { session in
-            translationSession = session
-        }
-        .confirmationDialog(
-            "Abandon this job?",
-            isPresented: $showAbandonConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Abandon and restart", role: .destructive) {
-                onAbandon()
+            .translationTask(translationConfig) { session in
+                translationSession = session
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("All progress on this video will be lost.")
+            .confirmationDialog(
+                "Abandon this job?",
+                isPresented: $showAbandonConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Abandon and restart", role: .destructive) {
+                    onAbandon()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("All progress on this video will be lost.")
+            }
         }
     }
-}
 
     private func splitCue(at index: Int) {
         guard cues.indices.contains(index) else { return }
