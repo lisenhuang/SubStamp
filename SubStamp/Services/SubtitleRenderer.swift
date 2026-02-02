@@ -232,12 +232,17 @@ final class SubtitleRenderer {
     }
 
     private func attributedText(text: String, font: UIFont, lineSpacing: Double) -> NSAttributedString {
+        let cleanedLines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let cleanedText = cleanedLines.joined(separator: "\n")
+        
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineSpacing = lineSpacing
         paragraph.lineBreakMode = .byWordWrapping
         return NSAttributedString(
-            string: text,
+            string: cleanedText,
             attributes: [
                 .font: font,
                 .foregroundColor: UIColor.white,

@@ -115,8 +115,10 @@ struct VideoPickerView: View {
                                 .font(AppTypography.caption)
                                 .foregroundStyle(AppColors.warning)
                         }
-                        Toggle("Test on first 1 minute", isOn: $isTestClip)
-                            .font(AppTypography.caption)
+                        if metadata.duration > 60 {
+                            Toggle("Test on first 1 minute", isOn: $isTestClip)
+                                .font(AppTypography.caption)
+                        }
                     }
                     .font(AppTypography.body)
                     .padding()

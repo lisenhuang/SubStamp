@@ -21,22 +21,24 @@ struct SubtitleReviewView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: AppSpacing.l) {
-                    HStack {
-                        Button {
-                            onBack()
-                        } label: {
-                            Label("Back", systemImage: "chevron.left")
-                                .font(AppTypography.bodyEmphasis)
-                                .foregroundStyle(AppColors.secondaryText)
+            VStack(spacing: 0) {
+                // Fixed/Sticky Video Player
+                VideoPlayer(player: player)
+                    .frame(height: 220)
+                    .background(Color.black)
+                
+                ScrollView {
+                    VStack(spacing: AppSpacing.l) {
+                        HStack {
+                            Button {
+                                onBack()
+                            } label: {
+                                Label("Back", systemImage: "chevron.left")
+                                    .font(AppTypography.bodyEmphasis)
+                                    .foregroundStyle(AppColors.secondaryText)
+                            }
+                            Spacer()
                         }
-                        Spacer()
-                    }
-
-                    VideoPlayer(player: player)
-                        .frame(height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
 
                     VStack(alignment: .leading, spacing: AppSpacing.s) {
                         Text("Subtitle style")
@@ -142,6 +144,7 @@ struct SubtitleReviewView: View {
         .translationTask(translationConfig) { session in
             translationSession = session
         }
+        }
     }
 
     private func splitCue(at index: Int) {
@@ -195,14 +198,20 @@ struct SubtitleReviewView: View {
 
     private func previewCue(_ cue: SubtitleCue) {
         guard let player else { return }
-        let startTime = max(0, cue.start.seconds - 1)
-        player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+        
+        // Use zero tolerance for precise seeking to the cue start
+        player.seek(to: cue.start, toleranceBefore: .zero, toleranceAfter: .zero)
         player.play()
         isPlayingPreview = true
+        
+        let durationSeconds = max(0.2, cue.end.seconds - cue.start.seconds)
         Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            player.pause()
-            isPlayingPreview = false
+            // Wait for the exact duration of the cue
+            try? await Task.sleep(nanoseconds: UInt64(durationSeconds * 1_000_000_000))
+            await MainActor.run {
+                player.pause()
+                isPlayingPreview = false
+            }
         }
     }
 
