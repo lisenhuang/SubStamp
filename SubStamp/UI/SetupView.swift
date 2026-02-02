@@ -103,11 +103,13 @@ struct SetupView: View {
 
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                subtitleMode: subtitleMode,
-                translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
+                language1Locale: Locale.Language(identifier: language1Identifier),
+                language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
+                subtitleMode: subtitleMode
             )
-            await assetManager.check()
+            Task { await assetManager.check() }
         }
+        .background(AppColors.background)
         .translationTask(translationConfig) { session in
             guard shouldPrepareTranslation else { return }
             Task {
@@ -118,24 +120,27 @@ struct SetupView: View {
         .onChange(of: transcriptionLocaleIdentifier) { _, newValue in
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: newValue),
-                subtitleMode: subtitleMode,
-                translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
+                language1Locale: Locale.Language(identifier: language1Identifier),
+                language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
+                subtitleMode: subtitleMode
             )
             Task { await assetManager.check() }
         }
-        .onChange(of: language1Identifier) { _, _ in
+        .onChange(of: language1Identifier) { _, newValue in
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                subtitleMode: subtitleMode,
-                translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
+                language1Locale: Locale.Language(identifier: newValue),
+                language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
+                subtitleMode: subtitleMode
             )
             Task { await assetManager.check() }
         }
         .onChange(of: language2Identifier) { _, newValue in
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                subtitleMode: subtitleMode,
-                translationTargetLocale: newValue.map { Locale.Language(identifier: $0) }
+                language1Locale: Locale.Language(identifier: language1Identifier),
+                language2Locale: newValue.map { Locale.Language(identifier: $0) },
+                subtitleMode: subtitleMode
             )
             Task { await assetManager.check() }
         }
@@ -237,7 +242,7 @@ struct SetupView: View {
             Text("Model readiness")
                 .font(AppTypography.bodyEmphasis)
             AssetStatusCard(title: "Speech assets", state: assetManager.speechAssetsState)
-            if subtitleMode == .bilingual {
+            if assetManager.language1Locale.minimalIdentifier != Locale.Language(identifier: assetManager.transcriptionLocale.identifier).minimalIdentifier || subtitleMode == .bilingual {
                 AssetStatusCard(title: "Translation model", state: assetManager.translationAssetsState)
             }
             if let warning = assetManager.lowStorageWarning {
@@ -261,16 +266,38 @@ struct SetupView: View {
             Task {
                 assetManager.configure(
                     transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                    subtitleMode: subtitleMode,
-                    translationTargetLocale: language2Identifier.map { Locale.Language(identifier: $0) }
+                    language1Locale: Locale.Language(identifier: language1Identifier),
+                    language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
+                    subtitleMode: subtitleMode
                 )
                 await assetManager.downloadSpeechAssets()
-                if subtitleMode == .bilingual, let lang2 = language2Identifier {
-                    shouldPrepareTranslation = true
-                    translationConfig = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: language1Identifier),
-                        target: Locale.Language(identifier: lang2)
-                    )
+                
+                // Determine which translation assets are actually missing
+                let availability = LanguageAvailability()
+                let sourceLang = Locale.Language(identifier: transcriptionLocaleIdentifier)
+                
+                // Check Language 1
+                let l1 = Locale.Language(identifier: language1Identifier)
+                if l1.minimalIdentifier != sourceLang.minimalIdentifier {
+                    let status = await availability.status(from: sourceLang, to: l1)
+                    if status == .supported {
+                        translationConfig = TranslationSession.Configuration(source: sourceLang, target: l1)
+                        shouldPrepareTranslation = true
+                        return
+                    }
+                }
+                
+                // Check Language 2
+                if let l2Identifier = language2Identifier {
+                    let l2 = Locale.Language(identifier: l2Identifier)
+                    if l2.minimalIdentifier != sourceLang.minimalIdentifier {
+                        let status = await availability.status(from: sourceLang, to: l2)
+                        if status == .supported {
+                            translationConfig = TranslationSession.Configuration(source: sourceLang, target: l2)
+                            shouldPrepareTranslation = true
+                            return
+                        }
+                    }
                 }
             }
         }

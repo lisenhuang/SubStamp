@@ -6,35 +6,37 @@ import Translation
 @MainActor
 final class AssetReadinessManager: ObservableObject {
     @Published var transcriptionLocale: Locale = .current
+    @Published var language1Locale: Locale.Language = Locale.Language(identifier: Locale.current.identifier)
+    @Published var language2Locale: Locale.Language?
     @Published var subtitleMode: SubtitleMode = .single
-    @Published var translationTargetLocale: Locale.Language?
 
     @Published var speechAssetsState: AssetState = .notInstalled
-    @Published var translationAssetsState: AssetState = .notInstalled
+    @Published var translationAssetsState: AssetState = .notInstalled // Combined state for all needed translation models
     @Published var lastError: SubStampError?
     @Published var lowStorageWarning: String?
 
     var isReadyToProceed: Bool {
         let speechReady = speechAssetsState == .ready
-        let translationReady: Bool
-        if subtitleMode == .bilingual {
-            translationReady = translationAssetsState == .ready
-        } else {
-            translationReady = true
-        }
+        let translationReady = translationAssetsState == .ready
         return speechReady && translationReady
     }
 
     func configure(
         transcriptionLocale: Locale,
-        subtitleMode: SubtitleMode,
-        translationTargetLocale: Locale.Language?
+        language1Locale: Locale.Language,
+        language2Locale: Locale.Language?,
+        subtitleMode: SubtitleMode
     ) {
-        let localeChanged = self.transcriptionLocale.identifier != transcriptionLocale.identifier
+        let transcriptionChanged = self.transcriptionLocale.identifier != transcriptionLocale.identifier
+        let lang1Changed = self.language1Locale.minimalIdentifier != language1Locale.minimalIdentifier
+        let lang2Changed = self.language2Locale?.minimalIdentifier != language2Locale?.minimalIdentifier
+        
         self.transcriptionLocale = transcriptionLocale
+        self.language1Locale = language1Locale
+        self.language2Locale = language2Locale
         self.subtitleMode = subtitleMode
-        self.translationTargetLocale = translationTargetLocale
-        if localeChanged {
+        
+        if transcriptionChanged || lang1Changed || lang2Changed {
             reset()
         }
     }
@@ -48,11 +50,27 @@ final class AssetReadinessManager: ObservableObject {
     func check() async {
         checkStorage()
         await checkSpeechAssets(for: transcriptionLocale)
-        guard subtitleMode == .bilingual, let target = translationTargetLocale else {
+        
+        // Find which translations are actually needed
+        var neededTargets: [Locale.Language] = []
+        let sourceLang = Locale.Language(identifier: transcriptionLocale.identifier)
+        
+        // If Lang 1 != Transcription Lang, we need Lang 1 assets
+        if language1Locale.minimalIdentifier != sourceLang.minimalIdentifier {
+            neededTargets.append(language1Locale)
+        }
+        
+        // If Lang 2 exists and != Transcription Lang, we need Lang 2 assets
+        if let l2 = language2Locale, l2.minimalIdentifier != sourceLang.minimalIdentifier {
+            neededTargets.append(l2)
+        }
+        
+        if neededTargets.isEmpty {
             translationAssetsState = .ready
             return
         }
-        await checkTranslationAssets(source: transcriptionLocale, target: target)
+        
+        await checkAllTranslationAssets(source: transcriptionLocale, targets: neededTargets)
     }
 
     func downloadSpeechAssets() async {
@@ -81,14 +99,10 @@ final class AssetReadinessManager: ObservableObject {
         }
         do {
             try await session.prepareTranslation()
-            // Verify the translation asset is actually ready
+            // Re-check everything
             await MainActor.run {
-                if let target = self.translationTargetLocale {
-                    Task {
-                        await self.checkTranslationAssets(source: self.transcriptionLocale, target: target)
-                    }
-                } else {
-                    self.translationAssetsState = .ready
+                Task {
+                    await self.check()
                 }
             }
         } catch {
@@ -120,21 +134,28 @@ final class AssetReadinessManager: ObservableObject {
         }
     }
 
-    private func checkTranslationAssets(source: Locale, target: Locale.Language) async {
+    private func checkAllTranslationAssets(source: Locale, targets: [Locale.Language]) async {
         let sourceLanguage = Locale.Language(identifier: source.identifier)
         let availability = LanguageAvailability()
-        let status = await availability.status(from: sourceLanguage, to: target)
-        switch status {
-        case .installed:
+        
+        var allReady = true
+        for target in targets {
+            let status = await availability.status(from: sourceLanguage, to: target)
+            if status != .installed {
+                allReady = false
+                if status == .supported {
+                    translationAssetsState = .notInstalled
+                } else {
+                    let targetLabel = target.languageCode?.identifier ?? String(describing: target)
+                    lastError = .unsupportedLanguagePair(from: source.identifier, to: targetLabel)
+                    translationAssetsState = .failed(message: "Language pair unsupported.")
+                    return
+                }
+            }
+        }
+        
+        if allReady {
             translationAssetsState = .ready
-        case .supported:
-            translationAssetsState = .notInstalled
-        case .unsupported:
-            let targetLabel = target.languageCode?.identifier ?? String(describing: target)
-            lastError = .unsupportedLanguagePair(from: source.identifier, to: targetLabel)
-            translationAssetsState = .failed(message: "Language pair unsupported.")
-        @unknown default:
-            translationAssetsState = .failed(message: "Unknown translation availability.")
         }
     }
 
