@@ -9,8 +9,8 @@ struct SetupView: View {
     @Binding var language2Identifier: String?
     var onContinue: () -> Void
 
-    @State private var supportedLocales: [Locale] = []
-    @State private var translationLanguages: [Locale.Language] = []
+    @State private var supportedLocales: [Locale] = [] // For Speech Transcription
+    @State private var translationLanguages: [Locale.Language] = [] // For Subtitles
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
@@ -44,26 +44,63 @@ struct SetupView: View {
             }
             .padding(AppSpacing.l)
         }
-        .background(AppColors.background)
         .task {
             speechAvailable = SpeechTranscriber.isAvailable
-            supportedLocales = await SpeechTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
+            
+            // 1. Fetch Speech locales
+            let speechLocales = await SpeechTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
+            
+            // 2. Fetch and Filter Translation languages using user's suggested probe method
             let availability = LanguageAvailability()
-            let languages = await availability.supportedLanguages
-            translationLanguages = languages.sorted { $0.minimalIdentifier < $1.minimalIdentifier }
+            let allSupported = await availability.supportedLanguages
+            let targetProbe = Locale.Language(identifier: "en-US")
+            
+            var validTranslationLanguages: [Locale.Language] = []
+            for source in allSupported {
+                let status = await availability.status(from: source, to: targetProbe)
+                switch status {
+                case .installed, .supported:
+                    validTranslationLanguages.append(source)
+                case .unsupported:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+            
+            // Special case: Ensure targetProbe itself is in the list if supported
+            if !validTranslationLanguages.contains(where: { $0.minimalIdentifier == targetProbe.minimalIdentifier }) {
+                // If it wasn't added because it can't translate to itself, add it back
+                validTranslationLanguages.append(targetProbe)
+            }
+            
+            self.translationLanguages = validTranslationLanguages.sorted { 
+                let label1 = Locale.current.localizedString(forIdentifier: $0.minimalIdentifier) ?? $0.minimalIdentifier
+                let label2 = Locale.current.localizedString(forIdentifier: $1.minimalIdentifier) ?? $1.minimalIdentifier
+                return label1 < label2
+            }
+            
+            // Filter speech locales to only those that can also be translated (user requested this for audio language too)
+            self.supportedLocales = speechLocales.filter { speechLocale in
+                let speechLang = Locale.Language(identifier: speechLocale.identifier)
+                return validTranslationLanguages.contains { $0.minimalIdentifier == speechLang.minimalIdentifier }
+            }
+            
             if supportedLocales.isEmpty {
                 supportedLocales = [Locale(identifier: transcriptionLocaleIdentifier)]
-            } else if !supportedLocales.contains(where: { $0.identifier == transcriptionLocaleIdentifier }) {
+            } 
+            
+            // Adjust selection if current is invalid
+            if !supportedLocales.contains(where: { $0.identifier == transcriptionLocaleIdentifier }) {
                 transcriptionLocaleIdentifier = supportedLocales.first?.identifier ?? Locale.current.identifier
             }
-            // Initialize language1 to audio language if not set
-            if !supportedLocales.contains(where: { $0.identifier == language1Identifier }) {
-                language1Identifier = transcriptionLocaleIdentifier
+            if !translationLanguages.contains(where: { $0.minimalIdentifier == language1Identifier }) {
+                language1Identifier = translationLanguages.first?.minimalIdentifier ?? transcriptionLocaleIdentifier
             }
-            // Validate language2 if set
-            if let lang2 = language2Identifier, !supportedLocales.contains(where: { $0.identifier == lang2 }) {
+            if let lang2 = language2Identifier, !translationLanguages.contains(where: { $0.minimalIdentifier == lang2 }) {
                 language2Identifier = nil
             }
+
             assetManager.configure(
                 transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
                 subtitleMode: subtitleMode,
@@ -143,9 +180,9 @@ struct SetupView: View {
             Text("Language 1")
                 .font(AppTypography.bodyEmphasis)
             Picker("Language 1", selection: $language1Identifier) {
-                ForEach(supportedLocales, id: \.identifier) { locale in
-                    Text(localeLabel(locale))
-                        .tag(locale.identifier)
+                ForEach(translationLanguages, id: \.minimalIdentifier) { language in
+                    Text(languageLabel(language))
+                        .tag(language.minimalIdentifier)
                 }
             }
             .pickerStyle(.menu)
@@ -156,9 +193,9 @@ struct SetupView: View {
             HStack {
                 Picker("Language 2", selection: language2IdentifierBinding) {
                     Text("None").tag("")
-                    ForEach(supportedLocales, id: \.identifier) { locale in
-                        Text(localeLabel(locale))
-                            .tag(locale.identifier)
+                    ForEach(translationLanguages, id: \.minimalIdentifier) { language in
+                        Text(languageLabel(language))
+                            .tag(language.minimalIdentifier)
                     }
                 }
                 .pickerStyle(.menu)
@@ -264,6 +301,15 @@ struct SetupView: View {
     private func localeLabel(_ locale: Locale) -> String {
         let label = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
         if locale.identifier == Locale.current.identifier {
+            return "Device language (\(label))"
+        }
+        return label
+    }
+
+    private func languageLabel(_ language: Locale.Language) -> String {
+        let identifier = language.minimalIdentifier
+        let label = Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+        if identifier == Locale.current.identifier {
             return "Device language (\(label))"
         }
         return label
