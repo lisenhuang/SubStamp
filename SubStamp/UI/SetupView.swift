@@ -80,11 +80,8 @@ struct SetupView: View {
                 return label1 < label2
             }
             
-            // Filter speech locales to only those that can also be translated (user requested this for audio language too)
-            self.supportedLocales = speechLocales.filter { speechLocale in
-                let speechLang = Locale.Language(identifier: speechLocale.identifier)
-                return validTranslationLanguages.contains { $0.minimalIdentifier == speechLang.minimalIdentifier }
-            }
+            // 3. Keep speech locales as they are
+            self.supportedLocales = speechLocales
             
             if supportedLocales.isEmpty {
                 supportedLocales = [Locale(identifier: transcriptionLocaleIdentifier)]
