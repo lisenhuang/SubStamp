@@ -36,3 +36,6 @@ xcode/
 
 # Log files
 *.log
+
+# plan files
+*.plan.md

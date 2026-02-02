@@ -312,14 +312,18 @@ final class SubtitleRenderer {
     }
 
     private func fontSize(for size: SubtitleFontSize, renderSize: CGSize) -> CGFloat {
-        let base = renderSize.height * 0.0275 // Reduced from 0.055 to halve the size
+        // Use a "normalized" dimension (average of width and height) 
+        // to stay consistent across vertical and horizontal videos.
+        let referenceDimension = (renderSize.width + renderSize.height) / 2
+        let base = referenceDimension * 0.03 
+        
         switch size {
         case .small:
-            return base * 0.85
+            return base * 0.8
         case .medium:
             return base
         case .large:
-            return base * 1.2
+            return base * 1.25
         }
     }
 }
