@@ -15,9 +15,12 @@ struct SetupView: View {
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
     
-    /// Derived subtitle mode based on whether language2 is selected
+    /// Derived subtitle mode based on whether language2 is selected and different from language 1
     private var subtitleMode: SubtitleMode {
-        language2Identifier != nil ? .bilingual : .single
+        if let lang2 = language2Identifier, lang2 != language1Identifier {
+            return .bilingual
+        }
+        return .single
     }
 
     var body: some View {
@@ -150,20 +153,37 @@ struct SetupView: View {
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.secondaryText)
 
-            Text("Language 2 (optional)")
-                .font(AppTypography.bodyEmphasis)
-                .padding(.top, AppSpacing.s)
-            Picker("Language 2", selection: language2IdentifierBinding) {
-                Text("None").tag("")
-                ForEach(supportedLocales, id: \.identifier) { locale in
-                    Text(localeLabel(locale))
-                        .tag(locale.identifier)
+            HStack {
+                Picker("Language 2", selection: language2IdentifierBinding) {
+                    Text("None").tag("")
+                    ForEach(supportedLocales, id: \.identifier) { locale in
+                        Text(localeLabel(locale))
+                            .tag(locale.identifier)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if language2Identifier != nil {
+                    Button {
+                        language2Identifier = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(AppColors.secondaryText)
+                            .font(.title3)
+                    }
+                    .padding(.leading, 4)
                 }
             }
-            .pickerStyle(.menu)
-            Text("Add a second language for bilingual subtitles")
-                .font(AppTypography.caption)
-                .foregroundStyle(AppColors.secondaryText)
+            
+            if let lang2 = language2Identifier, lang2 == language1Identifier {
+                Text("Same as Language 1. Only one subtitle track will be used.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            } else {
+                Text("Add a second language for bilingual subtitles")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()

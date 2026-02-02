@@ -7,6 +7,7 @@ struct SubtitleReviewView: View {
     @Binding var cues: [SubtitleCue]
     @Binding var style: SubtitleStyle
     let videoURL: URL
+    var mode: SubtitleMode
     var translationTarget: Locale.Language?
     var sourceLocaleIdentifier: String?
     var onContinue: () -> Void
@@ -87,6 +88,7 @@ struct SubtitleReviewView: View {
                         ForEach(Array(cues.indices), id: \.self) { index in
                             SubtitleCueRow(
                                 cue: $cues[index],
+                                showSecondary: mode == .bilingual,
                                 onSplit: { splitCue(at: index) },
                                 onMergeNext: { mergeCue(at: index) },
                                 onShiftBack: { shiftCue(at: index, by: -0.1) },

@@ -38,9 +38,12 @@ struct ContentView: View {
 
     private let jobStore = JobStore()
     
-    /// Derived subtitle mode based on whether language2 is selected
+    /// Derived subtitle mode based on whether language2 is selected and different from language 1
     private var subtitleMode: SubtitleMode {
-        language2Identifier != nil ? .bilingual : .single
+        if let lang2 = language2Identifier, lang2 != language1Identifier {
+            return .bilingual
+        }
+        return .single
     }
 
     var body: some View {
@@ -104,6 +107,7 @@ struct ContentView: View {
                         cues: $orchestrator.cues,
                         style: styleBinding,
                         videoURL: videoURL,
+                        mode: subtitleMode,
                         translationTarget: translationTargetLocale,
                         sourceLocaleIdentifier: language1Identifier,
                         onContinue: {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SubtitleCueRow: View {
     @Binding var cue: SubtitleCue
+    var showSecondary: Bool = true
     var onSplit: (() -> Void)?
     var onMergeNext: (() -> Void)?
     var onShiftBack: (() -> Void)?
@@ -25,7 +26,7 @@ struct SubtitleCueRow: View {
             TextField("Primary subtitle", text: $cue.primaryText, axis: .vertical)
                 .font(AppTypography.body)
                 .textFieldStyle(.roundedBorder)
-            if cue.secondaryText != nil {
+            if showSecondary && cue.secondaryText != nil {
                 TextField("Secondary subtitle", text: Binding(
                     get: { cue.secondaryText ?? "" },
                     set: { cue.secondaryText = $0 }
