@@ -21,6 +21,12 @@ final class AssetReadinessManager: ObservableObject {
         return speechReady && translationReady
     }
 
+    var isBusy: Bool {
+        if case .downloading = speechAssetsState { return true }
+        if case .downloading = translationAssetsState { return true }
+        return false
+    }
+
     func configure(
         transcriptionLocale: Locale,
         language1Locale: Locale.Language,
@@ -45,6 +51,10 @@ final class AssetReadinessManager: ObservableObject {
         speechAssetsState = .notInstalled
         translationAssetsState = .notInstalled
         lastError = nil
+    }
+
+    func setTranslationDownloading() {
+        translationAssetsState = .downloading(progress: 0)
     }
 
     func check() async {

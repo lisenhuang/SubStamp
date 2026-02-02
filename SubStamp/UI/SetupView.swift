@@ -261,7 +261,8 @@ struct SetupView: View {
     private var downloadAssetsButton: some View {
         PrimaryButton(
             title: "Download required assets",
-            systemImage: "arrow.down.circle"
+            systemImage: "arrow.down.circle",
+            isEnabled: !assetManager.isBusy
         ) {
             Task {
                 assetManager.configure(
@@ -281,6 +282,7 @@ struct SetupView: View {
                 if l1.minimalIdentifier != sourceLang.minimalIdentifier {
                     let status = await availability.status(from: sourceLang, to: l1)
                     if status == .supported {
+                        assetManager.setTranslationDownloading()
                         translationConfig = TranslationSession.Configuration(source: sourceLang, target: l1)
                         shouldPrepareTranslation = true
                         return
@@ -293,6 +295,7 @@ struct SetupView: View {
                     if l2.minimalIdentifier != sourceLang.minimalIdentifier {
                         let status = await availability.status(from: sourceLang, to: l2)
                         if status == .supported {
+                            assetManager.setTranslationDownloading()
                             translationConfig = TranslationSession.Configuration(source: sourceLang, target: l2)
                             shouldPrepareTranslation = true
                             return
