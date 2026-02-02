@@ -28,6 +28,7 @@ struct SubtitleReviewView: View {
                 VideoPlayer(player: player)
                     .frame(height: 220)
                     .background(Color.black)
+                    .ignoresSafeArea(edges: .top)
                 
                 ScrollView {
                     VStack(spacing: AppSpacing.l) {
@@ -143,8 +144,7 @@ struct SubtitleReviewView: View {
                     }
                 }
             }
-            .navigationTitle("Review subtitles")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 player = AVPlayer(url: videoURL)
                 if let target = translationTarget {

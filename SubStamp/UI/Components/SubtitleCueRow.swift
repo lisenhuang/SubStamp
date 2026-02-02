@@ -39,11 +39,11 @@ struct SubtitleCueRow: View {
                 if cue.hasTranslationError {
                     Button("Retry") { onRetryTranslation?() }
                 }
-                Button("Split") { onSplit?() }
-                Button("Merge") { onMergeNext?() }
                 Spacer()
                 Button("-0.1s") { onShiftBack?() }
                 Button("+0.1s") { onShiftForward?() }
+                Button("Split") { onSplit?() }
+                Button("Merge") { onMergeNext?() }
             }
             .font(AppTypography.caption)
         }
