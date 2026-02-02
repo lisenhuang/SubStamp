@@ -116,6 +116,9 @@ struct ContentView: View {
                         },
                         onBack: {
                             step = .processing
+                        },
+                        onAbandon: {
+                            resetToSetup()
                         }
                     )
                 }

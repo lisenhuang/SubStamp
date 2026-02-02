@@ -12,12 +12,14 @@ struct SubtitleReviewView: View {
     var sourceLocaleIdentifier: String?
     var onContinue: () -> Void
     var onBack: () -> Void
+    var onAbandon: () -> Void
 
     @State private var player: AVPlayer?
     @State private var isPlayingPreview = false
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var translationSession: TranslationSession?
     @FocusState private var isTextFieldFocused: Bool
+    @State private var showAbandonConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -112,6 +114,20 @@ struct SubtitleReviewView: View {
                     PrimaryButton(title: "Continue to export", systemImage: "arrow.right.circle") {
                         onContinue()
                     }
+
+                    Button(role: .destructive) {
+                        showAbandonConfirmation = true
+                    } label: {
+                        Text("Abandon and restart")
+                            .font(AppTypography.bodyEmphasis)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, AppSpacing.m)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                                    .stroke(AppColors.error, lineWidth: 1)
+                            )
+                    }
+                    .padding(.top, AppSpacing.m)
                 }
                 .padding(AppSpacing.l)
             }
@@ -144,8 +160,20 @@ struct SubtitleReviewView: View {
         .translationTask(translationConfig) { session in
             translationSession = session
         }
+        .confirmationDialog(
+            "Abandon this job?",
+            isPresented: $showAbandonConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Abandon and restart", role: .destructive) {
+                onAbandon()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All progress on this video will be lost.")
         }
     }
+}
 
     private func splitCue(at index: Int) {
         guard cues.indices.contains(index) else { return }
