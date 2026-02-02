@@ -20,7 +20,7 @@ final class TranslationService {
                 if let clientIdentifier = response.clientIdentifier,
                    let id = UUID(uuidString: clientIdentifier),
                    let index = output.firstIndex(where: { $0.id == id }) {
-                    output[index].secondaryText = response.targetText
+                    output[index].secondaryText = SubtitleTextCleaner.clean(response.targetText)
                     output[index].hasTranslationError = false
                 }
                 completed += 1
@@ -32,7 +32,7 @@ final class TranslationService {
             for index in output.indices {
                 do {
                     let response = try await session.translate(output[index].primaryText)
-                    output[index].secondaryText = response.targetText
+                    output[index].secondaryText = SubtitleTextCleaner.clean(response.targetText)
                     output[index].hasTranslationError = false
                 } catch {
                     output[index].hasTranslationError = true

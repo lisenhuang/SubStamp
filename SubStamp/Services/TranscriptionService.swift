@@ -136,7 +136,7 @@ final class TranscriptionService {
             for try await result in transcriber.results {
                 resultCount += 1
                 let rawText = String(result.text.characters)
-                let cleaned = normalizeText(rawText)
+                let cleaned = SubtitleTextCleaner.clean(rawText)
                 AppLog.append("[RESULT #\(resultCount)] Raw: '\(rawText.prefix(50))...' at \(result.range.start.seconds)s-\(result.range.end.seconds)s")
                 guard !cleaned.isEmpty else { 
                     AppLog.append("[RESULT #\(resultCount)] Skipped (empty after cleaning)")
@@ -459,7 +459,7 @@ final class TranscriptionService {
             let maxCharsPerLine = 42
             let maxLines = 2
 
-            cue.primaryText = normalizeText(cue.primaryText)
+            cue.primaryText = SubtitleTextCleaner.clean(cue.primaryText)
             cue.primaryText = clampText(cue.primaryText, maxCharsPerLine: maxCharsPerLine, maxLines: maxLines)
 
             if cue.durationSeconds < minDuration, index + 1 < cues.count {
@@ -486,9 +486,7 @@ final class TranscriptionService {
     }
 
     private func normalizeText(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let collapsed = trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return collapsed
+        return SubtitleTextCleaner.clean(text)
     }
 
     private func clampText(_ text: String, maxCharsPerLine: Int, maxLines: Int) -> String {
