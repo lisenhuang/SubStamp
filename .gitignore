@@ -1,4 +1,11 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Xcode
 build/
 DerivedData/
 *.xcuserstate
@@ -6,5 +13,26 @@ DerivedData/
 *.xcuserdata/
 *.xcscmblueprint
 *.xccheckout
-build.log
 *.xcactivitylog
+*.moved-aside
+*.swp
+*.lock
+*~.nib
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+!default.mode1v3
+!default.mode2v3
+!default.perspectivev3
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+.swiftpm/
+xcode/
+
+# Log files
+*.log
