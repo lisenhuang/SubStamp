@@ -21,8 +21,14 @@ struct AssetStatusCard: View {
                     .foregroundStyle(AppColors.secondaryText)
             }
             if case let .downloading(progress) = state {
-                ProgressView(value: progress)
-                    .tint(AppColors.accent)
+                if progress > 0 {
+                    ProgressView(value: progress)
+                        .tint(AppColors.accent)
+                } else {
+                    ProgressView()
+                        .tint(AppColors.accent)
+                        .padding(.top, AppSpacing.xs)
+                }
             }
         }
         .padding()
