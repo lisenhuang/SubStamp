@@ -129,7 +129,7 @@ struct SubtitleReviewView: View {
                         }
                         .padding(.top, AppSpacing.m)
                     }
-                    .padding([.horizontal, .bottom], AppSpacing.l)
+                    .padding(AppSpacing.l)
                 }
             }
             .ignoresSafeArea(.all, edges: .top)
