@@ -179,9 +179,9 @@ struct SetupView: View {
 
     private var languageSelectionCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
-            Text("Language 1")
+            Text("Subtitle 1")
                 .font(AppTypography.bodyEmphasis)
-            Picker("Language 1", selection: $language1Identifier) {
+            Picker("Subtitle 1", selection: $language1Identifier) {
                 ForEach(translationLanguages, id: \.minimalIdentifier) { language in
                     Text(languageLabel(language))
                         .tag(language.minimalIdentifier)
@@ -192,8 +192,12 @@ struct SetupView: View {
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.secondaryText)
 
+            Text("Subtitle 2")
+                .font(AppTypography.bodyEmphasis)
+                .padding(.top, AppSpacing.s)
+
             HStack {
-                Picker("Language 2", selection: language2IdentifierBinding) {
+                Picker("Subtitle 2", selection: language2IdentifierBinding) {
                     Text("None").tag("")
                     ForEach(translationLanguages, id: \.minimalIdentifier) { language in
                         Text(languageLabel(language))
@@ -215,7 +219,7 @@ struct SetupView: View {
             }
             
             if let lang2 = language2Identifier, lang2 == language1Identifier {
-                Text("Same as Language 1. Only one subtitle track will be used.")
+                Text("Same as Subtitle 1. Only one subtitle track will be used.")
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
             } else {
