@@ -31,17 +31,6 @@ struct SubtitleReviewView: View {
                 
                 ScrollView {
                     VStack(spacing: AppSpacing.l) {
-                        HStack {
-                            Button {
-                                onBack()
-                            } label: {
-                                Label("Back", systemImage: "chevron.left")
-                                    .font(AppTypography.bodyEmphasis)
-                                    .foregroundStyle(AppColors.secondaryText)
-                            }
-                            Spacer()
-                        }
-
                         VStack(alignment: .leading, spacing: AppSpacing.s) {
                             Text("Subtitle style")
                                 .font(AppTypography.bodyEmphasis)
