@@ -132,7 +132,6 @@ final class SubtitleRenderer {
 
             let secondaryLayer: CALayer?
             if mode == .bilingual, let secondaryText = cue.secondaryText, !secondaryText.isEmpty {
-                let extraOffset = primaryLayer.frame.height + (margin * 0.1)
                 secondaryLayer = buildTextLayer(
                     text: secondaryText,
                     font: secondaryFont,
@@ -143,9 +142,20 @@ final class SubtitleRenderer {
                     lineSpacing: style.lineSpacing,
                     background: style.background == .none ? .none : .translucent,
                     usesShadow: style.usesShadow,
-                    padding: CGFloat(style.padding),
-                    extraOffset: extraOffset
+                    padding: CGFloat(style.padding)
                 )
+
+                // Adjust stacking: Language 1 on top of Language 2
+                let gap = margin * 0.1
+                if let secLayer = secondaryLayer {
+                    if style.position == .top {
+                        // Move secondary below primary
+                        secLayer.frame.origin.y = primaryLayer.frame.origin.y - secLayer.frame.height - gap
+                    } else {
+                        // Move primary above secondary (for bottom/middle)
+                        primaryLayer.frame.origin.y = secLayer.frame.origin.y + secLayer.frame.height + gap
+                    }
+                }
             } else {
                 secondaryLayer = nil
             }
