@@ -7,8 +7,10 @@ struct JobModel: Identifiable, Codable {
     var videoURL: URL
     var transcriptionLocale: String
     var language1Locale: String
+    var subtitle1Mode: TranslationMode?
     var subtitleMode: SubtitleMode
     var translationTargetLocale: String?
+    var subtitle2Mode: TranslationMode?
     var subtitleLayout: SubtitleLayout
     var subtitleStyle: SubtitleStyle
     var exportPreset: ExportPreset
@@ -24,8 +26,10 @@ struct JobModel: Identifiable, Codable {
         videoURL: URL,
         transcriptionLocale: String,
         language1Locale: String? = nil,
+        subtitle1Mode: TranslationMode? = nil,
         subtitleMode: SubtitleMode,
         translationTargetLocale: String?,
+        subtitle2Mode: TranslationMode? = nil,
         subtitleLayout: SubtitleLayout = .stacked,
         subtitleStyle: SubtitleStyle = SubtitleStyle(),
         exportPreset: ExportPreset = .balanced,
@@ -40,8 +44,10 @@ struct JobModel: Identifiable, Codable {
         self.videoURL = videoURL
         self.transcriptionLocale = transcriptionLocale
         self.language1Locale = language1Locale ?? transcriptionLocale
+        self.subtitle1Mode = subtitle1Mode
         self.subtitleMode = subtitleMode
         self.translationTargetLocale = translationTargetLocale
+        self.subtitle2Mode = subtitle2Mode
         self.subtitleLayout = subtitleLayout
         self.subtitleStyle = subtitleStyle
         self.exportPreset = exportPreset
@@ -60,8 +66,10 @@ private extension JobModel {
         case videoURL
         case transcriptionLocale
         case language1Locale
+        case subtitle1Mode
         case subtitleMode
         case translationTargetLocale
+        case subtitle2Mode
         case subtitleLayout
         case subtitleStyle
         case exportPreset
@@ -82,8 +90,10 @@ extension JobModel {
         transcriptionLocale = try container.decode(String.self, forKey: .transcriptionLocale)
         // Default language1 to transcription locale for backward compatibility
         language1Locale = try container.decodeIfPresent(String.self, forKey: .language1Locale) ?? transcriptionLocale
+        subtitle1Mode = try container.decodeIfPresent(TranslationMode.self, forKey: .subtitle1Mode)
         subtitleMode = try container.decode(SubtitleMode.self, forKey: .subtitleMode)
         translationTargetLocale = try container.decodeIfPresent(String.self, forKey: .translationTargetLocale)
+        subtitle2Mode = try container.decodeIfPresent(TranslationMode.self, forKey: .subtitle2Mode)
         subtitleLayout = try container.decodeIfPresent(SubtitleLayout.self, forKey: .subtitleLayout) ?? .stacked
         subtitleStyle = try container.decodeIfPresent(SubtitleStyle.self, forKey: .subtitleStyle) ?? SubtitleStyle()
         exportPreset = try container.decodeIfPresent(ExportPreset.self, forKey: .exportPreset) ?? .balanced
@@ -101,8 +111,10 @@ extension JobModel {
         try container.encode(videoURL, forKey: .videoURL)
         try container.encode(transcriptionLocale, forKey: .transcriptionLocale)
         try container.encode(language1Locale, forKey: .language1Locale)
+        try container.encodeIfPresent(subtitle1Mode, forKey: .subtitle1Mode)
         try container.encode(subtitleMode, forKey: .subtitleMode)
         try container.encodeIfPresent(translationTargetLocale, forKey: .translationTargetLocale)
+        try container.encodeIfPresent(subtitle2Mode, forKey: .subtitle2Mode)
         try container.encode(subtitleLayout, forKey: .subtitleLayout)
         try container.encode(subtitleStyle, forKey: .subtitleStyle)
         try container.encode(exportPreset, forKey: .exportPreset)

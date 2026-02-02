@@ -13,12 +13,15 @@ struct ProcessingView: View {
     var onCompleted: (URL) -> Void
     var onReview: (() -> Void)? = nil
 
-    @State private var translationConfig1: TranslationSession.Configuration?
-    @State private var translationConfig2: TranslationSession.Configuration?
-    @State private var translationSession1: TranslationSession?
-    @State private var translationSession2: TranslationSession?
+    @State private var config1: TranslationSession.Configuration?
+    @State private var config2: TranslationSession.Configuration?
+    @State private var config3: TranslationSession.Configuration?
+    
+    @State private var session1: TranslationSession?
+    @State private var session2: TranslationSession?
+    @State private var session3: TranslationSession?
+    
     @State private var showCancelDialog = false
-    @State private var backgroundTaskIdentifier: String?
     @State private var didResume = false
     @State private var keepScreenAwake = false
     @State private var showBackDialog = false
@@ -27,22 +30,14 @@ struct ProcessingView: View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
                 HStack {
-                    Button {
-                        showBackDialog = true
-                    } label: {
+                    Button { showBackDialog = true } label: {
                         Label("Back", systemImage: "chevron.left")
                             .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(AppColors.secondaryText)
                     }
                     Spacer()
                 }
-                WizardHeaderView(
-                    step: 3,
-                    total: 4,
-                    title: "Processing",
-                    subtitle: "We'll continue even if the screen locks."
-                )
-
+                WizardHeaderView(step: 3, total: 4, title: "Processing", subtitle: "We'll continue even if the screen locks.")
                 stageList
                 tipsCard
                 actionSection
@@ -51,102 +46,40 @@ struct ProcessingView: View {
         }
         .background(AppColors.background)
         .confirmationDialog("Cancel processing?", isPresented: $showCancelDialog) {
-            Button("Stop processing", role: .destructive) {
-                orchestrator.cancel()
-                BackgroundTaskManager.shared.end(success: false)
-                onChangeSettings()
-            }
+            Button("Stop", role: .destructive) { orchestrator.cancel(); onChangeSettings() }
         }
-        .confirmationDialog("Go back to previous step?", isPresented: $showBackDialog) {
-            Button("Stop processing and go back", role: .destructive) {
-                orchestrator.cancel()
-                BackgroundTaskManager.shared.end(success: false)
-                onBack()
-            }
+        .confirmationDialog("Go back?", isPresented: $showBackDialog) {
+            Button("Stop and go back", role: .destructive) { orchestrator.cancel(); onBack() }
         }
-        .onAppear {
-            startPipelineIfNeeded()
-        }
+        .onAppear { startPipelineIfNeeded() }
         .onChange(of: orchestrator.outputURL) { _, newValue in
-            if let url = newValue {
-                BackgroundTaskManager.shared.end(success: true)
-                onCompleted(url)
-            }
+            if let url = newValue { BackgroundTaskManager.shared.end(success: true); onCompleted(url) }
         }
-        .translationTask(translationConfig1) { session in
-            translationSession1 = session
-            startPipelineIfNeeded()
-        }
-        .translationTask(translationConfig2) { session in
-            translationSession2 = session
-            startPipelineIfNeeded()
-        }
-        .onReceive(orchestrator.$error) { error in
-            if error != nil {
-                BackgroundTaskManager.shared.end(success: false)
-            }
-        }
-        .onChange(of: orchestrator.stageProgress) { _, _ in
-            updateBackgroundProgress()
-        }
-        .onChange(of: keepScreenAwake) { _, newValue in
-            UIApplication.shared.isIdleTimerDisabled = newValue
-        }
-        .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
-        }
+        .translationTask(config1) { session1 = $0; startPipelineIfNeeded() }
+        .translationTask(config2) { session2 = $0; startPipelineIfNeeded() }
+        .translationTask(config3) { session3 = $0; startPipelineIfNeeded() }
+        .onReceive(orchestrator.$error) { if $0 != nil { BackgroundTaskManager.shared.end(success: false) } }
+        .onChange(of: orchestrator.stageProgress) { _, _ in updateBackgroundProgress() }
+        .onChange(of: keepScreenAwake) { _, newValue in UIApplication.shared.isIdleTimerDisabled = newValue }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
     private var stageList: some View {
         VStack(spacing: AppSpacing.l) {
-            stageRow(
-                title: "Speech assets",
-                stage: .assets,
-                detail: "Ensuring required models are ready."
-            )
-            stageRow(
-                title: "Transcribing",
-                stage: .transcribing,
-                detail: "Generating time-coded subtitles."
-            )
-            stageRow(
-                title: "Translating",
-                stage: .translating,
-                detail: job.subtitleMode == .bilingual ? "Translating each cue." : "Skipped for transcript-only mode."
-            )
-            stageRow(
-                title: "Rendering",
-                stage: .rendering,
-                detail: "Burning subtitles into the video.",
-                showReviewButton: orchestrator.readyForReview
-            )
-            stageRow(
-                title: "Exporting",
-                stage: .exporting,
-                detail: "Writing the new file."
-            )
+            stageRow(title: "Speech assets", stage: .assets, detail: "Ensuring models are ready.")
+            stageRow(title: "Transcribing", stage: .transcribing, detail: "Generating time-coded subtitles.")
+            stageRow(title: "Translating", stage: .translating, detail: job.subtitleMode == .bilingual ? "Bilingual translation." : "Single track translation.")
+            stageRow(title: "Rendering", stage: .rendering, detail: "Burning subtitles into video.", showReviewButton: orchestrator.readyForReview)
+            stageRow(title: "Exporting", stage: .exporting, detail: "Writing output file.")
         }
     }
 
     private func stageRow(title: String, stage: ProcessingStage, detail: String, showReviewButton: Bool = false) -> some View {
         HStack {
-            PipelineStageRow(
-                title: title,
-                state: orchestrator.stageStates[stage] ?? .pending,
-                progress: orchestrator.stageProgress[stage] ?? 0,
-                detail: detail
-            )
+            PipelineStageRow(title: title, state: orchestrator.stageStates[stage] ?? .pending, progress: orchestrator.stageProgress[stage] ?? 0, detail: detail)
             if showReviewButton, let onReview {
-                Button {
-                    onReview()
-                } label: {
-                    Text("Review")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.accent)
-                        .padding(.horizontal, AppSpacing.s)
-                        .padding(.vertical, 4)
-                        .background(AppColors.accent.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                Button { onReview() } label: {
+                    Text("Review").font(AppTypography.caption).foregroundStyle(AppColors.accent).padding(.horizontal, 8).padding(.vertical, 4).background(AppColors.accent.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
         }
@@ -154,202 +87,94 @@ struct ProcessingView: View {
 
     private var tipsCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
-            Text("Tips")
-                .font(AppTypography.bodyEmphasis)
-            Text("You can lock the phone; we’ll continue when possible.")
-                .font(AppTypography.caption)
-                .foregroundStyle(AppColors.secondaryText)
-            Text("If iOS stops background work, you can resume here.")
-                .font(AppTypography.caption)
-                .foregroundStyle(AppColors.secondaryText)
-            Toggle("Keep screen awake", isOn: $keepScreenAwake)
-                .font(AppTypography.caption)
+            Text("Tips").font(AppTypography.bodyEmphasis)
+            Text("iOS may stop work in the background. Keep the screen awake for fastest processing.").font(AppTypography.caption).foregroundStyle(AppColors.secondaryText)
+            Toggle("Keep screen awake", isOn: $keepScreenAwake).font(AppTypography.caption)
         }
-        .padding()
-        .background(AppColors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                .stroke(AppColors.cardBorder, lineWidth: 1)
-        )
+        .padding().background(AppColors.cardBackground).clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)).overlay(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius).stroke(AppColors.cardBorder, lineWidth: 1))
     }
 
     @ViewBuilder
     private var actionSection: some View {
         if let error = orchestrator.error {
-            Text(error.errorDescription ?? "Processing failed.")
-                .font(AppTypography.bodyEmphasis)
-                .foregroundStyle(AppColors.error)
-            if let suggestion = error.recoverySuggestion {
-                Text(suggestion)
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.secondaryText)
-            }
-            HStack(spacing: AppSpacing.s) {
-                PrimaryButton(title: "Retry stage", systemImage: "arrow.clockwise") {
-                    restartPipeline()
-                }
-                PrimaryButton(title: "Change settings", systemImage: "slider.horizontal.3") {
-                    onChangeSettings()
+            VStack(alignment: .leading) {
+                Text(error.errorDescription ?? "Failed").font(AppTypography.bodyEmphasis).foregroundStyle(AppColors.error)
+                HStack {
+                    PrimaryButton(title: "Retry", systemImage: "arrow.clockwise") { restartPipeline() }
+                    PrimaryButton(title: "Change settings", systemImage: "slider.horizontal.3") { onChangeSettings() }
                 }
             }
         } else {
-            HStack(spacing: AppSpacing.s) {
-                PrimaryButton(title: "Cancel", systemImage: "xmark.circle") {
-                    showCancelDialog = true
-                }
-                PrimaryButton(title: "Run in background", systemImage: "moon.stars") {
-                    submitBackgroundTask()
-                }
+            HStack {
+                PrimaryButton(title: "Cancel", systemImage: "xmark.circle") { showCancelDialog = true }
+                PrimaryButton(title: "Background", systemImage: "moon.stars") { submitBackgroundTask() }
             }
         }
     }
 
     private func startPipelineIfNeeded() {
-        guard orchestrator.isRunning == false else { return }
+        guard !orchestrator.isRunning else { return }
         
-        // Determine what translations are needed
-        let baseLocale = job.transcriptionLocale
-        let lang1NeedsTranslation = job.language1Locale != baseLocale
-        let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocale)
-        
-        if let resumeTranscribed, didResume == false {
-            // Resume case - configure sessions if needed
-            if job.subtitleMode == .bilingual {
-                // For bilingual resume, we may need up to 2 sessions
-                var needsSession1 = false
-                var needsSession2 = false
-                
-                if lang1NeedsTranslation && translationSession1 == nil {
-                    translationConfig1 = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: baseLocale),
-                        target: Locale.Language(identifier: job.language1Locale)
-                    )
-                    needsSession1 = true
-                }
-                if lang2NeedsTranslation && translationSession2 == nil {
-                    translationConfig2 = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: baseLocale),
-                        target: Locale.Language(identifier: job.translationTargetLocale!)
-                    )
-                    needsSession2 = true
-                }
-                
-                // Wait for sessions to be ready
-                if needsSession1 && translationSession1 == nil { return }
-                if needsSession2 && translationSession2 == nil { return }
-                
-                orchestrator.resume(
-                    job: job,
-                    translationSession1: translationSession1,
-                    translationSession2: translationSession2,
-                    transcribed: resumeTranscribed,
-                    translated: resumeTranslated
-                )
-            } else if lang1NeedsTranslation && translationSession1 == nil {
-                translationConfig1 = TranslationSession.Configuration(
-                    source: Locale.Language(identifier: baseLocale),
-                    target: Locale.Language(identifier: job.language1Locale)
-                )
-                return
-            } else {
-                orchestrator.resume(
-                    job: job,
-                    translationSession1: translationSession1,
-                    translationSession2: nil,
-                    transcribed: resumeTranscribed,
-                    translated: resumeTranslated
-                )
-            }
-            didResume = true
-            return
+        let base = Locale.Language(identifier: job.transcriptionLocale)
+        let english = Locale.Language(identifier: "en-US")
+        let t1 = Locale.Language(identifier: job.language1Locale)
+        let t2 = job.translationTargetLocale != nil ? Locale.Language(identifier: job.translationTargetLocale!) : nil
+
+        var needsS1 = false
+        var needsS2 = false
+        var needsS3 = false
+
+        // Config 1: Common Pivot (A->E)
+        if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
+            if config1 == nil { config1 = .init(source: base, target: english) }
+            if session1 == nil { needsS1 = true }
         }
-        
-        // Fresh start case
-        if job.subtitleMode == .bilingual {
-            // Bilingual mode - may need up to 2 sessions
-            var needsSession1 = false
-            var needsSession2 = false
-            
-            if lang1NeedsTranslation {
-                if translationConfig1 == nil {
-                    translationConfig1 = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: baseLocale),
-                        target: Locale.Language(identifier: job.language1Locale)
-                    )
-                }
-                if translationSession1 == nil {
-                    needsSession1 = true
-                }
+
+        // Config 2: Sub 1 Final Leg
+        if job.language1Locale != job.transcriptionLocale {
+            if job.subtitle1Mode == .pivot {
+                if config2 == nil { config2 = .init(source: english, target: t1) }
+            } else {
+                if config2 == nil { config2 = .init(source: base, target: t1) }
             }
-            
-            if lang2NeedsTranslation {
-                if translationConfig2 == nil {
-                    translationConfig2 = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: baseLocale),
-                        target: Locale.Language(identifier: job.translationTargetLocale!)
-                    )
-                }
-                if translationSession2 == nil {
-                    needsSession2 = true
-                }
+            if session2 == nil { needsS2 = true }
+        }
+
+        // Config 3: Sub 2 Final Leg
+        if let target2 = t2, job.translationTargetLocale != job.transcriptionLocale {
+            if job.subtitle2Mode == .pivot {
+                if config3 == nil { config3 = .init(source: english, target: target2) }
+            } else {
+                if config3 == nil { config3 = .init(source: base, target: target2) }
             }
-            
-            // Wait for sessions to be ready
-            if lang1NeedsTranslation && translationSession1 == nil { return }
-            if lang2NeedsTranslation && translationSession2 == nil { return }
-            
-            orchestrator.start(
-                job: job,
-                translationSession1: translationSession1,
-                translationSession2: translationSession2
-            )
-        } else if lang1NeedsTranslation {
-            // Single mode with translation needed
-            if translationConfig1 == nil {
-                translationConfig1 = TranslationSession.Configuration(
-                    source: Locale.Language(identifier: baseLocale),
-                    target: Locale.Language(identifier: job.language1Locale)
-                )
-            }
-            if let session = translationSession1 {
-                orchestrator.start(
-                    job: job,
-                    translationSession1: session,
-                    translationSession2: nil
-                )
-            }
+            if session3 == nil { needsS3 = true }
+        }
+
+        if (needsS1 && session1 == nil) || (needsS2 && session2 == nil) || (needsS3 && session3 == nil) { return }
+
+        if let transcribed = resumeTranscribed, !didResume {
+            orchestrator.resume(job: job, s1: session1, s2: session2, s3: session3, transcribed: transcribed, translated: resumeTranslated)
+            didResume = true
         } else {
-            // No translation needed
-            orchestrator.start(
-                job: job,
-                translationSession1: nil,
-                translationSession2: nil
-            )
+            orchestrator.start(job: job, translationSession1: session1, translationSession2: session2, translationSession3: session3)
         }
     }
 
     private func restartPipeline() {
-        orchestrator.start(
-            job: job,
-            translationSession1: translationSession1,
-            translationSession2: translationSession2
-        )
+        orchestrator.start(job: job, translationSession1: session1, translationSession2: session2, translationSession3: session3)
     }
 
     private func submitBackgroundTask() {
-        let identifier = "com.huanglisen.SubStamp.processing.\(job.id.uuidString)"
-        backgroundTaskIdentifier = identifier
-        BackgroundTaskManager.shared.register(identifier: identifier) { _ in }
-        try? BackgroundTaskManager.shared.submit(identifier: identifier, title: "SubStamp processing", subtitle: "Starting…")
+        let id = "com.huanglisen.SubStamp.processing.\(job.id.uuidString)"
+        BackgroundTaskManager.shared.register(identifier: id) { _ in }
+        try? BackgroundTaskManager.shared.submit(identifier: id, title: "SubStamp processing", subtitle: "Working…")
         updateBackgroundProgress()
     }
 
     private func updateBackgroundProgress() {
-        guard backgroundTaskIdentifier != nil else { return }
         let stages: [ProcessingStage] = [.assets, .transcribing, .translating, .rendering, .exporting]
         let total = stages.reduce(0.0) { $0 + (orchestrator.stageProgress[$1] ?? 0) }
         let overall = total / Double(stages.count)
-        BackgroundTaskManager.shared.updateProgress(fraction: overall, subtitle: "Processing \(Int(overall * 100))%")
+        BackgroundTaskManager.shared.updateProgress(fraction: overall, subtitle: "\(Int(overall * 100))%")
     }
 }

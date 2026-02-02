@@ -7,21 +7,22 @@ struct SetupView: View {
     @Binding var transcriptionLocaleIdentifier: String
     @Binding var language1Identifier: String
     @Binding var language2Identifier: String?
+    @Binding var subtitle1Mode: TranslationMode?
+    @Binding var subtitle2Mode: TranslationMode?
     var onContinue: () -> Void
 
-    @State private var supportedLocales: [Locale] = [] // For Speech Transcription
-    @State private var translationLanguages: [Locale.Language] = [] // For Subtitles
+    @State private var selectionLogic = LanguageSelectionLogic()
+    @State private var supportedSpeechLocales: [Locale] = []
+    @State private var installedSpeechIDs: Set<String> = []
+    
+    @State private var subtitleTargets: [TargetOption] = []
+    @State private var selectedSubtitle1ID: String = "transcript"
+    @State private var subtitle2Enabled: Bool = false
+    @State private var selectedSubtitle2ID: String?
+    
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
-    
-    /// Derived subtitle mode based on whether language2 is selected and different from language 1
-    private var subtitleMode: SubtitleMode {
-        if let lang2 = language2Identifier, lang2 != language1Identifier {
-            return .bilingual
-        }
-        return .single
-    }
 
     var body: some View {
         ScrollView {
@@ -33,8 +34,8 @@ struct SetupView: View {
                     subtitle: "Select your transcription and subtitle options."
                 )
 
-                transcriptionLocaleCard
-                languageSelectionCard
+                audioLanguageCard
+                subtitleSelectionCard
                 readinessCard
 
                 if !assetManager.isReadyToProceed {
@@ -44,69 +45,38 @@ struct SetupView: View {
             }
             .padding(AppSpacing.l)
         }
+        .background(AppColors.background)
         .task {
             speechAvailable = SpeechTranscriber.isAvailable
             
             // 1. Fetch Speech locales
-            let speechLocales = await SpeechTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
+            let speechLocales = await SpeechTranscriber.supportedLocales.sorted { 
+                let name1 = $0.localizedString(forIdentifier: $0.identifier) ?? $0.identifier
+                let name2 = $1.localizedString(forIdentifier: $1.identifier) ?? $1.identifier
+                return name1 < name2
+            }
+            self.supportedSpeechLocales = speechLocales
             
-            // 2. Fetch and Filter Translation languages using user's suggested probe method
-            let availability = LanguageAvailability()
-            let allSupported = await availability.supportedLanguages
-            let targetProbe = Locale.Language(identifier: "en-US")
+            let installed = await SpeechTranscriber.installedLocales
+            self.installedSpeechIDs = Set(installed.map { $0.identifier(.bcp47) })
             
-            var validTranslationLanguages: [Locale.Language] = []
-            for source in allSupported {
-                let status = await availability.status(from: source, to: targetProbe)
-                switch status {
-                case .installed, .supported:
-                    validTranslationLanguages.append(source)
-                case .unsupported:
-                    break
-                @unknown default:
-                    break
-                }
+            // 2. Initialize from existing bindings
+            if language1Identifier == transcriptionLocaleIdentifier {
+                selectedSubtitle1ID = "transcript"
+            } else {
+                selectedSubtitle1ID = language1Identifier
             }
             
-            // Special case: Ensure targetProbe itself is in the list if supported
-            if !validTranslationLanguages.contains(where: { $0.minimalIdentifier == targetProbe.minimalIdentifier }) {
-                // If it wasn't added because it can't translate to itself, add it back
-                validTranslationLanguages.append(targetProbe)
+            if let lang2 = language2Identifier {
+                subtitle2Enabled = true
+                selectedSubtitle2ID = lang2
+            } else {
+                subtitle2Enabled = false
             }
             
-            self.translationLanguages = validTranslationLanguages.sorted { 
-                let label1 = Locale.current.localizedString(forIdentifier: $0.minimalIdentifier) ?? $0.minimalIdentifier
-                let label2 = Locale.current.localizedString(forIdentifier: $1.minimalIdentifier) ?? $1.minimalIdentifier
-                return label1 < label2
-            }
-            
-            // 3. Keep speech locales as they are
-            self.supportedLocales = speechLocales
-            
-            if supportedLocales.isEmpty {
-                supportedLocales = [Locale(identifier: transcriptionLocaleIdentifier)]
-            } 
-            
-            // Adjust selection if current is invalid
-            if !supportedLocales.contains(where: { $0.identifier == transcriptionLocaleIdentifier }) {
-                transcriptionLocaleIdentifier = supportedLocales.first?.identifier ?? Locale.current.identifier
-            }
-            if !translationLanguages.contains(where: { $0.minimalIdentifier == language1Identifier }) {
-                language1Identifier = translationLanguages.first?.minimalIdentifier ?? transcriptionLocaleIdentifier
-            }
-            if let lang2 = language2Identifier, !translationLanguages.contains(where: { $0.minimalIdentifier == lang2 }) {
-                language2Identifier = nil
-            }
-
-            assetManager.configure(
-                transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                language1Locale: Locale.Language(identifier: language1Identifier),
-                language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
-                subtitleMode: subtitleMode
-            )
-            Task { await assetManager.check() }
+            await updateSubtitleTargets()
+            updateAssetManager()
         }
-        .background(AppColors.background)
         .translationTask(translationConfig) { session in
             guard shouldPrepareTranslation else { return }
             Task {
@@ -114,57 +84,126 @@ struct SetupView: View {
                 shouldPrepareTranslation = false
             }
         }
-        .onChange(of: transcriptionLocaleIdentifier) { _, newValue in
-            assetManager.configure(
-                transcriptionLocale: Locale(identifier: newValue),
-                language1Locale: Locale.Language(identifier: language1Identifier),
-                language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
-                subtitleMode: subtitleMode
-            )
-            Task { await assetManager.check() }
+        .onChange(of: transcriptionLocaleIdentifier) { _, _ in
+            Task {
+                await updateSubtitleTargets()
+                updateAssetManager()
+            }
         }
-        .onChange(of: language1Identifier) { _, newValue in
-            assetManager.configure(
-                transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                language1Locale: Locale.Language(identifier: newValue),
-                language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
-                subtitleMode: subtitleMode
-            )
-            Task { await assetManager.check() }
+        .onChange(of: selectedSubtitle1ID) { _, _ in
+            updateAssetManager()
         }
-        .onChange(of: language2Identifier) { _, newValue in
-            assetManager.configure(
-                transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                language1Locale: Locale.Language(identifier: language1Identifier),
-                language2Locale: newValue.map { Locale.Language(identifier: $0) },
-                subtitleMode: subtitleMode
-            )
-            Task { await assetManager.check() }
+        .onChange(of: subtitle2Enabled) { _, _ in
+            updateAssetManager()
+        }
+        .onChange(of: selectedSubtitle2ID) { _, _ in
+            updateAssetManager()
         }
     }
 
-    private var transcriptionLocaleCard: some View {
+    private var audioLanguageCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             Text("Audio language")
                 .font(AppTypography.bodyEmphasis)
-            Picker("Transcription language", selection: $transcriptionLocaleIdentifier) {
-                ForEach(supportedLocales, id: \.identifier) { locale in
-                    Text(localeLabel(locale))
-                        .tag(locale.identifier)
+            
+            Picker("Audio language", selection: $transcriptionLocaleIdentifier) {
+                ForEach(supportedSpeechLocales, id: \.identifier) { locale in
+                    HStack {
+                        Text(audioLocaleLabel(locale))
+                        Spacer()
+                        if installedSpeechIDs.contains(locale.identifier(.bcp47)) {
+                            Text("Installed")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(AppColors.success.opacity(0.2))
+                                .foregroundStyle(AppColors.success)
+                                .clipShape(Capsule())
+                        } else {
+                            Text("Downloadable")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(AppColors.warning.opacity(0.2))
+                                .foregroundStyle(AppColors.warning)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .tag(locale.identifier)
                 }
             }
             .pickerStyle(.menu)
-            Text("Choose the language spoken in the video so the AI can produce accurate subtitles.")
+            
+            Text("Select the language spoken in the video to produce accurate subtitles.")
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.secondaryText)
-            if !speechAvailable {
-                Text("Speech transcription isn't available on this device.")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.warning)
-            } else if supportedLocales.isEmpty {
-                Text("No language list available yet. Using device language.")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(AppColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+    }
+
+    private var subtitleSelectionCard: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.l) {
+            // Subtitle 1 (Required)
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                Text("Subtitle 1")
+                    .font(AppTypography.bodyEmphasis)
+                
+                Picker("Target language", selection: $selectedSubtitle1ID) {
+                    Text("Transcript (Audio Language)").tag("transcript")
+                    ForEach(subtitleTargets) { target in
+                        Text(targetLabel(target))
+                            .tag(target.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                
+                if let option = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }),
+                   option.mode == .pivot {
+                    pivotWarning
+                }
+            }
+            
+            Divider()
+            
+            // Subtitle 2 (Optional)
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                HStack {
+                    Text("Subtitle 2")
+                        .font(AppTypography.bodyEmphasis)
+                    Spacer()
+                    Toggle("Add Subtitle 2", isOn: $subtitle2Enabled)
+                        .labelsHidden()
+                }
+                
+                if subtitle2Enabled {
+                    if subtitleTargets.isEmpty {
+                        Text("Translation not available for this audio language.")
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.warning)
+                    } else {
+                        Picker("Target language", selection: $selectedSubtitle2ID) {
+                            Text("Select language").tag(nil as String?)
+                            ForEach(subtitleTargets) { target in
+                                Text(targetLabel(target))
+                                    .tag(target.id as String?)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        
+                        if let selectedID = selectedSubtitle2ID,
+                           let option = subtitleTargets.first(where: { $0.id == selectedID }),
+                           option.mode == .pivot {
+                            pivotWarning
+                        }
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,65 +216,13 @@ struct SetupView: View {
         )
     }
 
-    private var languageSelectionCard: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.s) {
-            Text("Subtitle 1")
-                .font(AppTypography.bodyEmphasis)
-            Picker("Subtitle 1", selection: $language1Identifier) {
-                ForEach(translationLanguages, id: \.minimalIdentifier) { language in
-                    Text(languageLabel(language))
-                        .tag(language.minimalIdentifier)
-                }
-            }
-            .pickerStyle(.menu)
-            Text("Primary subtitle language")
-                .font(AppTypography.caption)
-                .foregroundStyle(AppColors.secondaryText)
-
-            Text("Subtitle 2")
-                .font(AppTypography.bodyEmphasis)
-                .padding(.top, AppSpacing.s)
-
-            HStack {
-                Picker("Subtitle 2", selection: language2IdentifierBinding) {
-                    Text("None").tag("")
-                    ForEach(translationLanguages, id: \.minimalIdentifier) { language in
-                        Text(languageLabel(language))
-                            .tag(language.minimalIdentifier)
-                    }
-                }
-                .pickerStyle(.menu)
-
-                if language2Identifier != nil {
-                    Button {
-                        language2Identifier = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(AppColors.secondaryText)
-                            .font(.title3)
-                    }
-                    .padding(.leading, 4)
-                }
-            }
-            
-            if let lang2 = language2Identifier, lang2 == language1Identifier {
-                Text("Same as Subtitle 1. Only one subtitle track will be used.")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.secondaryText)
-            } else {
-                Text("Add a second language for bilingual subtitles")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.secondaryText)
-            }
+    private var pivotWarning: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle")
+            Text("May reduce quality (via English)")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(AppColors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                .stroke(AppColors.cardBorder, lineWidth: 1)
-        )
+        .font(.system(size: 11))
+        .foregroundStyle(AppColors.warning)
     }
 
     private var readinessCard: some View {
@@ -243,9 +230,8 @@ struct SetupView: View {
             Text("Model readiness")
                 .font(AppTypography.bodyEmphasis)
             AssetStatusCard(title: "Speech assets", state: assetManager.speechAssetsState)
-            if assetManager.language1Locale.minimalIdentifier != Locale.Language(identifier: assetManager.transcriptionLocale.identifier).minimalIdentifier || subtitleMode == .bilingual {
-                AssetStatusCard(title: "Translation model", state: assetManager.translationAssetsState)
-            }
+            AssetStatusCard(title: "Translation model", state: assetManager.translationAssetsState)
+            
             if let warning = assetManager.lowStorageWarning {
                 Text(warning)
                     .font(AppTypography.caption)
@@ -266,40 +252,42 @@ struct SetupView: View {
             isEnabled: !assetManager.isBusy
         ) {
             Task {
-                assetManager.configure(
-                    transcriptionLocale: Locale(identifier: transcriptionLocaleIdentifier),
-                    language1Locale: Locale.Language(identifier: language1Identifier),
-                    language2Locale: language2Identifier.map { Locale.Language(identifier: $0) },
-                    subtitleMode: subtitleMode
-                )
                 await assetManager.downloadSpeechAssets()
                 
-                // Determine which translation assets are actually missing
+                guard let config = assetManager.config else { return }
+                
                 let availability = LanguageAvailability()
-                let sourceLang = Locale.Language(identifier: transcriptionLocaleIdentifier)
+                let sourceLang = Locale.Language(identifier: config.audioLocale.identifier)
+                let englishLang = Locale.Language(identifier: "en-US")
                 
-                // Check Language 1
-                let l1 = Locale.Language(identifier: language1Identifier)
-                if l1.minimalIdentifier != sourceLang.minimalIdentifier {
-                    let status = await availability.status(from: sourceLang, to: l1)
-                    if status == .supported {
-                        assetManager.setTranslationDownloading()
-                        translationConfig = TranslationSession.Configuration(source: sourceLang, target: l1)
-                        shouldPrepareTranslation = true
-                        return
-                    }
-                }
+                let tracks: [LanguageSelectionConfig.SubtitleTrackConfig] = [config.subtitle1, config.subtitle2].compactMap { $0 }
                 
-                // Check Language 2
-                if let l2Identifier = language2Identifier {
-                    let l2 = Locale.Language(identifier: l2Identifier)
-                    if l2.minimalIdentifier != sourceLang.minimalIdentifier {
-                        let status = await availability.status(from: sourceLang, to: l2)
+                for track in tracks {
+                    switch track {
+                    case .transcript: continue
+                    case .direct(let target):
+                        let status = await availability.status(from: sourceLang, to: target)
                         if status == .supported {
                             assetManager.setTranslationDownloading()
-                            translationConfig = TranslationSession.Configuration(source: sourceLang, target: l2)
+                            translationConfig = TranslationSession.Configuration(source: sourceLang, target: target)
+                            shouldPrepareTranslation = true
+                            return // One at a time for system prompts
+                        }
+                    case .pivot(let pivot, let target):
+                        let status1 = await availability.status(from: sourceLang, to: pivot)
+                        if status1 == .supported {
+                            assetManager.setTranslationDownloading()
+                            translationConfig = TranslationSession.Configuration(source: sourceLang, target: pivot)
                             shouldPrepareTranslation = true
                             return
+                        } else {
+                            let status2 = await availability.status(from: pivot, to: target)
+                            if status2 == .supported {
+                                assetManager.setTranslationDownloading()
+                                translationConfig = TranslationSession.Configuration(source: pivot, target: target)
+                                shouldPrepareTranslation = true
+                                return
+                            }
                         }
                     }
                 }
@@ -311,38 +299,90 @@ struct SetupView: View {
         PrimaryButton(
             title: "Continue",
             systemImage: "arrow.right.circle",
-            isEnabled: assetManager.isReadyToProceed
+            isEnabled: assetManager.isReadyToProceed && (selectedSubtitle1ID != "") && (!subtitle2Enabled || (selectedSubtitle2ID != nil && selectedSubtitle2ID != ""))
         ) {
+            // Update bindings
+            language1Identifier = (selectedSubtitle1ID == "transcript") ? transcriptionLocaleIdentifier : selectedSubtitle1ID
+            language2Identifier = subtitle2Enabled ? selectedSubtitle2ID : nil
+            
+            // Mode 1
+            if selectedSubtitle1ID == "transcript" {
+                subtitle1Mode = nil
+            } else if let option = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }) {
+                subtitle1Mode = option.mode
+            }
+            
+            // Mode 2
+            if subtitle2Enabled, let targetID = selectedSubtitle2ID,
+               let option = subtitleTargets.first(where: { $0.id == targetID }) {
+                subtitle2Mode = option.mode
+            } else {
+                subtitle2Mode = nil
+            }
+            
             onContinue()
         }
     }
 
-    /// Binding for Language 2 picker - maps empty string to nil for the optional
-    private var language2IdentifierBinding: Binding<String> {
-        Binding(
-            get: {
-                language2Identifier ?? ""
-            },
-            set: { newValue in
-                language2Identifier = newValue.isEmpty ? nil : newValue
+    // MARK: - Helpers
+
+    private func audioLocaleLabel(_ locale: Locale) -> String {
+        let name = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+        return "\(name) (\(locale.identifier(.bcp47)))"
+    }
+
+    private func targetLabel(_ target: TargetOption) -> String {
+        var label = target.displayName
+        if target.mode == .pivot {
+            label += " (via English)"
+        }
+        return label
+    }
+
+    private func updateSubtitleTargets() async {
+        let audioLocale = Locale(identifier: transcriptionLocaleIdentifier)
+        subtitleTargets = await selectionLogic.computeTargets(for: audioLocale)
+        
+        // Validation
+        if selectedSubtitle1ID != "transcript" && !subtitleTargets.contains(where: { $0.id == selectedSubtitle1ID }) {
+            selectedSubtitle1ID = "transcript"
+        }
+        if let current = selectedSubtitle2ID, !subtitleTargets.contains(where: { $0.id == current }) {
+            selectedSubtitle2ID = nil
+        }
+    }
+
+    private func updateAssetManager() {
+        let audioLocale = Locale(identifier: transcriptionLocaleIdentifier)
+        
+        var s1: LanguageSelectionConfig.SubtitleTrackConfig = .transcript(audioLocale)
+        if selectedSubtitle1ID != "transcript", 
+           let option = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }) {
+            let targetLang = Locale.Language(identifier: selectedSubtitle1ID)
+            if option.mode == .direct {
+                s1 = .direct(targetLang)
+            } else {
+                s1 = .pivot(pivot: Locale.Language(identifier: "en-US"), target: targetLang)
             }
+        }
+        
+        var s2: LanguageSelectionConfig.SubtitleTrackConfig? = nil
+        if subtitle2Enabled, let targetID = selectedSubtitle2ID,
+           let option = subtitleTargets.first(where: { $0.id == targetID }) {
+            let targetLang = Locale.Language(identifier: targetID)
+            if option.mode == .direct {
+                s2 = .direct(targetLang)
+            } else {
+                s2 = .pivot(pivot: Locale.Language(identifier: "en-US"), target: targetLang)
+            }
+        }
+        
+        let config = LanguageSelectionConfig(
+            audioLocale: audioLocale,
+            subtitle1: s1,
+            subtitle2: s2
         )
-    }
-
-    private func localeLabel(_ locale: Locale) -> String {
-        let label = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
-        if locale.identifier == Locale.current.identifier {
-            return "Device language (\(label))"
-        }
-        return label
-    }
-
-    private func languageLabel(_ language: Locale.Language) -> String {
-        let identifier = language.minimalIdentifier
-        let label = Locale.current.localizedString(forIdentifier: identifier) ?? identifier
-        if identifier == Locale.current.identifier {
-            return "Device language (\(label))"
-        }
-        return label
+        assetManager.configure(with: config)
+        Task { await assetManager.check() }
     }
 }

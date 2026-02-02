@@ -1,10 +1,3 @@
-//
-//  ContentView.swift
-//  SubStamp
-//
-//  Created by Eason Smith on 2/1/26.
-//
-
 import SwiftUI
 import Translation
 
@@ -22,8 +15,10 @@ struct ContentView: View {
     @StateObject private var orchestrator = PipelineOrchestrator()
 
     @State private var transcriptionLocaleIdentifier: String = Locale.current.identifier
-    @State private var language1Identifier: String = Locale.current.identifier
-    @State private var language2Identifier: String?
+    @State private var language1Locale: String = Locale.current.identifier
+    @State private var subtitle1Mode: TranslationMode? = nil
+    @State private var language2Locale: String?
+    @State private var subtitle2Mode: TranslationMode?
     @State private var isTestClip = false
 
     @State private var selectedVideoURL: URL?
@@ -38,9 +33,8 @@ struct ContentView: View {
 
     private let jobStore = JobStore()
     
-    /// Derived subtitle mode based on whether language2 is selected and different from language 1
     private var subtitleMode: SubtitleMode {
-        if let lang2 = language2Identifier, lang2 != language1Identifier {
+        if let lang2 = language2Locale, lang2 != language1Locale {
             return .bilingual
         }
         return .single
@@ -54,12 +48,15 @@ struct ContentView: View {
                 SetupView(
                     assetManager: assetManager,
                     transcriptionLocaleIdentifier: $transcriptionLocaleIdentifier,
-                    language1Identifier: $language1Identifier,
-                    language2Identifier: $language2Identifier
-                ) {
-                    saveSetupSelections()
-                    step = .pickVideo
-                }
+                    language1Identifier: $language1Locale,
+                    language2Identifier: $language2Locale,
+                    subtitle1Mode: $subtitle1Mode,
+                    subtitle2Mode: $subtitle2Mode,
+                    onContinue: {
+                        saveSetupSelections()
+                        step = .pickVideo
+                    }
+                )
             case .pickVideo:
                 VideoPickerView(
                     selectedVideoURL: $selectedVideoURL,
@@ -108,8 +105,8 @@ struct ContentView: View {
                         style: styleBinding,
                         videoURL: videoURL,
                         mode: subtitleMode,
-                        translationTarget: translationTargetLocale,
-                        sourceLocaleIdentifier: language1Identifier,
+                        translationTarget: language2Locale.map { Locale.Language(identifier: $0) },
+                        sourceLocaleIdentifier: language1Locale,
                         onContinue: {
                             orchestrator.continueAfterReview()
                             step = .processing
@@ -131,18 +128,12 @@ struct ContentView: View {
             }
         }
         .onChange(of: orchestrator.readyForReview) { _, ready in
-            if ready {
-                step = .review
-            }
+            if ready { step = .review }
         }
         .alert("Resume unfinished job?", isPresented: $showResumeAlert) {
-            Button("Resume") {
-                resumeIncompleteJob()
-            }
+            Button("Resume") { resumeIncompleteJob() }
             Button("Discard", role: .destructive) {
-                if let job = resumeJob {
-                    jobStore.deleteJob(id: job.id)
-                }
+                if let job = resumeJob { jobStore.deleteJob(id: job.id) }
                 resumeJob = nil
             }
         } message: {
@@ -158,24 +149,19 @@ struct ContentView: View {
         }
     }
 
-    private var transcriptionLocale: Locale { Locale(identifier: transcriptionLocaleIdentifier) }
-    private var translationTargetLocale: Locale.Language? {
-        language2Identifier.map { Locale.Language(identifier: $0) }
-    }
-
     private func loadSetupSelections() {
         transcriptionLocaleIdentifier = SetupPreferences.loadTranscriptionLocale() ?? Locale.current.identifier
-        language1Identifier = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
-        language2Identifier = SetupPreferences.loadLanguage2()
+        language1Locale = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
+        language2Locale = SetupPreferences.loadLanguage2()
     }
 
     private func saveSetupSelections() {
         SetupPreferences.save(
             transcriptionLocale: transcriptionLocaleIdentifier,
             subtitleMode: subtitleMode,
-            translationTarget: language2Identifier
+            translationTarget: language2Locale
         )
-        SetupPreferences.saveLanguages(language1: language1Identifier, language2: language2Identifier)
+        SetupPreferences.saveLanguages(language1: language1Locale, language2: language2Locale)
     }
 
     private func createJobAndStart() {
@@ -184,10 +170,12 @@ struct ContentView: View {
         let job = JobModel(
             videoURL: selectedVideoURL,
             transcriptionLocale: transcriptionLocaleIdentifier,
-            language1Locale: language1Identifier,
-            subtitleMode: subtitleMode,
-            translationTargetLocale: language2Identifier,
-            subtitleLayout: subtitleMode == .bilingual ? .stacked : .single,
+            language1Locale: language1Locale,
+            subtitle1Mode: subtitle1Mode,
+            subtitleMode: language2Locale == nil ? .single : .bilingual,
+            translationTargetLocale: language2Locale,
+            subtitle2Mode: subtitle2Mode,
+            subtitleLayout: (language2Locale == nil) ? .single : .stacked,
             subtitleStyle: savedStyle,
             exportPreset: .balanced,
             isTestClip: isTestClip
@@ -195,11 +183,7 @@ struct ContentView: View {
         activeJob = job
         resumeTranscribed = nil
         resumeTranslated = nil
-        do {
-            try jobStore.save(job: job)
-        } catch {
-            // ignore save failure for now
-        }
+        try? jobStore.save(job: job)
         step = .processing
     }
 
@@ -218,17 +202,13 @@ struct ContentView: View {
         activeJob = job
         selectedVideoURL = job.videoURL
         transcriptionLocaleIdentifier = job.transcriptionLocale
-        language1Identifier = job.language1Locale
-        language2Identifier = job.translationTargetLocale
+        language1Locale = job.language1Locale
+        subtitle1Mode = job.subtitle1Mode
+        language2Locale = job.translationTargetLocale
+        subtitle2Mode = job.subtitle2Mode
 
         resumeTranscribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
         resumeTranslated = jobStore.loadCues(id: job.id, type: .translated)
         step = .processing
-    }
-}
-
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
     }
 }

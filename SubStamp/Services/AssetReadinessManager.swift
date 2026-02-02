@@ -5,13 +5,9 @@ import Translation
 
 @MainActor
 final class AssetReadinessManager: ObservableObject {
-    @Published var transcriptionLocale: Locale = .current
-    @Published var language1Locale: Locale.Language = Locale.Language(identifier: Locale.current.identifier)
-    @Published var language2Locale: Locale.Language?
-    @Published var subtitleMode: SubtitleMode = .single
-
+    @Published var config: LanguageSelectionConfig?
     @Published var speechAssetsState: AssetState = .notInstalled
-    @Published var translationAssetsState: AssetState = .notInstalled // Combined state for all needed translation models
+    @Published var translationAssetsState: AssetState = .notInstalled
     @Published var lastError: SubStampError?
     @Published var lowStorageWarning: String?
 
@@ -27,22 +23,14 @@ final class AssetReadinessManager: ObservableObject {
         return false
     }
 
-    func configure(
-        transcriptionLocale: Locale,
-        language1Locale: Locale.Language,
-        language2Locale: Locale.Language?,
-        subtitleMode: SubtitleMode
-    ) {
-        let transcriptionChanged = self.transcriptionLocale.identifier != transcriptionLocale.identifier
-        let lang1Changed = self.language1Locale.minimalIdentifier != language1Locale.minimalIdentifier
-        let lang2Changed = self.language2Locale?.minimalIdentifier != language2Locale?.minimalIdentifier
+    func configure(with config: LanguageSelectionConfig) {
+        let changed = self.config?.audioLocale.identifier != config.audioLocale.identifier ||
+                      self.config?.selectedSubtitle1ID != config.selectedSubtitle1ID ||
+                      self.config?.subtitle2Enabled != config.subtitle2Enabled ||
+                      self.config?.selectedSubtitle2ID != config.selectedSubtitle2ID
         
-        self.transcriptionLocale = transcriptionLocale
-        self.language1Locale = language1Locale
-        self.language2Locale = language2Locale
-        self.subtitleMode = subtitleMode
-        
-        if transcriptionChanged || lang1Changed || lang2Changed {
+        self.config = config
+        if changed {
             reset()
         }
     }
@@ -58,21 +46,23 @@ final class AssetReadinessManager: ObservableObject {
     }
 
     func check() async {
+        guard let config = config else { return }
         checkStorage()
-        await checkSpeechAssets(for: transcriptionLocale)
+        await checkSpeechAssets(for: config.audioLocale)
         
-        // Find which translations are actually needed
         var neededTargets: [Locale.Language] = []
-        let sourceLang = Locale.Language(identifier: transcriptionLocale.identifier)
         
-        // If Lang 1 != Transcription Lang, we need Lang 1 assets
-        if language1Locale.minimalIdentifier != sourceLang.minimalIdentifier {
-            neededTargets.append(language1Locale)
-        }
+        let tracks: [LanguageSelectionConfig.SubtitleTrackConfig] = [config.subtitle1, config.subtitle2].compactMap { $0 }
         
-        // If Lang 2 exists and != Transcription Lang, we need Lang 2 assets
-        if let l2 = language2Locale, l2.minimalIdentifier != sourceLang.minimalIdentifier {
-            neededTargets.append(l2)
+        for track in tracks {
+            switch track {
+            case .transcript: break
+            case .direct(let target):
+                neededTargets.append(target)
+            case .pivot(let pivot, let target):
+                neededTargets.append(pivot)
+                neededTargets.append(target)
+            }
         }
         
         if neededTargets.isEmpty {
@@ -80,12 +70,13 @@ final class AssetReadinessManager: ObservableObject {
             return
         }
         
-        await checkAllTranslationAssets(source: transcriptionLocale, targets: neededTargets)
+        await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
     }
 
     func downloadSpeechAssets() async {
+        guard let config = config else { return }
         let transcriber = SpeechTranscriber(
-            locale: transcriptionLocale,
+            locale: config.audioLocale,
             transcriptionOptions: [],
             reportingOptions: [],
             attributeOptions: [.audioTimeRange]
@@ -95,10 +86,9 @@ final class AssetReadinessManager: ObservableObject {
             if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
                 try await downloader.downloadAndInstall()
             }
-            // Verify the asset is actually installed after download
-            await checkSpeechAssets(for: transcriptionLocale)
+            await checkSpeechAssets(for: config.audioLocale)
         } catch {
-            lastError = .assetInstallFailed(locale: transcriptionLocale.identifier)
+            lastError = .assetInstallFailed(locale: config.audioLocale.identifier)
             speechAssetsState = .failed(message: error.localizedDescription)
         }
     }
