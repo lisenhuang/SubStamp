@@ -11,7 +11,6 @@ struct TargetOption: Identifiable, Equatable {
     let id: String // Minimal identifier (BCP-47)
     let displayName: String
     let mode: TranslationMode
-    let status: AssetState
 }
 
 struct SelectionModel {
@@ -84,8 +83,7 @@ final class LanguageSelectionLogic {
                 let option = TargetOption(
                     id: targetID,
                     displayName: Locale.current.localizedString(forIdentifier: targetID) ?? targetID,
-                    mode: .direct,
-                    status: directStatus == .installed ? .ready : .notInstalled
+                    mode: .direct
                 )
                 options.append(option)
                 seenIDs.insert(targetID)
@@ -100,8 +98,7 @@ final class LanguageSelectionLogic {
                     let option = TargetOption(
                         id: targetID,
                         displayName: Locale.current.localizedString(forIdentifier: targetID) ?? targetID,
-                        mode: .pivot,
-                        status: (leg1 == .installed && leg2 == .installed) ? .ready : .notInstalled
+                        mode: .pivot
                     )
                     if !seenIDs.contains(targetID) {
                         options.append(option)

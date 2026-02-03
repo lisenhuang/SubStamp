@@ -23,6 +23,8 @@ struct SetupView: View {
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
+    
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -98,6 +100,11 @@ struct SetupView: View {
         }
         .onChange(of: selectedSubtitle2ID) { _, _ in
             updateAssetManager()
+        }
+        .onChange(of: scenePhase) { _, newValue in
+            if newValue == .active {
+                updateAssetManager()
+            }
         }
     }
 

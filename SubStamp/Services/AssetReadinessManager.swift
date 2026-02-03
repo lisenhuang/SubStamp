@@ -48,10 +48,24 @@ final class AssetReadinessManager: ObservableObject {
     func check() async {
         guard let config = config else { return }
         checkStorage()
+        
+        await performCheck(for: config)
+        
+        // If we found something not installed, do a quick double-check after a tiny delay
+        // This handles cases where the framework is still warming up its internal status cache
+        // which often happens right after app launch or when returning to the view.
+        if !isReadyToProceed {
+            try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
+            if !isReadyToProceed {
+                await performCheck(for: config)
+            }
+        }
+    }
+
+    private func performCheck(for config: LanguageSelectionConfig) async {
         await checkSpeechAssets(for: config.audioLocale)
         
         var neededTargets: [Locale.Language] = []
-        
         let tracks: [LanguageSelectionConfig.SubtitleTrackConfig] = [config.subtitle1, config.subtitle2].compactMap { $0 }
         
         for track in tracks {
