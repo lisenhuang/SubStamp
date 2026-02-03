@@ -114,23 +114,31 @@ final class AssetReadinessManager: ObservableObject {
     }
 
     private func checkSpeechAssets(for locale: Locale) async {
-        let supported = await SpeechTranscriber.supportedLocales
-        if supported.isEmpty {
-            speechAssetsState = .failed(message: "Speech transcription isn't available.")
-            return
-        }
-        let supportedIdentifiers = Set(supported.map { $0.identifier(.bcp47) })
-        guard supportedIdentifiers.contains(locale.identifier(.bcp47)) else {
-            speechAssetsState = .failed(message: "Language not supported.")
-            return
-        }
-
+        let requestedBCP47 = locale.identifier(.bcp47)
         let installed = await SpeechTranscriber.installedLocales
-        let installedIdentifiers = Set(installed.map { $0.identifier(.bcp47) })
-        if installedIdentifiers.contains(locale.identifier(.bcp47)) {
+        
+        // 1. Check for exact BCP47 match in installed locales
+        if installed.contains(where: { $0.identifier(.bcp47) == requestedBCP47 }) {
             speechAssetsState = .ready
-        } else {
+            return
+        }
+        
+        // 2. Fallback: check if the base language is installed (e.g., "en" matches "en-US")
+        let requestedLang = locale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
+        if installed.contains(where: { $0.language.languageCode?.identifier == requestedLang }) {
+            speechAssetsState = .ready
+            return
+        }
+        
+        // 3. Not found in installed, check if it's at least supported/downloadable
+        let supported = await SpeechTranscriber.supportedLocales
+        if supported.contains(where: { 
+            $0.identifier(.bcp47) == requestedBCP47 || 
+            $0.language.languageCode?.identifier == requestedLang 
+        }) {
             speechAssetsState = .notInstalled
+        } else {
+            speechAssetsState = .failed(message: "Language not supported on this device.")
         }
     }
 

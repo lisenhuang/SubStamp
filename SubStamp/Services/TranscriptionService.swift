@@ -45,17 +45,26 @@ final class TranscriptionService {
         
         // Step 3: Ensure speech assets are installed via AssetInventory
         AppLog.append("Checking speech asset installation...")
-        do {
-            if let installRequest = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                AppLog.append("Installing speech assets for locale: \(selectedLocale.identifier)")
-                try await installRequest.downloadAndInstall()
-                AppLog.append("Speech assets installed successfully")
-            } else {
-                AppLog.append("Speech assets already installed for locale: \(selectedLocale.identifier)")
+        if isInstalled {
+            AppLog.append("Speech assets already confirmed installed for locale: \(selectedLocale.identifier). Skipping AssetInventory check to avoid OS limits.")
+        } else {
+            do {
+                if let installRequest = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                    AppLog.append("Installing speech assets for locale: \(selectedLocale.identifier)")
+                    try await installRequest.downloadAndInstall()
+                    AppLog.append("Speech assets installed successfully")
+                } else {
+                    AppLog.append("Speech assets already installed for locale: \(selectedLocale.identifier) (per AssetInventory)")
+                }
+            } catch {
+                AppLog.append("Speech asset installation failed: \(error.localizedDescription)")
+                // If we get the "Too many allocated locales" error but the locale is allegedly in installedLocales, we try to proceed anyway
+                if error.localizedDescription.contains("Too many allocated locales") {
+                    AppLog.append("[WARNING] Hit OS locale limit, but proceeding as locale may already be available.")
+                } else {
+                    throw SubStampError.assetInstallFailed(locale: selectedLocale.identifier)
+                }
             }
-        } catch {
-            AppLog.append("Speech asset installation failed: \(error.localizedDescription)")
-            throw SubStampError.assetInstallFailed(locale: selectedLocale.identifier)
         }
         
         // Step 4: Extract audio from video
@@ -169,6 +178,13 @@ final class TranscriptionService {
                 throw SubStampError.speechAnalyzerError(underlying: error)
             }
             AppLog.append("[RECOVERY] Continuing with \(cues.count) partial cues despite error")
+        } else if cues.isEmpty {
+            AppLog.append("[ERROR] No error thrown, but 0 cues generated. Likely silent audio or model mismatch.")
+            throw SubStampError.speechAnalyzerError(underlying: NSError(
+                domain: "SubStamp",
+                code: -11,
+                userInfo: [NSLocalizedDescriptionKey: "No subtitles were generated. Please check if the audio matches the selected language."]
+            ))
         }
 
         AppLog.append("Transcription completed: \(cues.count) cues")
@@ -178,9 +194,12 @@ final class TranscriptionService {
     
     /// Find the best matching locale from supported locales
     private func findBestMatchingLocale(desired: Locale, from supported: [Locale]) -> Locale {
-        // First, try exact match
-        if supported.contains(where: { $0.identifier == desired.identifier }) {
-            return desired
+        // First, try exact match or BCP47 match
+        if let match = supported.first(where: { 
+            $0.identifier == desired.identifier || 
+            $0.identifier(.bcp47) == desired.identifier(.bcp47) 
+        }) {
+            return match
         }
         
         // Try matching with BCP47 identifier
