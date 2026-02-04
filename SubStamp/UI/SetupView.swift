@@ -388,7 +388,14 @@ struct SetupView: View {
 
         // Fallback: ask Foundation for a likely region (useful for language-only identifiers like "es").
         let locale = Locale(identifier: identifier)
-        return locale.region?.identifier ?? locale.regionCode?.uppercased()
+        if let region = locale.region?.identifier ?? locale.regionCode?.uppercased() {
+            return region
+        }
+
+        // Last resort: for language-only identifiers (e.g. "fr"), pick a representative region
+        // so we can show a more useful flag than the generic globe.
+        let languageCode = components[0].lowercased()
+        return defaultRegion(forLanguageCode: languageCode)
     }
 
     private func flagEmoji(forRegionCode regionCode: String) -> String? {
@@ -434,6 +441,32 @@ struct SetupView: View {
             let v = scalar.value
             return v >= 48 && v <= 57
         }
+    }
+
+    private func defaultRegion(forLanguageCode languageCode: String) -> String? {
+        // These are heuristics for display only (BCP-47 language-only tags don’t imply a country).
+        // Keep this list small and obvious; unknowns fall back to 🌐.
+        let map: [String: String] = [
+            "ar": "SA",
+            "de": "DE",
+            "en": "US",
+            "es": "ES",
+            "fa": "IR",
+            "fr": "FR",
+            "hi": "IN",
+            "id": "ID",
+            "it": "IT",
+            "ja": "JP",
+            "ko": "KR",
+            "nl": "NL",
+            "pt": "BR",
+            "ru": "RU",
+            "tr": "TR",
+            "uk": "UA",
+            "vi": "VN",
+            "zh": "CN"
+        ]
+        return map[languageCode]
     }
 
     private func updateSubtitleTargets() async {
