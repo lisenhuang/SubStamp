@@ -4,13 +4,13 @@ import FoundationModels
 @available(iOS 26.0, *)
 final class AppleIntelligenceTranslationService {
     @Generable
-    private struct CueTranslation {
+    struct CueTranslation {
         var id: String
         var text: String
     }
 
     @Generable
-    private struct CueTranslationResponse {
+    struct CueTranslationResponse {
         var translations: [CueTranslation]
     }
 
