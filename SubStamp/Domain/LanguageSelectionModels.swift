@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import Translation
+import FoundationModels
 import Speech
 
 enum TranslationMode: String, Codable {
@@ -23,6 +24,7 @@ struct SelectionModel {
 /// Final selection config object for the pipeline
 struct LanguageSelectionConfig {
     let audioLocale: Locale
+    let translationProvider: TranslationProvider
     let subtitle1: SubtitleTrackConfig
     let subtitle2: SubtitleTrackConfig?
     
@@ -60,12 +62,18 @@ final class LanguageSelectionLogic {
     private var targetsCache: [String: [TargetOption]] = [:]
     
     /// Computes valid translation targets for a given source audio locale.
-    func computeTargets(for source: Locale) async -> [TargetOption] {
-        let sourceID = source.identifier(.bcp47)
+    func computeTargets(for source: Locale, provider: TranslationProvider) async -> [TargetOption] {
+        let sourceID = "\(provider.rawValue)|\(source.identifier(.bcp47))"
         if let cached = targetsCache[sourceID] {
             return cached
         }
         
+        if provider == .appleIntelligence {
+            let options = computeAppleIntelligenceTargets(for: source)
+            targetsCache[sourceID] = options
+            return options
+        }
+
         let supportedLanguages = await fetchSupportedLanguages()
         let sourceLang = Locale.Language(identifier: source.identifier)
         let englishLang = Locale.Language(identifier: "en-US")
@@ -111,6 +119,31 @@ final class LanguageSelectionLogic {
         let sortedOptions = options.sorted { $0.displayName < $1.displayName }
         targetsCache[sourceID] = sortedOptions
         return sortedOptions
+    }
+
+    private func computeAppleIntelligenceTargets(for source: Locale) -> [TargetOption] {
+        // Apple Intelligence uses the system language model; only show supported languages (direct mode only).
+        // If Apple Intelligence is unavailable, we return an empty list and SetupView will fall back.
+        guard let model = appleIntelligenceModelIfAvailable() else { return [] }
+        let sourceLang = Locale.Language(identifier: source.identifier)
+
+        let options: [TargetOption] = model.supportedLanguages
+            .filter { $0.minimalIdentifier != sourceLang.minimalIdentifier }
+            .map { language in
+                let id = language.minimalIdentifier
+                return TargetOption(
+                    id: id,
+                    displayName: Locale.current.localizedString(forIdentifier: id) ?? id,
+                    mode: .direct
+                )
+            }
+            .sorted { $0.displayName < $1.displayName }
+        return options
+    }
+
+    private func appleIntelligenceModelIfAvailable() -> SystemLanguageModel? {
+        let model = SystemLanguageModel.default
+        return model.isAvailable ? model : nil
     }
 
     private nonisolated func fetchSupportedLanguages() async -> [Locale.Language] {

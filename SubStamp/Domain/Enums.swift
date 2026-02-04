@@ -48,6 +48,13 @@ enum ExportPreset: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
+    case translationFramework
+    case appleIntelligence
+
+    var id: String { rawValue }
+}
+
 enum SubtitleFontSize: String, Codable, CaseIterable, Identifiable {
     case small
     case medium
