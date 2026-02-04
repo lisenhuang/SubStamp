@@ -470,26 +470,22 @@ final class TranscriptionService {
     }
 
     private func postProcess(cues: [SubtitleCue]) -> [SubtitleCue] {
-        var output: [SubtitleCue] = []
+        let minDuration: Double = 0.8
+        let maxCharsPerLine = 42
+        let maxLines = 2
+
+        // 1) Clean text and merge very short cues to avoid rapid flashes.
+        var merged: [SubtitleCue] = []
         var index = 0
         while index < cues.count {
             var cue = cues[index]
-            let minDuration: Double = 0.8
-            let maxCharsPerLine = 42
-            let maxLines = 2
-
             cue.primaryText = SubtitleTextCleaner.clean(cue.primaryText)
-            cue.primaryText = clampText(cue.primaryText, maxCharsPerLine: maxCharsPerLine, maxLines: maxLines)
 
             if cue.durationSeconds < minDuration, index + 1 < cues.count {
-                let next = cues[index + 1]
-                let mergedText = [cue.primaryText, next.primaryText].joined(separator: " ")
-                let merged = SubtitleCue(
-                    start: cue.start,
-                    end: next.end,
-                    primaryText: clampText(mergedText, maxCharsPerLine: maxCharsPerLine, maxLines: maxLines)
-                )
-                output.append(merged)
+                var next = cues[index + 1]
+                next.primaryText = SubtitleTextCleaner.clean(next.primaryText)
+                let mergedText = SubtitleTextCleaner.clean([cue.primaryText, next.primaryText].joined(separator: " "))
+                merged.append(SubtitleCue(id: cue.id, start: cue.start, end: next.end, primaryText: mergedText))
                 index += 2
                 continue
             }
@@ -498,40 +494,121 @@ final class TranscriptionService {
                 cue.end = CMTime(seconds: cue.start.seconds + minDuration, preferredTimescale: 600)
             }
 
-            output.append(cue)
+            merged.append(cue)
             index += 1
+        }
+
+        // 2) Split long cues into multiple cues instead of truncating the text.
+        var output: [SubtitleCue] = []
+        for cue in merged {
+            output.append(contentsOf: splitCueIfNeeded(cue, maxCharsPerLine: maxCharsPerLine, maxLines: maxLines, minDuration: minDuration))
         }
         return output
     }
 
-    private func normalizeText(_ text: String) -> String {
-        return SubtitleTextCleaner.clean(text)
+    private func splitCueIfNeeded(_ cue: SubtitleCue, maxCharsPerLine: Int, maxLines: Int, minDuration: Double) -> [SubtitleCue] {
+        let cleaned = SubtitleTextCleaner.clean(cue.primaryText)
+        let lines = wrapTextIntoLines(cleaned, maxCharsPerLine: maxCharsPerLine)
+        if lines.isEmpty {
+            return []
+        }
+
+        var segments: [String] = stride(from: 0, to: lines.count, by: maxLines).map { start in
+            let end = min(lines.count, start + maxLines)
+            return lines[start..<end].joined(separator: "\n")
+        }
+
+        let totalDuration = max(0, cue.end.seconds - cue.start.seconds)
+        let maxSegmentsByTime = max(1, Int(floor(totalDuration / minDuration)))
+        if segments.count > maxSegmentsByTime {
+            segments = mergeSegmentsToFit(segments, targetCount: maxSegmentsByTime)
+        }
+
+        if segments.count <= 1 {
+            var updated = cue
+            updated.primaryText = segments.first ?? cleaned
+            return [updated]
+        }
+
+        let weights = segments.map { max(1, $0.filter { !$0.isWhitespace && $0 != "\n" }.count) }
+        let totalWeight = max(1, weights.reduce(0, +))
+
+        var split: [SubtitleCue] = []
+        var cursor = cue.start.seconds
+        let endSeconds = cue.end.seconds
+
+        for i in segments.indices {
+            let isLast = i == segments.count - 1
+            let segmentEnd: Double
+            if isLast {
+                segmentEnd = endSeconds
+            } else {
+                let delta = totalDuration * Double(weights[i]) / Double(totalWeight)
+                segmentEnd = min(endSeconds, cursor + delta)
+            }
+
+            split.append(SubtitleCue(
+                id: i == 0 ? cue.id : UUID(),
+                start: CMTime(seconds: cursor, preferredTimescale: 600),
+                end: CMTime(seconds: segmentEnd, preferredTimescale: 600),
+                primaryText: segments[i],
+                secondaryText: cue.secondaryText,
+                hasTranslationError: cue.hasTranslationError
+            ))
+            cursor = segmentEnd
+        }
+
+        return split.filter { $0.end.seconds > $0.start.seconds }
     }
 
-    private func clampText(_ text: String, maxCharsPerLine: Int, maxLines: Int) -> String {
-        guard text.count > maxCharsPerLine else { return text }
+    private func wrapTextIntoLines(_ text: String, maxCharsPerLine: Int) -> [String] {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalized.isEmpty else { return [] }
+
         var lines: [String] = []
-        var current = text
-        for _ in 0..<maxLines {
-            if current.count <= maxCharsPerLine {
-                lines.append(current)
-                current = ""
-                break
-            }
-            let splitIndex = current.index(current.startIndex, offsetBy: maxCharsPerLine)
-            let line = String(current[..<splitIndex])
-            if let lastSpace = line.lastIndex(of: " ") {
-                let head = String(current[..<lastSpace])
-                lines.append(head)
-                current = String(current[current.index(after: lastSpace)...])
+        var remaining = normalized
+
+        while remaining.count > maxCharsPerLine {
+            let splitIndex = remaining.index(remaining.startIndex, offsetBy: maxCharsPerLine)
+            let candidate = String(remaining[..<splitIndex])
+            if let lastSpace = candidate.lastIndex(of: " ") {
+                let head = String(remaining[..<lastSpace]).trimmingCharacters(in: .whitespaces)
+                if !head.isEmpty { lines.append(head) }
+                remaining = String(remaining[remaining.index(after: lastSpace)...]).trimmingCharacters(in: .whitespaces)
             } else {
-                lines.append(line)
-                current = String(current[splitIndex...])
+                let head = candidate.trimmingCharacters(in: .whitespaces)
+                if !head.isEmpty { lines.append(head) }
+                remaining = String(remaining[splitIndex...]).trimmingCharacters(in: .whitespaces)
             }
         }
-        if !current.isEmpty {
-            lines[lines.count - 1] += "…"
+
+        if !remaining.isEmpty {
+            lines.append(remaining)
         }
-        return lines.joined(separator: "\n")
+
+        return lines
+    }
+
+    private func mergeSegmentsToFit(_ segments: [String], targetCount: Int) -> [String] {
+        guard targetCount > 0 else { return segments }
+        var segments = segments
+        while segments.count > targetCount, segments.count >= 2 {
+            var bestIndex = 0
+            var bestLength = Int.max
+            for i in 0..<(segments.count - 1) {
+                let length = segments[i].count + segments[i + 1].count
+                if length < bestLength {
+                    bestLength = length
+                    bestIndex = i
+                }
+            }
+            let merged = [segments[bestIndex], segments[bestIndex + 1]].joined(separator: "\n")
+            segments[bestIndex] = merged
+            segments.remove(at: bestIndex + 1)
+        }
+        return segments
     }
 }
