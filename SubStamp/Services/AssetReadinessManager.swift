@@ -27,6 +27,7 @@ final class AssetReadinessManager: ObservableObject {
     func configure(with config: LanguageSelectionConfig) {
         let changed = self.config?.audioLocale.identifier != config.audioLocale.identifier ||
                       self.config?.translationProvider != config.translationProvider ||
+                      self.config?.fixTranscriptionWithAppleIntelligence != config.fixTranscriptionWithAppleIntelligence ||
                       self.config?.selectedSubtitle1ID != config.selectedSubtitle1ID ||
                       self.config?.subtitle2Enabled != config.subtitle2Enabled ||
                       self.config?.selectedSubtitle2ID != config.selectedSubtitle2ID
@@ -82,7 +83,11 @@ final class AssetReadinessManager: ObservableObject {
         }
         
         if neededTargets.isEmpty {
-            translationAssetsState = .ready
+            if config.translationProvider == .appleIntelligence && config.fixTranscriptionWithAppleIntelligence {
+                await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: [])
+            } else {
+                translationAssetsState = .ready
+            }
             return
         }
 

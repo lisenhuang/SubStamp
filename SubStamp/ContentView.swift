@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var language2Locale: String?
     @State private var subtitle2Mode: TranslationMode?
     @State private var translationProvider: TranslationProvider = .translationFramework
+    @State private var fixTranscriptionWithAppleIntelligence = false
     @State private var isTestClip = false
 
     @State private var selectedVideoURL: URL?
@@ -54,6 +55,7 @@ struct ContentView: View {
                     subtitle1Mode: $subtitle1Mode,
                     subtitle2Mode: $subtitle2Mode,
                     translationProvider: $translationProvider,
+                    fixTranscriptionWithAppleIntelligence: $fixTranscriptionWithAppleIntelligence,
                     onContinue: {
                         saveSetupSelections()
                         step = .pickVideo
@@ -156,6 +158,10 @@ struct ContentView: View {
         language1Locale = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
         language2Locale = SetupPreferences.loadLanguage2()
         translationProvider = SetupPreferences.loadTranslationProvider() ?? .translationFramework
+        fixTranscriptionWithAppleIntelligence = SetupPreferences.loadFixTranscriptionWithAppleIntelligence()
+        if translationProvider != .appleIntelligence {
+            fixTranscriptionWithAppleIntelligence = false
+        }
     }
 
     private func saveSetupSelections() {
@@ -163,7 +169,8 @@ struct ContentView: View {
             transcriptionLocale: transcriptionLocaleIdentifier,
             subtitleMode: subtitleMode,
             translationTarget: language2Locale,
-            translationProvider: translationProvider
+            translationProvider: translationProvider,
+            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence
         )
         SetupPreferences.saveLanguages(language1: language1Locale, language2: language2Locale)
     }
@@ -183,6 +190,7 @@ struct ContentView: View {
             subtitleStyle: savedStyle,
             exportPreset: .balanced,
             translationProvider: translationProvider,
+            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
             isTestClip: isTestClip
         )
         activeJob = job
@@ -212,6 +220,7 @@ struct ContentView: View {
         language2Locale = job.translationTargetLocale
         subtitle2Mode = job.subtitle2Mode
         translationProvider = job.translationProvider
+        fixTranscriptionWithAppleIntelligence = job.fixTranscriptionWithAppleIntelligence
 
         resumeTranscribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
         resumeTranslated = jobStore.loadCues(id: job.id, type: .translated)

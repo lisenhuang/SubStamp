@@ -15,6 +15,7 @@ struct JobModel: Identifiable, Codable {
     var subtitleStyle: SubtitleStyle
     var exportPreset: ExportPreset
     var translationProvider: TranslationProvider
+    var fixTranscriptionWithAppleIntelligence: Bool
     var stage: ProcessingStage
     var outputURL: URL?
     var isTestClip: Bool
@@ -35,6 +36,7 @@ struct JobModel: Identifiable, Codable {
         subtitleStyle: SubtitleStyle = SubtitleStyle(),
         exportPreset: ExportPreset = .balanced,
         translationProvider: TranslationProvider = .translationFramework,
+        fixTranscriptionWithAppleIntelligence: Bool = false,
         stage: ProcessingStage = .idle,
         outputURL: URL? = nil,
         isTestClip: Bool = false,
@@ -54,6 +56,7 @@ struct JobModel: Identifiable, Codable {
         self.subtitleStyle = subtitleStyle
         self.exportPreset = exportPreset
         self.translationProvider = translationProvider
+        self.fixTranscriptionWithAppleIntelligence = fixTranscriptionWithAppleIntelligence
         self.stage = stage
         self.outputURL = outputURL
         self.isTestClip = isTestClip
@@ -77,6 +80,7 @@ private extension JobModel {
         case subtitleStyle
         case exportPreset
         case translationProvider
+        case fixTranscriptionWithAppleIntelligence
         case stage
         case outputURL
         case isTestClip
@@ -102,6 +106,7 @@ extension JobModel {
         subtitleStyle = try container.decodeIfPresent(SubtitleStyle.self, forKey: .subtitleStyle) ?? SubtitleStyle()
         exportPreset = try container.decodeIfPresent(ExportPreset.self, forKey: .exportPreset) ?? .balanced
         translationProvider = try container.decodeIfPresent(TranslationProvider.self, forKey: .translationProvider) ?? .translationFramework
+        fixTranscriptionWithAppleIntelligence = try container.decodeIfPresent(Bool.self, forKey: .fixTranscriptionWithAppleIntelligence) ?? false
         stage = try container.decodeIfPresent(ProcessingStage.self, forKey: .stage) ?? .idle
         outputURL = try container.decodeIfPresent(URL.self, forKey: .outputURL)
         isTestClip = try container.decodeIfPresent(Bool.self, forKey: .isTestClip) ?? false
@@ -124,6 +129,7 @@ extension JobModel {
         try container.encode(subtitleStyle, forKey: .subtitleStyle)
         try container.encode(exportPreset, forKey: .exportPreset)
         try container.encode(translationProvider, forKey: .translationProvider)
+        try container.encode(fixTranscriptionWithAppleIntelligence, forKey: .fixTranscriptionWithAppleIntelligence)
         try container.encode(stage, forKey: .stage)
         try container.encodeIfPresent(outputURL, forKey: .outputURL)
         try container.encode(isTestClip, forKey: .isTestClip)
