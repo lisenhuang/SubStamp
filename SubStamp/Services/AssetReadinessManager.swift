@@ -100,7 +100,7 @@ final class AssetReadinessManager: ObservableObject {
 #if DEBUG
         let prefix = "[AI-DETECT]"
         let targetIDs = targets.map { $0.minimalIdentifier }.joined(separator: ", ")
-        AppLog.append("\(prefix) assetCheck(provider=appleIntelligence) isAvailable=\(model.isAvailable) source=\(source.identifier(.bcp47)) targets=\(targetIDs)")
+        AppLog.append("\(prefix) assetCheck(provider=appleIntelligence) isAvailable=\(model.isAvailable) availability=\(model.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(model.supportsLocale(source)) targets=\(targetIDs)")
 #endif
 
         guard model.isAvailable else {

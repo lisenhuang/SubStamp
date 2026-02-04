@@ -128,7 +128,7 @@ final class LanguageSelectionLogic {
 #if DEBUG
             let prefix = "[AI-DETECT]"
             let defaultModel = SystemLanguageModel.default
-            AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) unavailable isAvailable=\(defaultModel.isAvailable) source=\(source.identifier(.bcp47))")
+            AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) unavailable isAvailable=\(defaultModel.isAvailable) availability=\(defaultModel.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(defaultModel.supportsLocale(source))")
 #endif
             return []
         }
@@ -150,7 +150,7 @@ final class LanguageSelectionLogic {
         let prefix = "[AI-DETECT]"
         let supportedCount = model.supportedLanguages.count
         let sample = model.supportedLanguages.map { $0.minimalIdentifier }.prefix(12).joined(separator: ", ")
-        AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) isAvailable=true supportedCount=\(supportedCount) source=\(source.identifier(.bcp47)) options=\(options.count) sample=\(sample)")
+        AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) isAvailable=true availability=\(model.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(model.supportsLocale(source)) supportedCount=\(supportedCount) options=\(options.count) sample=\(sample)")
 #endif
         return options
     }

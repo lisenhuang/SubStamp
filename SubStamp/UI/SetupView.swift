@@ -161,6 +161,8 @@ struct SetupView: View {
 #if DEBUG
         let prefix = "[AI-DETECT]"
         let model = SystemLanguageModel.default
+        let availability = describeAppleIntelligenceAvailability(model.availability)
+        let supportsCurrentLocale = model.supportsLocale(Locale.current)
 
         let supported = model.supportedLanguages.map { $0.minimalIdentifier }
         let supportedSample = supported.prefix(12).joined(separator: ", ")
@@ -169,11 +171,34 @@ struct SetupView: View {
         let currentLocale = Locale.current.identifier
 
         AppLog.append("\(prefix) \(context)")
-        AppLog.append("\(prefix) isAvailable=\(model.isAvailable) supportedCount=\(supported.count) sample=\(supportedSample)")
+        AppLog.append("\(prefix) isAvailable=\(model.isAvailable) availability=\(availability) supportsLocale(current)=\(supportsCurrentLocale)")
+        AppLog.append("\(prefix) supportedCount=\(supported.count) sample=\(supportedSample)")
         AppLog.append("\(prefix) currentLocale=\(currentLocale) preferred=\(preferred)")
         AppLog.append("\(prefix) selectedProvider=\(translationProvider.rawValue) transcription=\(transcriptionLocaleIdentifier) s1=\(selectedSubtitle1ID) s2=\(selectedSubtitle2ID ?? "nil")")
 #endif
     }
+
+#if DEBUG
+    private func describeAppleIntelligenceAvailability(_ availability: SystemLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable(deviceNotEligible)"
+            case .appleIntelligenceNotEnabled:
+                return "unavailable(appleIntelligenceNotEnabled)"
+            case .modelNotReady:
+                return "unavailable(modelNotReady)"
+            @unknown default:
+                return "unavailable(unknown)"
+            }
+        @unknown default:
+            return "unknown"
+        }
+    }
+#endif
 
     private var audioLanguageCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
