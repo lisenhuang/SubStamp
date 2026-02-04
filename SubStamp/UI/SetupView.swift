@@ -1,3 +1,4 @@
+import FoundationModels
 import Speech
 import SwiftUI
 @preconcurrency import Translation
@@ -9,6 +10,7 @@ struct SetupView: View {
     @Binding var language2Identifier: String?
     @Binding var subtitle1Mode: TranslationMode?
     @Binding var subtitle2Mode: TranslationMode?
+    @Binding var translationProvider: TranslationProvider
     var onContinue: () -> Void
 
     @State private var selectionLogic = LanguageSelectionLogic()
@@ -23,6 +25,7 @@ struct SetupView: View {
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
+    @State private var appleIntelligenceAvailable = false
     
     @Environment(\.scenePhase) private var scenePhase
 
@@ -38,6 +41,7 @@ struct SetupView: View {
 
                 audioLanguageCard
                 subtitleSelectionCard
+                translationProviderCard
                 readinessCard
 
                 if !assetManager.isReadyToProceed {
@@ -49,7 +53,26 @@ struct SetupView: View {
         }
         .background(AppColors.background)
         .task {
+            logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
             speechAvailable = SpeechTranscriber.isAvailable
+            appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+            logAppleIntelligenceDiagnostics(context: "SetupView.task(initial-check)")
+
+            if !appleIntelligenceAvailable {
+                translationProvider = .translationFramework
+            }
+
+            // Retry once shortly after launch in case the system model is still initializing.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                let retryAvailable = SystemLanguageModel.default.isAvailable
+                if retryAvailable != appleIntelligenceAvailable {
+                    appleIntelligenceAvailable = retryAvailable
+                    logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-changed)")
+                } else {
+                    logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-unchanged)")
+                }
+            }
             
             // 1. Fetch Speech locales
             let speechLocales = await SpeechTranscriber.supportedLocales.sorted { 
@@ -62,21 +85,21 @@ struct SetupView: View {
             let installed = await SpeechTranscriber.installedLocales
             self.installedSpeechIDs = Set(installed.map { $0.identifier(.bcp47) })
             
-            // 2. Initialize from existing bindings
-            if language1Identifier == transcriptionLocaleIdentifier {
-                selectedSubtitle1ID = "transcript"
-            } else {
-                selectedSubtitle1ID = language1Identifier
-            }
-            
+            await updateSubtitleTargets()
+
+            // 2. Initialize from existing bindings (only after targets are known to avoid invalid Picker selections)
+            let desiredSubtitle1ID = language1Identifier == transcriptionLocaleIdentifier ? "transcript" : language1Identifier
+            selectedSubtitle1ID = mappedSubtitleSelection(desiredSubtitle1ID) ?? "transcript"
+
             if let lang2 = language2Identifier {
                 subtitle2Enabled = true
-                selectedSubtitle2ID = lang2
+                selectedSubtitle2ID = mappedSubtitleSelection(lang2)
+                if selectedSubtitle2ID == nil { subtitle2Enabled = false }
             } else {
                 subtitle2Enabled = false
+                selectedSubtitle2ID = nil
             }
-            
-            await updateSubtitleTargets()
+
             updateAssetManager()
         }
         .translationTask(translationConfig) { session in
@@ -84,6 +107,22 @@ struct SetupView: View {
             Task {
                 await assetManager.downloadTranslationAssets(session: session)
                 shouldPrepareTranslation = false
+            }
+        }
+        .onChange(of: translationProvider) { _, newValue in
+            appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+            logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
+            if newValue == .appleIntelligence, !appleIntelligenceAvailable {
+                translationProvider = .translationFramework
+                return
+            }
+            if newValue == .appleIntelligence {
+                translationConfig = nil
+                shouldPrepareTranslation = false
+            }
+            Task {
+                await updateSubtitleTargets()
+                updateAssetManager()
             }
         }
         .onChange(of: transcriptionLocaleIdentifier) { _, _ in
@@ -103,10 +142,63 @@ struct SetupView: View {
         }
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
-                updateAssetManager()
+                appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+                logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
+                if !appleIntelligenceAvailable {
+                    translationProvider = .translationFramework
+                    translationConfig = nil
+                    shouldPrepareTranslation = false
+                }
+                Task {
+                    await updateSubtitleTargets()
+                    updateAssetManager()
+                }
             }
         }
     }
+
+    private func logAppleIntelligenceDiagnostics(context: String) {
+#if DEBUG
+        let prefix = "[AI-DETECT]"
+        let model = SystemLanguageModel.default
+        let availability = describeAppleIntelligenceAvailability(model.availability)
+        let supportsCurrentLocale = model.supportsLocale(Locale.current)
+
+        let supported = model.supportedLanguages.map { $0.minimalIdentifier }
+        let supportedSample = supported.prefix(12).joined(separator: ", ")
+
+        let preferred = Locale.preferredLanguages.prefix(5).joined(separator: ", ")
+        let currentLocale = Locale.current.identifier
+
+        AppLog.append("\(prefix) \(context)")
+        AppLog.append("\(prefix) isAvailable=\(model.isAvailable) availability=\(availability) supportsLocale(current)=\(supportsCurrentLocale)")
+        AppLog.append("\(prefix) supportedCount=\(supported.count) sample=\(supportedSample)")
+        AppLog.append("\(prefix) currentLocale=\(currentLocale) preferred=\(preferred)")
+        AppLog.append("\(prefix) selectedProvider=\(translationProvider.rawValue) transcription=\(transcriptionLocaleIdentifier) s1=\(selectedSubtitle1ID) s2=\(selectedSubtitle2ID ?? "nil")")
+#endif
+    }
+
+#if DEBUG
+    private func describeAppleIntelligenceAvailability(_ availability: SystemLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable(deviceNotEligible)"
+            case .appleIntelligenceNotEnabled:
+                return "unavailable(appleIntelligenceNotEnabled)"
+            case .modelNotReady:
+                return "unavailable(modelNotReady)"
+            @unknown default:
+                return "unavailable(unknown)"
+            }
+        @unknown default:
+            return "unknown"
+        }
+    }
+#endif
 
     private var audioLanguageCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -223,6 +315,34 @@ struct SetupView: View {
         )
     }
 
+    @ViewBuilder
+    private var translationProviderCard: some View {
+        if appleIntelligenceAvailable {
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                Text("Translation engine")
+                    .font(AppTypography.bodyEmphasis)
+
+                Picker("Translation engine", selection: $translationProvider) {
+                    Text("Translation framework").tag(TranslationProvider.translationFramework)
+                    Text("Apple Intelligence").tag(TranslationProvider.appleIntelligence)
+                }
+                .pickerStyle(.segmented)
+
+                Text("Apple Intelligence uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(AppColors.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                    .stroke(AppColors.cardBorder, lineWidth: 1)
+            )
+        }
+    }
+
     private var pivotWarning: some View {
         HStack(spacing: 4) {
             Image(systemName: "exclamationmark.triangle")
@@ -237,7 +357,7 @@ struct SetupView: View {
             Text("Model readiness")
                 .font(AppTypography.bodyEmphasis)
             AssetStatusCard(title: "Speech assets", state: assetManager.speechAssetsState)
-            AssetStatusCard(title: "Translation model", state: assetManager.translationAssetsState)
+            AssetStatusCard(title: translationProvider == .appleIntelligence ? "Apple Intelligence" : "Translation model", state: assetManager.translationAssetsState)
             
             if let warning = assetManager.lowStorageWarning {
                 Text(warning)
@@ -260,6 +380,11 @@ struct SetupView: View {
         ) {
             Task {
                 await assetManager.downloadSpeechAssets()
+
+                if translationProvider == .appleIntelligence {
+                    await assetManager.check()
+                    return
+                }
                 
                 guard let config = assetManager.config else { return }
                 
@@ -471,16 +596,69 @@ struct SetupView: View {
         return map[languageCode]
     }
 
+    private func mappedSubtitleSelection(_ identifier: String) -> String? {
+        if identifier == "transcript" { return "transcript" }
+        guard !subtitleTargets.isEmpty else { return nil }
+
+        let normalizedSaved = normalizeLocaleIdentifier(identifier)
+        if let exact = subtitleTargets.first(where: { normalizeLocaleIdentifier($0.id) == normalizedSaved }) {
+            return exact.id
+        }
+
+        guard let savedLang = languageCode(from: normalizedSaved) else { return nil }
+        let candidates = subtitleTargets.filter { languageCode(from: normalizeLocaleIdentifier($0.id)) == savedLang }
+        guard !candidates.isEmpty else { return nil }
+
+        if let savedScript = scriptSubtag(from: normalizedSaved),
+           let match = candidates.first(where: { normalizeLocaleIdentifier($0.id).contains("-\(savedScript)") }) {
+            return match.id
+        }
+
+        if let savedRegion = regionSubtag(from: normalizedSaved),
+           let match = candidates.first(where: { normalizeLocaleIdentifier($0.id).contains("-\(savedRegion)") }) {
+            return match.id
+        }
+
+        if savedLang == "zh" {
+            if let hans = candidates.first(where: { normalizeLocaleIdentifier($0.id).contains("-hans") }) {
+                return hans.id
+            }
+        }
+
+        return candidates.first?.id
+    }
+
+    private func normalizeLocaleIdentifier(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func languageCode(from normalizedIdentifier: String) -> String? {
+        normalizeLocaleIdentifier(normalizedIdentifier).split(separator: "-").first.map(String.init)
+    }
+
+    private func scriptSubtag(from normalizedIdentifier: String) -> String? {
+        let parts = normalizeLocaleIdentifier(normalizedIdentifier).split(separator: "-").map(String.init)
+        return parts.first(where: { isScriptSubtag($0) })
+    }
+
+    private func regionSubtag(from normalizedIdentifier: String) -> String? {
+        let parts = normalizeLocaleIdentifier(normalizedIdentifier).split(separator: "-").map(String.init)
+        return parts.first(where: { isRegionSubtag($0) })
+    }
+
     private func updateSubtitleTargets() async {
         let audioLocale = Locale(identifier: transcriptionLocaleIdentifier)
-        subtitleTargets = await selectionLogic.computeTargets(for: audioLocale)
+        subtitleTargets = await selectionLogic.computeTargets(for: audioLocale, provider: translationProvider)
         
         // Validation
         if selectedSubtitle1ID != "transcript" && !subtitleTargets.contains(where: { $0.id == selectedSubtitle1ID }) {
-            selectedSubtitle1ID = "transcript"
+            selectedSubtitle1ID = mappedSubtitleSelection(selectedSubtitle1ID) ?? "transcript"
         }
         if let current = selectedSubtitle2ID, !subtitleTargets.contains(where: { $0.id == current }) {
-            selectedSubtitle2ID = nil
+            selectedSubtitle2ID = mappedSubtitleSelection(current)
         }
     }
 
@@ -511,6 +689,7 @@ struct SetupView: View {
         
         let config = LanguageSelectionConfig(
             audioLocale: audioLocale,
+            translationProvider: translationProvider,
             subtitle1: s1,
             subtitle2: s2
         )

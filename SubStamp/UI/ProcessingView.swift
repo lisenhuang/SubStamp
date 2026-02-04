@@ -114,6 +114,19 @@ struct ProcessingView: View {
 
     private func startPipelineIfNeeded() {
         guard !orchestrator.isRunning else { return }
+
+        if job.translationProvider == .appleIntelligence {
+            config1 = nil
+            config2 = nil
+            config3 = nil
+            if let transcribed = resumeTranscribed, !didResume {
+                orchestrator.resume(job: job, s1: nil, s2: nil, s3: nil, transcribed: transcribed, translated: resumeTranslated)
+                didResume = true
+            } else {
+                orchestrator.start(job: job, translationSession1: nil, translationSession2: nil, translationSession3: nil)
+            }
+            return
+        }
         
         let base = Locale.Language(identifier: job.transcriptionLocale)
         let english = Locale.Language(identifier: "en-US")

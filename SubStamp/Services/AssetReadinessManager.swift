@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import FoundationModels
 import Speech
 import Translation
 
@@ -25,6 +26,7 @@ final class AssetReadinessManager: ObservableObject {
 
     func configure(with config: LanguageSelectionConfig) {
         let changed = self.config?.audioLocale.identifier != config.audioLocale.identifier ||
+                      self.config?.translationProvider != config.translationProvider ||
                       self.config?.selectedSubtitle1ID != config.selectedSubtitle1ID ||
                       self.config?.subtitle2Enabled != config.subtitle2Enabled ||
                       self.config?.selectedSubtitle2ID != config.selectedSubtitle2ID
@@ -83,8 +85,70 @@ final class AssetReadinessManager: ObservableObject {
             translationAssetsState = .ready
             return
         }
-        
-        await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
+
+        switch config.translationProvider {
+        case .translationFramework:
+            await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
+        case .appleIntelligence:
+            await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: neededTargets)
+        }
+    }
+
+    private func checkAppleIntelligenceAvailability(source: Locale, targets: [Locale.Language]) async {
+        let model = SystemLanguageModel.default
+
+#if DEBUG
+        let prefix = "[AI-DETECT]"
+        let targetIDs = targets.map { $0.minimalIdentifier }.joined(separator: ", ")
+        AppLog.append("\(prefix) assetCheck(provider=appleIntelligence) isAvailable=\(model.isAvailable) availability=\(model.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(model.supportsLocale(source)) targets=\(targetIDs)")
+#endif
+
+        guard model.isAvailable else {
+#if DEBUG
+            AppLog.append("\(prefix) assetCheck failed: Apple Intelligence unavailable")
+#endif
+            lastError = .translationError(underlying: NSError(
+                domain: "SubStamp",
+                code: -200,
+                userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence is not available on this device."]
+            ))
+            translationAssetsState = .failed(message: "Apple Intelligence unavailable.")
+            return
+        }
+
+        let sourceLang = Locale.Language(identifier: source.identifier)
+        let supported = model.supportedLanguages.map { $0.minimalIdentifier }
+        guard supported.contains(sourceLang.minimalIdentifier) else {
+#if DEBUG
+            let sample = supported.prefix(12).joined(separator: ", ")
+            AppLog.append("\(prefix) assetCheck failed: source unsupported source=\(sourceLang.minimalIdentifier) supportedCount=\(supported.count) sample=\(sample)")
+#endif
+            lastError = .translationError(underlying: NSError(
+                domain: "SubStamp",
+                code: -201,
+                userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence doesn't support the selected audio language."]
+            ))
+            translationAssetsState = .failed(message: "Audio language unsupported.")
+            return
+        }
+
+        for target in targets {
+            if !supported.contains(target.minimalIdentifier) {
+                let label = target.languageCode?.identifier ?? target.minimalIdentifier
+#if DEBUG
+                let sample = supported.prefix(12).joined(separator: ", ")
+                AppLog.append("\(prefix) assetCheck failed: target unsupported target=\(target.minimalIdentifier) supportedCount=\(supported.count) sample=\(sample)")
+#endif
+                lastError = .unsupportedLanguagePair(from: source.identifier, to: label)
+                translationAssetsState = .failed(message: "Target language unsupported.")
+                return
+            }
+        }
+
+#if DEBUG
+        AppLog.append("\(prefix) assetCheck succeeded: Apple Intelligence ready")
+#endif
+        translationAssetsState = .ready
     }
 
     func downloadSpeechAssets() async {

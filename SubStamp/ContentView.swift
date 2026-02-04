@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var subtitle1Mode: TranslationMode? = nil
     @State private var language2Locale: String?
     @State private var subtitle2Mode: TranslationMode?
+    @State private var translationProvider: TranslationProvider = .translationFramework
     @State private var isTestClip = false
 
     @State private var selectedVideoURL: URL?
@@ -52,6 +53,7 @@ struct ContentView: View {
                     language2Identifier: $language2Locale,
                     subtitle1Mode: $subtitle1Mode,
                     subtitle2Mode: $subtitle2Mode,
+                    translationProvider: $translationProvider,
                     onContinue: {
                         saveSetupSelections()
                         step = .pickVideo
@@ -153,13 +155,15 @@ struct ContentView: View {
         transcriptionLocaleIdentifier = SetupPreferences.loadTranscriptionLocale() ?? Locale.current.identifier
         language1Locale = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
         language2Locale = SetupPreferences.loadLanguage2()
+        translationProvider = SetupPreferences.loadTranslationProvider() ?? .translationFramework
     }
 
     private func saveSetupSelections() {
         SetupPreferences.save(
             transcriptionLocale: transcriptionLocaleIdentifier,
             subtitleMode: subtitleMode,
-            translationTarget: language2Locale
+            translationTarget: language2Locale,
+            translationProvider: translationProvider
         )
         SetupPreferences.saveLanguages(language1: language1Locale, language2: language2Locale)
     }
@@ -178,6 +182,7 @@ struct ContentView: View {
             subtitleLayout: (language2Locale == nil) ? .single : .stacked,
             subtitleStyle: savedStyle,
             exportPreset: .balanced,
+            translationProvider: translationProvider,
             isTestClip: isTestClip
         )
         activeJob = job
@@ -206,6 +211,7 @@ struct ContentView: View {
         subtitle1Mode = job.subtitle1Mode
         language2Locale = job.translationTargetLocale
         subtitle2Mode = job.subtitle2Mode
+        translationProvider = job.translationProvider
 
         resumeTranscribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
         resumeTranslated = jobStore.loadCues(id: job.id, type: .translated)

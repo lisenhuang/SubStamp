@@ -14,6 +14,7 @@ struct JobModel: Identifiable, Codable {
     var subtitleLayout: SubtitleLayout
     var subtitleStyle: SubtitleStyle
     var exportPreset: ExportPreset
+    var translationProvider: TranslationProvider
     var stage: ProcessingStage
     var outputURL: URL?
     var isTestClip: Bool
@@ -33,6 +34,7 @@ struct JobModel: Identifiable, Codable {
         subtitleLayout: SubtitleLayout = .stacked,
         subtitleStyle: SubtitleStyle = SubtitleStyle(),
         exportPreset: ExportPreset = .balanced,
+        translationProvider: TranslationProvider = .translationFramework,
         stage: ProcessingStage = .idle,
         outputURL: URL? = nil,
         isTestClip: Bool = false,
@@ -51,6 +53,7 @@ struct JobModel: Identifiable, Codable {
         self.subtitleLayout = subtitleLayout
         self.subtitleStyle = subtitleStyle
         self.exportPreset = exportPreset
+        self.translationProvider = translationProvider
         self.stage = stage
         self.outputURL = outputURL
         self.isTestClip = isTestClip
@@ -73,6 +76,7 @@ private extension JobModel {
         case subtitleLayout
         case subtitleStyle
         case exportPreset
+        case translationProvider
         case stage
         case outputURL
         case isTestClip
@@ -97,6 +101,7 @@ extension JobModel {
         subtitleLayout = try container.decodeIfPresent(SubtitleLayout.self, forKey: .subtitleLayout) ?? .stacked
         subtitleStyle = try container.decodeIfPresent(SubtitleStyle.self, forKey: .subtitleStyle) ?? SubtitleStyle()
         exportPreset = try container.decodeIfPresent(ExportPreset.self, forKey: .exportPreset) ?? .balanced
+        translationProvider = try container.decodeIfPresent(TranslationProvider.self, forKey: .translationProvider) ?? .translationFramework
         stage = try container.decodeIfPresent(ProcessingStage.self, forKey: .stage) ?? .idle
         outputURL = try container.decodeIfPresent(URL.self, forKey: .outputURL)
         isTestClip = try container.decodeIfPresent(Bool.self, forKey: .isTestClip) ?? false
@@ -118,6 +123,7 @@ extension JobModel {
         try container.encode(subtitleLayout, forKey: .subtitleLayout)
         try container.encode(subtitleStyle, forKey: .subtitleStyle)
         try container.encode(exportPreset, forKey: .exportPreset)
+        try container.encode(translationProvider, forKey: .translationProvider)
         try container.encode(stage, forKey: .stage)
         try container.encodeIfPresent(outputURL, forKey: .outputURL)
         try container.encode(isTestClip, forKey: .isTestClip)
