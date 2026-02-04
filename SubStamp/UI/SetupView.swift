@@ -53,10 +53,25 @@ struct SetupView: View {
         }
         .background(AppColors.background)
         .task {
+            logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
             speechAvailable = SpeechTranscriber.isAvailable
             appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+            logAppleIntelligenceDiagnostics(context: "SetupView.task(initial-check)")
+
             if !appleIntelligenceAvailable {
                 translationProvider = .translationFramework
+            }
+
+            // Retry once shortly after launch in case the system model is still initializing.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                let retryAvailable = SystemLanguageModel.default.isAvailable
+                if retryAvailable != appleIntelligenceAvailable {
+                    appleIntelligenceAvailable = retryAvailable
+                    logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-changed)")
+                } else {
+                    logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-unchanged)")
+                }
             }
             
             // 1. Fetch Speech locales
@@ -96,6 +111,7 @@ struct SetupView: View {
         }
         .onChange(of: translationProvider) { _, newValue in
             appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+            logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
             if newValue == .appleIntelligence, !appleIntelligenceAvailable {
                 translationProvider = .translationFramework
                 return
@@ -127,6 +143,7 @@ struct SetupView: View {
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
                 appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+                logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
                 if !appleIntelligenceAvailable {
                     translationProvider = .translationFramework
                     translationConfig = nil
@@ -138,6 +155,24 @@ struct SetupView: View {
                 }
             }
         }
+    }
+
+    private func logAppleIntelligenceDiagnostics(context: String) {
+#if DEBUG
+        let prefix = "[AI-DETECT]"
+        let model = SystemLanguageModel.default
+
+        let supported = model.supportedLanguages.map { $0.minimalIdentifier }
+        let supportedSample = supported.prefix(12).joined(separator: ", ")
+
+        let preferred = Locale.preferredLanguages.prefix(5).joined(separator: ", ")
+        let currentLocale = Locale.current.identifier
+
+        AppLog.append("\(prefix) \(context)")
+        AppLog.append("\(prefix) isAvailable=\(model.isAvailable) supportedCount=\(supported.count) sample=\(supportedSample)")
+        AppLog.append("\(prefix) currentLocale=\(currentLocale) preferred=\(preferred)")
+        AppLog.append("\(prefix) selectedProvider=\(translationProvider.rawValue) transcription=\(transcriptionLocaleIdentifier) s1=\(selectedSubtitle1ID) s2=\(selectedSubtitle2ID ?? "nil")")
+#endif
     }
 
     private var audioLanguageCard: some View {

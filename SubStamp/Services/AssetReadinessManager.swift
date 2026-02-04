@@ -96,7 +96,17 @@ final class AssetReadinessManager: ObservableObject {
 
     private func checkAppleIntelligenceAvailability(source: Locale, targets: [Locale.Language]) async {
         let model = SystemLanguageModel.default
+
+#if DEBUG
+        let prefix = "[AI-DETECT]"
+        let targetIDs = targets.map { $0.minimalIdentifier }.joined(separator: ", ")
+        AppLog.append("\(prefix) assetCheck(provider=appleIntelligence) isAvailable=\(model.isAvailable) source=\(source.identifier(.bcp47)) targets=\(targetIDs)")
+#endif
+
         guard model.isAvailable else {
+#if DEBUG
+            AppLog.append("\(prefix) assetCheck failed: Apple Intelligence unavailable")
+#endif
             lastError = .translationError(underlying: NSError(
                 domain: "SubStamp",
                 code: -200,
@@ -109,6 +119,10 @@ final class AssetReadinessManager: ObservableObject {
         let sourceLang = Locale.Language(identifier: source.identifier)
         let supported = model.supportedLanguages.map { $0.minimalIdentifier }
         guard supported.contains(sourceLang.minimalIdentifier) else {
+#if DEBUG
+            let sample = supported.prefix(12).joined(separator: ", ")
+            AppLog.append("\(prefix) assetCheck failed: source unsupported source=\(sourceLang.minimalIdentifier) supportedCount=\(supported.count) sample=\(sample)")
+#endif
             lastError = .translationError(underlying: NSError(
                 domain: "SubStamp",
                 code: -201,
@@ -121,12 +135,19 @@ final class AssetReadinessManager: ObservableObject {
         for target in targets {
             if !supported.contains(target.minimalIdentifier) {
                 let label = target.languageCode?.identifier ?? target.minimalIdentifier
+#if DEBUG
+                let sample = supported.prefix(12).joined(separator: ", ")
+                AppLog.append("\(prefix) assetCheck failed: target unsupported target=\(target.minimalIdentifier) supportedCount=\(supported.count) sample=\(sample)")
+#endif
                 lastError = .unsupportedLanguagePair(from: source.identifier, to: label)
                 translationAssetsState = .failed(message: "Target language unsupported.")
                 return
             }
         }
 
+#if DEBUG
+        AppLog.append("\(prefix) assetCheck succeeded: Apple Intelligence ready")
+#endif
         translationAssetsState = .ready
     }
 

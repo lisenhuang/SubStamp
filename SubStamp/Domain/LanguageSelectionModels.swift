@@ -124,7 +124,14 @@ final class LanguageSelectionLogic {
     private func computeAppleIntelligenceTargets(for source: Locale) -> [TargetOption] {
         // Apple Intelligence uses the system language model; only show supported languages (direct mode only).
         // If Apple Intelligence is unavailable, we return an empty list and SetupView will fall back.
-        guard let model = appleIntelligenceModelIfAvailable() else { return [] }
+        guard let model = appleIntelligenceModelIfAvailable() else {
+#if DEBUG
+            let prefix = "[AI-DETECT]"
+            let defaultModel = SystemLanguageModel.default
+            AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) unavailable isAvailable=\(defaultModel.isAvailable) source=\(source.identifier(.bcp47))")
+#endif
+            return []
+        }
         let sourceLang = Locale.Language(identifier: source.identifier)
 
         let options: [TargetOption] = model.supportedLanguages
@@ -138,6 +145,13 @@ final class LanguageSelectionLogic {
                 )
             }
             .sorted { $0.displayName < $1.displayName }
+
+#if DEBUG
+        let prefix = "[AI-DETECT]"
+        let supportedCount = model.supportedLanguages.count
+        let sample = model.supportedLanguages.map { $0.minimalIdentifier }.prefix(12).joined(separator: ", ")
+        AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) isAvailable=true supportedCount=\(supportedCount) source=\(source.identifier(.bcp47)) options=\(options.count) sample=\(sample)")
+#endif
         return options
     }
 
