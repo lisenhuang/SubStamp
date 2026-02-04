@@ -349,22 +349,40 @@ struct SetupView: View {
     }
 
     private func flagPrefix(for identifier: String) -> String {
-        if let region = regionCode(from: identifier), let flag = flagEmoji(forRegionCode: region) {
+        guard let region = regionCode(from: identifier) else { return "🌐" }
+        if let flag = flagEmoji(forRegionCode: region) {
             return flag
+        }
+        // Numeric regions like "419" (Latin America) don't have a flag emoji.
+        if isNumericRegion(region) {
+            return "🌎"
         }
         return "🏳️"
     }
 
     private func regionCode(from identifier: String) -> String? {
+        // BCP-47: language[-script][-region][-variant...]
+        // Region is a 2-letter (ISO 3166-1) or 3-digit (UN M.49) subtag.
         let components = identifier
             .replacingOccurrences(of: "_", with: "-")
             .split(separator: "-")
             .map(String.init)
 
-        for component in components {
-            let upper = component.uppercased()
-            if upper.count == 2, upper.unicodeScalars.allSatisfy({ $0.value >= 65 && $0.value <= 90 }) {
-                return upper
+        guard !components.isEmpty else { return nil }
+
+        var candidateIndex = 1 // after language
+        if components.count > 2, isScriptSubtag(components[1]) {
+            candidateIndex = 2
+        }
+
+        if components.indices.contains(candidateIndex), isRegionSubtag(components[candidateIndex]) {
+            return components[candidateIndex].uppercased()
+        }
+
+        // Fallback: scan remaining subtags (skip language).
+        for component in components.dropFirst() {
+            if isRegionSubtag(component) {
+                return component.uppercased()
             }
         }
 
@@ -384,6 +402,38 @@ struct SetupView: View {
         let second = base + (scalars[scalars.index(after: scalars.startIndex)].value - 65)
         guard let s1 = UnicodeScalar(first), let s2 = UnicodeScalar(second) else { return nil }
         return String(Character(s1)) + String(Character(s2))
+    }
+
+    private func isRegionSubtag(_ component: String) -> Bool {
+        if component.count == 2 {
+            return component.unicodeScalars.allSatisfy { scalar in
+                let v = scalar.value
+                return (v >= 65 && v <= 90) || (v >= 97 && v <= 122)
+            }
+        }
+        if component.count == 3 {
+            return component.unicodeScalars.allSatisfy { scalar in
+                let v = scalar.value
+                return v >= 48 && v <= 57
+            }
+        }
+        return false
+    }
+
+    private func isScriptSubtag(_ component: String) -> Bool {
+        guard component.count == 4 else { return false }
+        return component.unicodeScalars.allSatisfy { scalar in
+            let v = scalar.value
+            return (v >= 65 && v <= 90) || (v >= 97 && v <= 122)
+        }
+    }
+
+    private func isNumericRegion(_ regionCode: String) -> Bool {
+        guard regionCode.count == 3 else { return false }
+        return regionCode.unicodeScalars.allSatisfy { scalar in
+            let v = scalar.value
+            return v >= 48 && v <= 57
+        }
     }
 
     private func updateSubtitleTargets() async {
