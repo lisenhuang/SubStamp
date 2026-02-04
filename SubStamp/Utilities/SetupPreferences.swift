@@ -6,6 +6,7 @@ enum SetupPreferences {
     private static let subtitleModeKey = "setup_subtitleMode"
     private static let translationTargetKey = "setup_translationTarget"
     private static let translationProviderKey = "setup_translationProvider"
+    private static let fixTranscriptionWithAppleIntelligenceKey = "setup_fixTranscriptionWithAppleIntelligence"
     private static let subtitleStyleKey = "setup_subtitleStyle"
     private static let language1Key = "setup_language1"
     private static let language2Key = "setup_language2"
@@ -28,11 +29,22 @@ enum SetupPreferences {
         return TranslationProvider(rawValue: raw)
     }
 
-    static func save(transcriptionLocale: String, subtitleMode: SubtitleMode, translationTarget: String?, translationProvider: TranslationProvider) {
+    static func loadFixTranscriptionWithAppleIntelligence() -> Bool {
+        UserDefaults.standard.bool(forKey: fixTranscriptionWithAppleIntelligenceKey)
+    }
+
+    static func save(
+        transcriptionLocale: String,
+        subtitleMode: SubtitleMode,
+        translationTarget: String?,
+        translationProvider: TranslationProvider,
+        fixTranscriptionWithAppleIntelligence: Bool
+    ) {
         UserDefaults.standard.set(transcriptionLocale, forKey: transcriptionKey)
         UserDefaults.standard.set(subtitleMode.rawValue, forKey: subtitleModeKey)
         UserDefaults.standard.set(translationTarget, forKey: translationTargetKey)
         UserDefaults.standard.set(translationProvider.rawValue, forKey: translationProviderKey)
+        UserDefaults.standard.set(fixTranscriptionWithAppleIntelligence, forKey: fixTranscriptionWithAppleIntelligenceKey)
     }
     
     // MARK: - Subtitle Style Persistence

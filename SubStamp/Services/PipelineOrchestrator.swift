@@ -8,6 +8,7 @@ final class PipelineOrchestrator: ObservableObject {
     private let transcriptionService = TranscriptionService()
     private let translationService = TranslationService()
     private let appleIntelligenceTranslationService = AppleIntelligenceTranslationService()
+    private let appleIntelligenceTranscriptionRepairService = AppleIntelligenceTranscriptionRepairService()
     private let subtitleRenderer = SubtitleRenderer()
     private let exportService = ExportService()
     private let jobStore = JobStore()
@@ -120,15 +121,41 @@ final class PipelineOrchestrator: ObservableObject {
 
             let asset = AVAsset(url: job.videoURL)
             let range = timeRange(for: job, asset: asset)
+            let shouldFixTranscription = job.translationProvider == .appleIntelligence && job.fixTranscriptionWithAppleIntelligence
+            let transcriptionWeight = shouldFixTranscription ? 0.8 : 1.0
             let transcriptionResult = try await transcriptionService.transcribe(
                 asset: asset,
                 locale: Locale(identifier: job.transcriptionLocale),
                 timeRange: range
             ) { [weak self] progress, count in
-                self?.stageProgress[.transcribing] = progress
+                self?.stageProgress[.transcribing] = progress * transcriptionWeight
             }
             cues = transcriptionResult.cues
             try jobStore.saveCues(cues, id: job.id, type: .transcribed)
+
+            if shouldFixTranscription {
+#if DEBUG
+                AppLog.append("[AI-TRANSCRIPT] repair(start) cues=\(cues.count) locale=\(job.transcriptionLocale)")
+#endif
+                do {
+                    cues = try await appleIntelligenceTranscriptionRepairService.repair(
+                        cues: cues,
+                        locale: Locale(identifier: job.transcriptionLocale)
+                    ) { [weak self] completed, total in
+                        let frac = total == 0 ? 0 : (Double(completed) / Double(total))
+                        self?.stageProgress[.transcribing] = transcriptionWeight + frac * (1.0 - transcriptionWeight)
+                    }
+                    try jobStore.saveCues(cues, id: job.id, type: .transcribed)
+#if DEBUG
+                    AppLog.append("[AI-TRANSCRIPT] repair(done)")
+#endif
+                } catch {
+#if DEBUG
+                    AppLog.append("[AI-TRANSCRIPT] repair(failed): \(error.localizedDescription)")
+#endif
+                }
+            }
+
             stageStates[.transcribing] = .done
             stageProgress[.transcribing] = 1
 

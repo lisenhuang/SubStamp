@@ -25,6 +25,7 @@ struct SelectionModel {
 struct LanguageSelectionConfig {
     let audioLocale: Locale
     let translationProvider: TranslationProvider
+    let fixTranscriptionWithAppleIntelligence: Bool
     let subtitle1: SubtitleTrackConfig
     let subtitle2: SubtitleTrackConfig?
     

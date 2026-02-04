@@ -11,6 +11,7 @@ struct SetupView: View {
     @Binding var subtitle1Mode: TranslationMode?
     @Binding var subtitle2Mode: TranslationMode?
     @Binding var translationProvider: TranslationProvider
+    @Binding var fixTranscriptionWithAppleIntelligence: Bool
     var onContinue: () -> Void
 
     @State private var selectionLogic = LanguageSelectionLogic()
@@ -42,6 +43,7 @@ struct SetupView: View {
                 audioLanguageCard
                 subtitleSelectionCard
                 translationProviderCard
+                transcriptionFixCard
                 readinessCard
 
                 if !assetManager.isReadyToProceed {
@@ -60,6 +62,11 @@ struct SetupView: View {
 
             if !appleIntelligenceAvailable {
                 translationProvider = .translationFramework
+                fixTranscriptionWithAppleIntelligence = false
+            }
+
+            if translationProvider != .appleIntelligence {
+                fixTranscriptionWithAppleIntelligence = false
             }
 
             // Retry once shortly after launch in case the system model is still initializing.
@@ -112,8 +119,12 @@ struct SetupView: View {
         .onChange(of: translationProvider) { _, newValue in
             appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
             logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
+            if newValue != .appleIntelligence {
+                fixTranscriptionWithAppleIntelligence = false
+            }
             if newValue == .appleIntelligence, !appleIntelligenceAvailable {
                 translationProvider = .translationFramework
+                fixTranscriptionWithAppleIntelligence = false
                 return
             }
             if newValue == .appleIntelligence {
@@ -146,6 +157,7 @@ struct SetupView: View {
                 logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
                 if !appleIntelligenceAvailable {
                     translationProvider = .translationFramework
+                    fixTranscriptionWithAppleIntelligence = false
                     translationConfig = nil
                     shouldPrepareTranslation = false
                 }
@@ -174,7 +186,7 @@ struct SetupView: View {
         AppLog.append("\(prefix) isAvailable=\(model.isAvailable) availability=\(availability) supportsLocale(current)=\(supportsCurrentLocale)")
         AppLog.append("\(prefix) supportedCount=\(supported.count) sample=\(supportedSample)")
         AppLog.append("\(prefix) currentLocale=\(currentLocale) preferred=\(preferred)")
-        AppLog.append("\(prefix) selectedProvider=\(translationProvider.rawValue) transcription=\(transcriptionLocaleIdentifier) s1=\(selectedSubtitle1ID) s2=\(selectedSubtitle2ID ?? "nil")")
+        AppLog.append("\(prefix) selectedProvider=\(translationProvider.rawValue) fixTranscription=\(fixTranscriptionWithAppleIntelligence) transcription=\(transcriptionLocaleIdentifier) s1=\(selectedSubtitle1ID) s2=\(selectedSubtitle2ID ?? "nil")")
 #endif
     }
 
@@ -329,6 +341,31 @@ struct SetupView: View {
                 .pickerStyle(.segmented)
 
                 Text("Apple Intelligence uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(AppColors.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                    .stroke(AppColors.cardBorder, lineWidth: 1)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var transcriptionFixCard: some View {
+        if appleIntelligenceAvailable && translationProvider == .appleIntelligence {
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                Text("Transcription quality")
+                    .font(AppTypography.bodyEmphasis)
+
+                Toggle("Fix transcription mistakes (Apple Intelligence)", isOn: $fixTranscriptionWithAppleIntelligence)
+                    .font(AppTypography.caption)
+
+                Text("Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export.")
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
             }
@@ -690,6 +727,7 @@ struct SetupView: View {
         let config = LanguageSelectionConfig(
             audioLocale: audioLocale,
             translationProvider: translationProvider,
+            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
             subtitle1: s1,
             subtitle2: s2
         )
