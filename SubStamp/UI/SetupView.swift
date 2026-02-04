@@ -163,7 +163,7 @@ struct SetupView: View {
                     .font(AppTypography.bodyEmphasis)
                 
                 Picker("Target language", selection: $selectedSubtitle1ID) {
-                    Text("Transcript (Audio Language)").tag("transcript")
+                    Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) Transcript (Audio Language)").tag("transcript")
                     ForEach(subtitleTargets) { target in
                         Text(targetLabel(target))
                             .tag(target.id)
@@ -335,15 +335,140 @@ struct SetupView: View {
 
     private func audioLocaleLabel(_ locale: Locale) -> String {
         let name = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
-        return "\(name) (\(locale.identifier(.bcp47)))"
+        let flag = flagPrefix(for: locale.identifier(.bcp47))
+        return "\(flag) \(name) (\(locale.identifier(.bcp47)))"
     }
 
     private func targetLabel(_ target: TargetOption) -> String {
-        var label = target.displayName
+        let flag = flagPrefix(for: target.id)
+        var label = "\(flag) \(target.displayName)"
         if target.mode == .pivot {
             label += " (via English)"
         }
         return label
+    }
+
+    private func flagPrefix(for identifier: String) -> String {
+        guard let region = regionCode(from: identifier) else { return "🌐" }
+        if let flag = flagEmoji(forRegionCode: region) {
+            return flag
+        }
+        // Numeric regions like "419" (Latin America) don't have a flag emoji.
+        if isNumericRegion(region) {
+            return "🌎"
+        }
+        return "🏳️"
+    }
+
+    private func regionCode(from identifier: String) -> String? {
+        // BCP-47: language[-script][-region][-variant...]
+        // Region is a 2-letter (ISO 3166-1) or 3-digit (UN M.49) subtag.
+        let components = identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .map(String.init)
+
+        guard !components.isEmpty else { return nil }
+
+        var candidateIndex = 1 // after language
+        if components.count > 2, isScriptSubtag(components[1]) {
+            candidateIndex = 2
+        }
+
+        if components.indices.contains(candidateIndex), isRegionSubtag(components[candidateIndex]) {
+            return components[candidateIndex].uppercased()
+        }
+
+        // Fallback: scan remaining subtags (skip language).
+        for component in components.dropFirst() {
+            if isRegionSubtag(component) {
+                return component.uppercased()
+            }
+        }
+
+        // Fallback: ask Foundation for a likely region (useful for language-only identifiers like "es").
+        let locale = Locale(identifier: identifier)
+        if let region = locale.region?.identifier ?? locale.regionCode?.uppercased() {
+            return region
+        }
+
+        // Last resort: for language-only identifiers (e.g. "fr"), pick a representative region
+        // so we can show a more useful flag than the generic globe.
+        let languageCode = components[0].lowercased()
+        return defaultRegion(forLanguageCode: languageCode)
+    }
+
+    private func flagEmoji(forRegionCode regionCode: String) -> String? {
+        let code = regionCode.uppercased()
+        guard code.count == 2 else { return nil }
+        let scalars = code.unicodeScalars
+        guard scalars.allSatisfy({ $0.value >= 65 && $0.value <= 90 }) else { return nil }
+
+        let base: UInt32 = 0x1F1E6 // Regional Indicator Symbol Letter A
+        let first = base + (scalars[scalars.startIndex].value - 65)
+        let second = base + (scalars[scalars.index(after: scalars.startIndex)].value - 65)
+        guard let s1 = UnicodeScalar(first), let s2 = UnicodeScalar(second) else { return nil }
+        return String(Character(s1)) + String(Character(s2))
+    }
+
+    private func isRegionSubtag(_ component: String) -> Bool {
+        if component.count == 2 {
+            return component.unicodeScalars.allSatisfy { scalar in
+                let v = scalar.value
+                return (v >= 65 && v <= 90) || (v >= 97 && v <= 122)
+            }
+        }
+        if component.count == 3 {
+            return component.unicodeScalars.allSatisfy { scalar in
+                let v = scalar.value
+                return v >= 48 && v <= 57
+            }
+        }
+        return false
+    }
+
+    private func isScriptSubtag(_ component: String) -> Bool {
+        guard component.count == 4 else { return false }
+        return component.unicodeScalars.allSatisfy { scalar in
+            let v = scalar.value
+            return (v >= 65 && v <= 90) || (v >= 97 && v <= 122)
+        }
+    }
+
+    private func isNumericRegion(_ regionCode: String) -> Bool {
+        guard regionCode.count == 3 else { return false }
+        return regionCode.unicodeScalars.allSatisfy { scalar in
+            let v = scalar.value
+            return v >= 48 && v <= 57
+        }
+    }
+
+    private func defaultRegion(forLanguageCode languageCode: String) -> String? {
+        // These are heuristics for display only (BCP-47 language-only tags don’t imply a country).
+        // Keep this list small and obvious; unknowns fall back to 🌐.
+        let map: [String: String] = [
+            "ar": "SA",
+            "de": "DE",
+            "en": "US",
+            "es": "ES",
+            "fa": "IR",
+            "fr": "FR",
+            "hi": "IN",
+            "id": "ID",
+            "it": "IT",
+            "ja": "JP",
+            "ko": "KR",
+            "nl": "NL",
+            "pl": "PL",
+            "pt": "BR",
+            "ru": "RU",
+            "th": "TH",
+            "tr": "TR",
+            "uk": "UA",
+            "vi": "VN",
+            "zh": "CN"
+        ]
+        return map[languageCode]
     }
 
     private func updateSubtitleTargets() async {
