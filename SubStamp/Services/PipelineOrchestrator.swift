@@ -228,17 +228,17 @@ final class PipelineOrchestrator: ObservableObject {
                 let mid = try await translationService.translate(cues: sourceCues, session: sessionA) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0 : (Double(c)/Double(t)) * 0.25
                 }
-                let english = mid.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                let english = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
                 let finalRes = try await translationService.translate(cues: english, session: sessionB) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.25 : 0.25 + (Double(c)/Double(t)) * 0.25
                 }
-                primaryCues = finalRes.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                primaryCues = mapTranslationOutputToPrimary(finalRes, fallbackToSourceTextOnFailure: true)
             } else {
                 guard let session = s2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -41)) }
                 let res = try await translationService.translate(cues: sourceCues, session: session) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0 : (Double(c)/Double(t)) * 0.5
                 }
-                primaryCues = res.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
             }
         }
 
@@ -248,17 +248,17 @@ final class PipelineOrchestrator: ObservableObject {
                 let mid = try await translationService.translate(cues: sourceCues, session: sessionA) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.25
                 }
-                let english = mid.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                let english = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
                 let finalRes = try await translationService.translate(cues: english, session: sessionC) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.75 : 0.75 + (Double(c)/Double(t)) * 0.25
                 }
-                secondaryCues = finalRes.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                secondaryCues = mapTranslationOutputToPrimary(finalRes, fallbackToSourceTextOnFailure: false)
             } else {
                 guard let session = s3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -43)) }
                 let res = try await translationService.translate(cues: sourceCues, session: session) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.5
                 }
-                secondaryCues = res.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false)
             }
         } else if job.subtitleMode == .bilingual && job.translationTargetLocale == baseLocale {
             secondaryCues = sourceCues
@@ -270,6 +270,33 @@ final class PipelineOrchestrator: ObservableObject {
             }
         } else {
             return primaryCues
+        }
+    }
+
+    private func mapTranslationOutputToPrimary(_ cues: [SubtitleCue], fallbackToSourceTextOnFailure: Bool) -> [SubtitleCue] {
+        cues.map { cue in
+            let originalTrimmed = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if originalTrimmed.isEmpty {
+                var next = cue
+                next.primaryText = ""
+                next.secondaryText = nil
+                next.hasTranslationError = false
+                return next
+            }
+
+            let translated = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasValidTranslation = (translated != nil && !(translated?.isEmpty ?? true) && cue.hasTranslationError == false)
+
+            var next = cue
+            if hasValidTranslation, let translated {
+                next.primaryText = SubtitleTextCleaner.clean(translated)
+                next.hasTranslationError = false
+            } else {
+                next.primaryText = fallbackToSourceTextOnFailure ? cue.primaryText : ""
+                next.hasTranslationError = true
+            }
+            next.secondaryText = nil
+            return next
         }
     }
 
@@ -316,24 +343,14 @@ final class PipelineOrchestrator: ObservableObject {
         if lang1NeedsTranslation {
             let key = lang1Target.minimalIdentifier
             if let res = translatedByTarget[key] {
-                primaryCues = res.map { cue in
-                    var next = cue
-                    next.primaryText = cue.secondaryText ?? cue.primaryText
-                    next.secondaryText = nil
-                    return next
-                }
+                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
             }
         }
 
         if lang2NeedsTranslation, let lang2Target {
             let key = lang2Target.minimalIdentifier
             if let res = translatedByTarget[key] {
-                secondaryCues = res.map { cue in
-                    var next = cue
-                    next.primaryText = cue.secondaryText ?? cue.primaryText
-                    next.secondaryText = nil
-                    return next
-                }
+                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false)
             }
         }
 

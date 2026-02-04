@@ -7,19 +7,28 @@ struct SubtitleReviewView: View {
     @Binding var cues: [SubtitleCue]
     @Binding var style: SubtitleStyle
     let videoURL: URL
+    let job: JobModel
     var mode: SubtitleMode
-    var translationTarget: Locale.Language?
-    var sourceLocaleIdentifier: String?
     var onContinue: () -> Void
     var onBack: () -> Void
     var onAbandon: () -> Void
 
     @State private var player: AVPlayer?
     @State private var isPlayingPreview = false
-    @State private var translationConfig: TranslationSession.Configuration?
-    @State private var translationSession: TranslationSession?
+    @State private var config1: TranslationSession.Configuration?
+    @State private var config2: TranslationSession.Configuration?
+    @State private var config3: TranslationSession.Configuration?
+
+    @State private var session1: TranslationSession?
+    @State private var session2: TranslationSession?
+    @State private var session3: TranslationSession?
+
+    @State private var transcribedTextByID: [UUID: String] = [:]
     @FocusState private var isTextFieldFocused: Bool
     @State private var showAbandonConfirmation = false
+
+    private let jobStore = JobStore()
+    private let aiTranslationService = AppleIntelligenceTranslationService()
 
     var body: some View {
         NavigationStack {
@@ -137,18 +146,24 @@ struct SubtitleReviewView: View {
             }
             .onAppear {
                 player = AVPlayer(url: videoURL)
-                if let target = translationTarget {
-                    let source = sourceLocaleIdentifier.map { Locale.Language(identifier: $0) }
-                    translationConfig = TranslationSession.Configuration(source: source, target: target)
+                let transcribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
+                transcribedTextByID = Dictionary(uniqueKeysWithValues: transcribed.map { ($0.id, $0.primaryText) })
+
+                if job.translationProvider == .translationFramework {
+                    configureTranslationFrameworkSessions()
+                } else {
+                    config1 = nil
+                    config2 = nil
+                    config3 = nil
                 }
             }
             .onDisappear {
                 player?.pause()
                 player = nil
             }
-            .translationTask(translationConfig) { session in
-                translationSession = session
-            }
+            .translationTask(config1) { session1 = $0 }
+            .translationTask(config2) { session2 = $0 }
+            .translationTask(config3) { session3 = $0 }
             .confirmationDialog(
                 "Abandon this job?",
                 isPresented: $showAbandonConfirmation,
@@ -161,6 +176,39 @@ struct SubtitleReviewView: View {
             } message: {
                 Text("All progress on this video will be lost.")
             }
+        }
+    }
+
+    private func configureTranslationFrameworkSessions() {
+        let base = Locale.Language(identifier: Locale(identifier: job.transcriptionLocale).identifier(.bcp47))
+        let english = Locale.Language(identifier: "en-US")
+        let t1 = Locale.Language(identifier: Locale(identifier: job.language1Locale).identifier(.bcp47))
+        let t2 = job.translationTargetLocale.map { Locale.Language(identifier: Locale(identifier: $0).identifier(.bcp47)) }
+
+        if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
+            config1 = .init(source: base, target: english)
+        } else {
+            config1 = nil
+        }
+
+        if job.language1Locale != job.transcriptionLocale {
+            if job.subtitle1Mode == .pivot {
+                config2 = .init(source: english, target: t1)
+            } else {
+                config2 = .init(source: base, target: t1)
+            }
+        } else {
+            config2 = nil
+        }
+
+        if job.subtitleMode == .bilingual, let t2, job.translationTargetLocale != job.transcriptionLocale {
+            if job.subtitle2Mode == .pivot {
+                config3 = .init(source: english, target: t2)
+            } else {
+                config3 = .init(source: base, target: t2)
+            }
+        } else {
+            config3 = nil
         }
     }
 
@@ -233,15 +281,209 @@ struct SubtitleReviewView: View {
     }
 
     private func retryTranslation(at index: Int) {
-        guard cues.indices.contains(index), let session = translationSession else { return }
-        Task {
-            do {
-                let response = try await session.translate(cues[index].primaryText)
-                cues[index].secondaryText = response.targetText
-                cues[index].hasTranslationError = false
-            } catch {
-                cues[index].hasTranslationError = true
+        guard cues.indices.contains(index) else { return }
+
+        Task { @MainActor in
+            let cueID = cues[index].id
+
+            let transcribedText = transcribedTextByID[cueID]
+            let primaryText = cues[index].primaryText
+            let secondaryText = cues[index].secondaryText ?? ""
+
+            let needsPrimaryTranslation = job.language1Locale != job.transcriptionLocale
+            let needsSecondaryTranslation = job.subtitleMode == .bilingual
+                && (job.translationTargetLocale != nil && job.translationTargetLocale != job.transcriptionLocale)
+
+            let shouldRetrySecondary = needsSecondaryTranslation && (
+                secondaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || normalizeForRetryComparison(secondaryText) == normalizeForRetryComparison(primaryText)
+                    || (transcribedText != nil && normalizeForRetryComparison(secondaryText) == normalizeForRetryComparison(transcribedText ?? ""))
+            )
+
+            let shouldRetryPrimary = needsPrimaryTranslation && (
+                transcribedText != nil && normalizeForRetryComparison(primaryText) == normalizeForRetryComparison(transcribedText ?? "")
+            )
+
+#if DEBUG
+            AppLog.append("[REVIEW-RETRY] start provider=\(job.translationProvider.rawValue) cueIndex=\(index) retryPrimary=\(shouldRetryPrimary) retrySecondary=\(shouldRetrySecondary)")
+#endif
+
+            switch job.translationProvider {
+            case .appleIntelligence:
+                await retryWithAppleIntelligence(
+                    cueIndex: index,
+                    retryPrimary: shouldRetryPrimary,
+                    retrySecondary: shouldRetrySecondary
+                )
+            case .translationFramework:
+                await retryWithTranslationFramework(
+                    cueIndex: index,
+                    retryPrimary: shouldRetryPrimary,
+                    retrySecondary: shouldRetrySecondary
+                )
             }
         }
+    }
+
+    @MainActor
+    private func retryWithTranslationFramework(cueIndex index: Int, retryPrimary: Bool, retrySecondary: Bool) async {
+        guard cues.indices.contains(index) else { return }
+        let cueID = cues[index].id
+        let transcribedText = transcribedTextByID[cueID] ?? cues[index].primaryText
+
+        var anyError = false
+
+        if retryPrimary {
+            do {
+                let translated = try await translateFrameworkText(
+                    transcribedText,
+                    isSubtitle2: false
+                )
+                cues[index].primaryText = SubtitleTextCleaner.clean(translated)
+            } catch {
+                anyError = true
+#if DEBUG
+                AppLog.append("[REVIEW-RETRY] framework primary failed: \(error.localizedDescription)")
+#endif
+            }
+        }
+
+        if retrySecondary {
+            do {
+                let translated = try await translateFrameworkText(
+                    transcribedText,
+                    isSubtitle2: true
+                )
+                cues[index].secondaryText = SubtitleTextCleaner.clean(translated)
+            } catch {
+                anyError = true
+#if DEBUG
+                AppLog.append("[REVIEW-RETRY] framework secondary failed: \(error.localizedDescription)")
+#endif
+            }
+        }
+
+        cues[index].hasTranslationError = anyError
+#if DEBUG
+        AppLog.append("[REVIEW-RETRY] done provider=translationFramework cueIndex=\(index) ok=\(!anyError)")
+#endif
+    }
+
+    private func translateFrameworkText(_ text: String, isSubtitle2: Bool) async throws -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        if isSubtitle2 {
+            if job.subtitle2Mode == .pivot {
+                guard let sessionA = session1, let sessionB = session3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -310)) }
+                let mid = try await sessionA.translate(trimmed).targetText
+                return try await sessionB.translate(mid).targetText
+            } else {
+                guard let session = session3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -311)) }
+                return try await session.translate(trimmed).targetText
+            }
+        } else {
+            if job.subtitle1Mode == .pivot {
+                guard let sessionA = session1, let sessionB = session2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -312)) }
+                let mid = try await sessionA.translate(trimmed).targetText
+                return try await sessionB.translate(mid).targetText
+            } else {
+                guard let session = session2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -313)) }
+                return try await session.translate(trimmed).targetText
+            }
+        }
+    }
+
+    @MainActor
+    private func retryWithAppleIntelligence(cueIndex index: Int, retryPrimary: Bool, retrySecondary: Bool) async {
+        guard cues.indices.contains(index) else { return }
+
+        var targets: [Locale.Language] = []
+        if retryPrimary {
+            let bcp47 = Locale(identifier: job.language1Locale).identifier(.bcp47)
+            targets.append(Locale.Language(identifier: bcp47))
+        }
+        if retrySecondary, let t2 = job.translationTargetLocale {
+            let bcp47 = Locale(identifier: t2).identifier(.bcp47)
+            targets.append(Locale.Language(identifier: bcp47))
+        }
+
+        if targets.isEmpty {
+#if DEBUG
+            AppLog.append("[REVIEW-RETRY] skip (no targets)")
+#endif
+            return
+        }
+
+        let sourceLocale = Locale(identifier: job.transcriptionLocale)
+        let context = buildTranscriptionContext(around: index, radius: 4)
+
+        do {
+            let result = try await aiTranslationService.translate(
+                cues: context,
+                source: sourceLocale,
+                targets: targets
+            ) { _, _ in }
+
+            let cueID = cues[index].id
+            var anyError = false
+
+            if retryPrimary {
+                let key = Locale.Language(identifier: Locale(identifier: job.language1Locale).identifier(.bcp47)).minimalIdentifier
+                if let translated = result[key]?.first(where: { $0.id == cueID })?.secondaryText,
+                   !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    cues[index].primaryText = SubtitleTextCleaner.clean(translated)
+                } else {
+                    anyError = true
+                }
+            }
+
+            if retrySecondary, let t2 = job.translationTargetLocale {
+                let key = Locale.Language(identifier: Locale(identifier: t2).identifier(.bcp47)).minimalIdentifier
+                if let translated = result[key]?.first(where: { $0.id == cueID })?.secondaryText,
+                   !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    cues[index].secondaryText = SubtitleTextCleaner.clean(translated)
+                } else {
+                    anyError = true
+                }
+            }
+
+            cues[index].hasTranslationError = anyError
+
+#if DEBUG
+            AppLog.append("[REVIEW-RETRY] done provider=appleIntelligence cueIndex=\(index) ok=\(!anyError)")
+#endif
+        } catch {
+            cues[index].hasTranslationError = true
+#if DEBUG
+            AppLog.append("[REVIEW-RETRY] appleIntelligence failed cueIndex=\(index): \(error.localizedDescription)")
+#endif
+        }
+    }
+
+    private func buildTranscriptionContext(around index: Int, radius: Int) -> [SubtitleCue] {
+        guard cues.indices.contains(index) else { return [] }
+
+        let start = max(0, index - radius)
+        let end = min(cues.count - 1, index + radius)
+
+        return (start...end).map { i in
+            let cue = cues[i]
+            let sourceText: String
+            if job.language1Locale == job.transcriptionLocale {
+                sourceText = cue.primaryText
+            } else {
+                sourceText = transcribedTextByID[cue.id] ?? cue.primaryText
+            }
+            return SubtitleCue(id: cue.id, start: cue.start, end: cue.end, primaryText: sourceText)
+        }
+    }
+
+    private func normalizeForRetryComparison(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }
