@@ -163,7 +163,7 @@ struct SetupView: View {
                     .font(AppTypography.bodyEmphasis)
                 
                 Picker("Target language", selection: $selectedSubtitle1ID) {
-                    Text("Transcript (Audio Language)").tag("transcript")
+                    Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) Transcript (Audio Language)").tag("transcript")
                     ForEach(subtitleTargets) { target in
                         Text(targetLabel(target))
                             .tag(target.id)
@@ -335,15 +335,55 @@ struct SetupView: View {
 
     private func audioLocaleLabel(_ locale: Locale) -> String {
         let name = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
-        return "\(name) (\(locale.identifier(.bcp47)))"
+        let flag = flagPrefix(for: locale.identifier(.bcp47))
+        return "\(flag) \(name) (\(locale.identifier(.bcp47)))"
     }
 
     private func targetLabel(_ target: TargetOption) -> String {
-        var label = target.displayName
+        let flag = flagPrefix(for: target.id)
+        var label = "\(flag) \(target.displayName)"
         if target.mode == .pivot {
             label += " (via English)"
         }
         return label
+    }
+
+    private func flagPrefix(for identifier: String) -> String {
+        if let region = regionCode(from: identifier), let flag = flagEmoji(forRegionCode: region) {
+            return flag
+        }
+        return "🏳️"
+    }
+
+    private func regionCode(from identifier: String) -> String? {
+        let components = identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .map(String.init)
+
+        for component in components {
+            let upper = component.uppercased()
+            if upper.count == 2, upper.unicodeScalars.allSatisfy({ $0.value >= 65 && $0.value <= 90 }) {
+                return upper
+            }
+        }
+
+        // Fallback: ask Foundation for a likely region (useful for language-only identifiers like "es").
+        let locale = Locale(identifier: identifier)
+        return locale.region?.identifier ?? locale.regionCode?.uppercased()
+    }
+
+    private func flagEmoji(forRegionCode regionCode: String) -> String? {
+        let code = regionCode.uppercased()
+        guard code.count == 2 else { return nil }
+        let scalars = code.unicodeScalars
+        guard scalars.allSatisfy({ $0.value >= 65 && $0.value <= 90 }) else { return nil }
+
+        let base: UInt32 = 0x1F1E6 // Regional Indicator Symbol Letter A
+        let first = base + (scalars[scalars.startIndex].value - 65)
+        let second = base + (scalars[scalars.index(after: scalars.startIndex)].value - 65)
+        guard let s1 = UnicodeScalar(first), let s2 = UnicodeScalar(second) else { return nil }
+        return String(Character(s1)) + String(Character(s2))
     }
 
     private func updateSubtitleTargets() async {
