@@ -4,19 +4,39 @@ import FoundationModels
 @available(iOS 26.0, *)
 final class AppleIntelligenceTranslationService {
     @Generable
-    struct CueTranslation {
-        var id: String
-        var text: String
+    struct MultiTargetCueTranslationResponse {
+        var original: String
+        var targets: [TargetTranslations]
     }
 
     @Generable
-    struct CueTranslationResponse {
-        var translations: [CueTranslation]
+    struct TargetTranslations {
+        var target: String
+        var cues: [CueTranslation]
+    }
+
+    @Generable
+    struct CueTranslation {
+        var id: String
+        var index: Int
+        var text: String
+    }
+
+    private struct TranslationChunkRequest: Encodable {
+        let original: String
+        let cues: [CueInput]
+        let targets: [String]
+    }
+
+    private struct CueInput: Encodable {
+        let id: String
+        let index: Int
+        let text: String
     }
 
     private let model: SystemLanguageModel
-    private let maxCuesPerChunk = 12
-    private let maxCharactersPerChunk = 1800
+    private let baseMaxCuesPerChunk = 12
+    private let baseMaxCharactersPerChunk = 1800
 
     init(model: SystemLanguageModel = .default) {
         self.model = model
@@ -28,6 +48,26 @@ final class AppleIntelligenceTranslationService {
         target: Locale.Language,
         progressHandler: @escaping (Int, Int) -> Void
     ) async throws -> [SubtitleCue] {
+        let results = try await translate(cues: cues, source: source, targets: [target], progressHandler: progressHandler)
+        let key = target.minimalIdentifier
+        if let output = results[key] {
+            return output
+        }
+
+        return cues.map { cue in
+            var next = cue
+            next.secondaryText = nil
+            next.hasTranslationError = true
+            return next
+        }
+    }
+
+    func translate(
+        cues: [SubtitleCue],
+        source: Locale,
+        targets: [Locale.Language],
+        progressHandler: @escaping (Int, Int) -> Void
+    ) async throws -> [String: [SubtitleCue]] {
         guard model.isAvailable else {
             throw SubStampError.translationError(underlying: NSError(
                 domain: "SubStamp",
@@ -36,55 +76,138 @@ final class AppleIntelligenceTranslationService {
             ))
         }
 
-        let sourceLabel = Locale.current.localizedString(forIdentifier: source.identifier) ?? source.identifier
-        let targetLabel = Locale.current.localizedString(forIdentifier: target.minimalIdentifier) ?? target.minimalIdentifier
+        let sourceBCP47 = source.identifier(.bcp47)
+        let sourceMinimal = Locale.Language(identifier: sourceBCP47).minimalIdentifier
 
-        var output = cues
-        progressHandler(0, cues.count)
+        let requestedTargets = uniqueTargetIdentifiers(from: targets)
+        var outputByTarget: [String: [SubtitleCue]] = [:]
 
-        var completed = Set<UUID>()
-        let chunks = makeChunks(from: cues)
+        if cues.isEmpty {
+            progressHandler(0, 0)
+            for id in requestedTargets {
+                outputByTarget[id] = []
+            }
+            return outputByTarget
+        }
 
-        for chunk in chunks {
-            do {
-                let translations = try await translateChunk(chunk, sourceLabel: sourceLabel, targetLabel: targetLabel)
-                for (cueID, translated) in translations {
-                    guard let index = output.firstIndex(where: { $0.id == cueID }) else { continue }
-                    output[index].secondaryText = SubtitleTextCleaner.clean(translated)
-                    output[index].hasTranslationError = false
-                    completed.insert(cueID)
+        let (targetsNeedingTranslation, passthroughTargets) = partitionTargets(requestedTargets: requestedTargets, sourceMinimal: sourceMinimal)
+
+        if !passthroughTargets.isEmpty {
+            for id in passthroughTargets {
+                outputByTarget[id] = cues.map { cue in
+                    var next = cue
+                    next.secondaryText = cue.primaryText
+                    next.hasTranslationError = false
+                    return next
                 }
-                progressHandler(completed.count, cues.count)
-            } catch {
-                // We'll fall back per-cue below for anything missing.
-                continue
             }
         }
 
-        for index in output.indices {
-            if output[index].secondaryText != nil { continue }
-            do {
-                let translated = try await translateSingle(text: output[index].primaryText, sourceLabel: sourceLabel, targetLabel: targetLabel)
-                output[index].secondaryText = SubtitleTextCleaner.clean(translated)
-                output[index].hasTranslationError = false
-            } catch {
-                output[index].secondaryText = nil
-                output[index].hasTranslationError = true
+        for id in targetsNeedingTranslation {
+            outputByTarget[id] = cues.map { cue in
+                var next = cue
+                next.secondaryText = nil
+                next.hasTranslationError = false
+                return next
             }
-            completed.insert(output[index].id)
-            progressHandler(completed.count, cues.count)
         }
 
-        return output
+        let totalWork = cues.count * targetsNeedingTranslation.count
+        progressHandler(0, totalWork)
+
+        guard !targetsNeedingTranslation.isEmpty else {
+            return outputByTarget
+        }
+
+        let sourceLabel = Locale.current.localizedString(forIdentifier: sourceBCP47) ?? sourceBCP47
+        let targetHints = buildTargetHints(for: targetsNeedingTranslation)
+
+        let session = LanguageModelSession(model: model) {
+            """
+            You are a professional subtitle translator.
+            Translate naturally and faithfully, using context across all cues provided (treat them as one transcript to understand the 语境).
+            Keep each cue concise for on-screen subtitles.
+            Do not add, remove, merge, split, or reorder cues.
+            Do not add commentary or explanations.
+            Always output ONLY valid JSON that matches the requested schema.
+            """
+        }
+
+        let indexByID = Dictionary(uniqueKeysWithValues: cues.enumerated().map { ($0.element.id, $0.offset) })
+        let chunkLimits = chunkLimits(forTargetCount: targetsNeedingTranslation.count)
+        let chunks = makeChunks(from: cues, maxCuesPerChunk: chunkLimits.maxCues, maxCharactersPerChunk: chunkLimits.maxCharacters)
+
+        var completedByTarget: [String: Set<UUID>] = Dictionary(uniqueKeysWithValues: targetsNeedingTranslation.map { ($0, Set<UUID>()) })
+
+        for (chunkIndex, chunk) in chunks.enumerated() {
+            let chunkTranslations = await translateChunkWithFallback(
+                chunk,
+                original: sourceBCP47,
+                sourceLabel: sourceLabel,
+                targetIDs: targetsNeedingTranslation,
+                targetHints: targetHints,
+                chunkIndex: chunkIndex,
+                chunkCount: chunks.count,
+                indexByID: indexByID,
+                session: session
+            )
+
+            for targetID in targetsNeedingTranslation {
+                guard var output = outputByTarget[targetID] else { continue }
+                let translations = chunkTranslations[targetID] ?? [:]
+                for (cueID, text) in translations {
+                    guard let cueIndex = indexByID[cueID], output.indices.contains(cueIndex) else { continue }
+                    output[cueIndex].secondaryText = SubtitleTextCleaner.clean(text)
+                    output[cueIndex].hasTranslationError = false
+                    completedByTarget[targetID, default: []].insert(cueID)
+                }
+                outputByTarget[targetID] = output
+            }
+
+            let completed = completedByTarget.values.reduce(0) { $0 + $1.count }
+            progressHandler(completed, totalWork)
+        }
+
+        for targetID in targetsNeedingTranslation {
+            guard var output = outputByTarget[targetID] else { continue }
+            for index in output.indices {
+                let originalText = output[index].primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if originalText.isEmpty {
+                    output[index].secondaryText = ""
+                    output[index].hasTranslationError = false
+                    continue
+                }
+                guard let translated = output[index].secondaryText else {
+                    output[index].hasTranslationError = true
+                    continue
+                }
+                if isClearlyInvalidTranslation(translated, original: originalText, targetID: targetID) {
+                    output[index].secondaryText = nil
+                    output[index].hasTranslationError = true
+                }
+            }
+            outputByTarget[targetID] = output
+        }
+
+        return outputByTarget
     }
 
-    private func makeChunks(from cues: [SubtitleCue]) -> [[SubtitleCue]] {
+    // MARK: - Chunking
+
+    private func chunkLimits(forTargetCount targetCount: Int) -> (maxCues: Int, maxCharacters: Int) {
+        let divisor = max(1, targetCount)
+        let maxCues = max(3, baseMaxCuesPerChunk / divisor)
+        let maxChars = max(400, baseMaxCharactersPerChunk / divisor)
+        return (maxCues, maxChars)
+    }
+
+    private func makeChunks(from cues: [SubtitleCue], maxCuesPerChunk: Int, maxCharactersPerChunk: Int) -> [[SubtitleCue]] {
         var chunks: [[SubtitleCue]] = []
         var current: [SubtitleCue] = []
         var currentChars = 0
 
         for cue in cues {
-            let overhead = 60 + cue.id.uuidString.count
+            let overhead = 110 + cue.id.uuidString.count
             let estimated = cue.primaryText.count + overhead
             let wouldExceed = !current.isEmpty && (
                 current.count >= maxCuesPerChunk || (currentChars + estimated) > maxCharactersPerChunk
@@ -104,51 +227,369 @@ final class AppleIntelligenceTranslationService {
         return chunks
     }
 
-    private func translateChunk(_ cues: [SubtitleCue], sourceLabel: String, targetLabel: String) async throws -> [UUID: String] {
-        let session = LanguageModelSession(model: model) {
-            """
-            You are a subtitle translator.
-            - Translate faithfully and naturally.
-            - Keep translations concise for on-screen subtitles.
-            - Do not merge cues and do not add commentary.
-            - Keep each cue aligned by ID.
-            """
+    // MARK: - Translation
+
+    private func translateChunkWithFallback(
+        _ cues: [SubtitleCue],
+        original: String,
+        sourceLabel: String,
+        targetIDs: [String],
+        targetHints: String,
+        chunkIndex: Int,
+        chunkCount: Int,
+        indexByID: [UUID: Int],
+        session: LanguageModelSession
+    ) async -> [String: [UUID: String]] {
+        do {
+            return try await translateChunkOnce(
+                cues,
+                original: original,
+                sourceLabel: sourceLabel,
+                targetIDs: targetIDs,
+                targetHints: targetHints,
+                contextLabel: "chunk \(chunkIndex + 1)/\(chunkCount)",
+                indexByID: indexByID,
+                session: session
+            )
+        } catch {
+#if DEBUG
+            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues): \(error.localizedDescription)")
+#endif
+            guard cues.count > 1 else { return [:] }
+            let midpoint = cues.count / 2
+            let left = Array(cues[..<midpoint])
+            let right = Array(cues[midpoint...])
+            let leftRes = await translateChunkWithFallback(
+                left,
+                original: original,
+                sourceLabel: sourceLabel,
+                targetIDs: targetIDs,
+                targetHints: targetHints,
+                chunkIndex: chunkIndex,
+                chunkCount: chunkCount,
+                indexByID: indexByID,
+                session: session
+            )
+            let rightRes = await translateChunkWithFallback(
+                right,
+                original: original,
+                sourceLabel: sourceLabel,
+                targetIDs: targetIDs,
+                targetHints: targetHints,
+                chunkIndex: chunkIndex,
+                chunkCount: chunkCount,
+                indexByID: indexByID,
+                session: session
+            )
+            return mergeTranslations(leftRes, rightRes)
+        }
+    }
+
+    private func translateChunkOnce(
+        _ cues: [SubtitleCue],
+        original: String,
+        sourceLabel: String,
+        targetIDs: [String],
+        targetHints: String,
+        contextLabel: String,
+        indexByID: [UUID: Int],
+        session: LanguageModelSession
+    ) async throws -> [String: [UUID: String]] {
+        var translations = try await translateChunkRaw(
+            cues,
+            original: original,
+            sourceLabel: sourceLabel,
+            targetIDs: targetIDs,
+            targetHints: targetHints,
+            contextLabel: contextLabel,
+            isRepair: false,
+            indexByID: indexByID,
+            session: session
+        )
+
+        let repairCues = cuesNeedingRepair(cues, targetIDs: targetIDs, translations: translations)
+        if !repairCues.isEmpty {
+            do {
+                let repaired = try await translateChunkRaw(
+                    repairCues,
+                    original: original,
+                    sourceLabel: sourceLabel,
+                    targetIDs: targetIDs,
+                    targetHints: targetHints,
+                    contextLabel: "\(contextLabel) repair",
+                    isRepair: true,
+                    indexByID: indexByID,
+                    session: session
+                )
+                translations = mergeTranslations(translations, repaired)
+            } catch {
+#if DEBUG
+                AppLog.append("[AI-TRANSLATE] \(contextLabel) repair failed (\(repairCues.count) cues): \(error.localizedDescription)")
+#endif
+            }
         }
 
-        let cueBlock = cues.map { cue in
-            let text = cue.primaryText.replacingOccurrences(of: "\n", with: "\\n")
-            return "- id: \(cue.id.uuidString)\n  text: \(text)"
-        }.joined(separator: "\n")
+        return translations
+    }
 
-        let prompt = """
-        Translate the following subtitle cues from \(sourceLabel) to \(targetLabel).
-        Return translations for every cue.
+    private func translateChunkRaw(
+        _ cues: [SubtitleCue],
+        original: String,
+        sourceLabel: String,
+        targetIDs: [String],
+        targetHints: String,
+        contextLabel: String,
+        isRepair: Bool,
+        indexByID: [UUID: Int],
+        session: LanguageModelSession
+    ) async throws -> [String: [UUID: String]] {
+        let request = TranslationChunkRequest(
+            original: original,
+            cues: cues.enumerated().map { localIndex, cue in
+                CueInput(
+                    id: cue.id.uuidString,
+                    index: indexByID[cue.id] ?? localIndex,
+                    text: cue.primaryText
+                )
+            },
+            targets: targetIDs
+        )
+        let requestJSON = try encodeJSON(request)
+        let prompt = buildPrompt(
+            requestJSON: requestJSON,
+            contextLabel: contextLabel,
+            isRepair: isRepair,
+            sourceLabel: sourceLabel,
+            targetIDs: targetIDs,
+            targetHints: targetHints,
+            cueCount: cues.count
+        )
 
-        CUES:
-        \(cueBlock)
+        let response = try await session.respond(to: prompt, generating: MultiTargetCueTranslationResponse.self)
+        return parseResponse(response.content, requestedTargetIDs: targetIDs, allowedCueIDs: Set(cues.map(\.id)))
+    }
+
+    // MARK: - Prompt / Parsing
+
+    private func buildPrompt(
+        requestJSON: String,
+        contextLabel: String,
+        isRepair: Bool,
+        sourceLabel: String,
+        targetIDs: [String],
+        targetHints: String,
+        cueCount: Int
+    ) -> String {
+        let header = isRepair
+            ? "Some cue translations were missing or invalid. Translate them again."
+            : "Translate all cues."
+
+        return """
+        \(header)
+        Context: \(contextLabel)
+        Source: \(sourceLabel)
+        Targets: \(targetIDs.joined(separator: ", "))
+
+        \(targetHints)
+
+        Rules:
+        - Treat all cues as a single transcript to understand context (语境).
+        - Do NOT add, remove, merge, split, or reorder cues.
+        - For every target, return exactly \(cueCount) cue entries.
+        - Keep each cue aligned by both id and index.
+        - Preserve line breaks.
+        - If an input cue text is empty, return an empty string for that cue.
+        - Output ONLY JSON. Do not wrap in markdown. Do not add commentary.
+
+        JSON schema (must match exactly):
+        {
+          "original": "…",
+          "targets": [
+            {
+              "target": "…",
+              "cues": [
+                { "id": "…", "index": 0, "text": "…" }
+              ]
+            }
+          ]
+        }
+
+        INPUT_JSON:
+        \(requestJSON)
         """
+    }
 
-        let response = try await session.respond(to: prompt, generating: CueTranslationResponse.self)
+    private func parseResponse(
+        _ response: MultiTargetCueTranslationResponse,
+        requestedTargetIDs: [String],
+        allowedCueIDs: Set<UUID>
+    ) -> [String: [UUID: String]] {
+        let requestedByNormalized = Dictionary(
+            uniqueKeysWithValues: requestedTargetIDs.map { (normalizeIdentifier($0), $0) }
+        )
 
-        var output: [UUID: String] = [:]
-        for item in response.content.translations {
-            guard let id = UUID(uuidString: item.id) else { continue }
-            let restored = item.text.replacingOccurrences(of: "\\n", with: "\n")
-            output[id] = restored
+        var output: [String: [UUID: String]] = [:]
+        for targetEntry in response.targets {
+            let normalized = normalizeIdentifier(targetEntry.target)
+            guard let canonicalTarget = requestedByNormalized[normalized] else { continue }
+
+            var map = output[canonicalTarget] ?? [:]
+            for cue in targetEntry.cues {
+                guard let id = UUID(uuidString: cue.id), allowedCueIDs.contains(id) else { continue }
+                map[id] = cue.text
+            }
+            output[canonicalTarget] = map
         }
+
+#if DEBUG
+        let missingTargets = requestedTargetIDs.filter { output[$0] == nil }
+        if !missingTargets.isEmpty {
+            AppLog.append("[AI-TRANSLATE] Missing target entries in response: \(missingTargets.joined(separator: ", "))")
+        }
+#endif
+
         return output
     }
 
-    private func translateSingle(text: String, sourceLabel: String, targetLabel: String) async throws -> String {
-        let session = LanguageModelSession(model: model) {
-            "Translate subtitles concisely and naturally."
+    // MARK: - Validation / Repair
+
+    private func cuesNeedingRepair(
+        _ cues: [SubtitleCue],
+        targetIDs: [String],
+        translations: [String: [UUID: String]]
+    ) -> [SubtitleCue] {
+        var needsRepair = Set<UUID>()
+        for cue in cues {
+            let original = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if original.isEmpty { continue }
+
+            for targetID in targetIDs {
+                guard let text = translations[targetID]?[cue.id] else {
+                    needsRepair.insert(cue.id)
+                    break
+                }
+                if isClearlyInvalidTranslation(text, original: original, targetID: targetID) {
+                    needsRepair.insert(cue.id)
+                    break
+                }
+            }
         }
-        let prompt = """
-        Translate from \(sourceLabel) to \(targetLabel).
-        Text:
-        \(text)
-        """
-        let response = try await session.respond(to: prompt)
-        return response.content
+
+        guard !needsRepair.isEmpty else { return [] }
+        return cues.filter { needsRepair.contains($0.id) }
+    }
+
+    private func isClearlyInvalidTranslation(_ text: String, original: String, targetID: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+
+        let lower = trimmed.lowercased()
+        if lower.contains("please provide the subtitles") && lower.contains("translated") { return true }
+        if lower.hasPrefix("sure") && lower.contains("provide") { return true }
+
+        if normalizeForLooseComparison(trimmed) == normalizeForLooseComparison(original) {
+            if normalizeIdentifier(targetID).hasPrefix("zh") && containsASCIIAlpha(original) && original.count > 12 {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func containsASCIIAlpha(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            scalar.isASCII && CharacterSet.letters.contains(scalar)
+        }
+    }
+
+    private func normalizeForLooseComparison(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    // MARK: - Identifiers / Hints
+
+    private func uniqueTargetIdentifiers(from targets: [Locale.Language]) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+
+        for target in targets {
+            let canonical = target.minimalIdentifier
+            let normalized = normalizeIdentifier(canonical)
+            if seen.insert(normalized).inserted {
+                ordered.append(canonical)
+            }
+        }
+
+        return ordered
+    }
+
+    private func partitionTargets(requestedTargets: [String], sourceMinimal: String) -> ([String], [String]) {
+        let normalizedSource = normalizeIdentifier(sourceMinimal)
+        var needs: [String] = []
+        var passthrough: [String] = []
+
+        for target in requestedTargets {
+            if normalizeIdentifier(target) == normalizedSource {
+                passthrough.append(target)
+            } else {
+                needs.append(target)
+            }
+        }
+
+        return (needs, passthrough)
+    }
+
+    private func buildTargetHints(for targets: [String]) -> String {
+        var lines: [String] = []
+        for target in targets {
+            guard let hint = hint(for: target) else { continue }
+            lines.append("- \(target): \(hint)")
+        }
+
+        if lines.isEmpty { return "" }
+        return "Target style notes:\n" + lines.joined(separator: "\n")
+    }
+
+    private func hint(for targetID: String) -> String? {
+        let normalized = normalizeIdentifier(targetID)
+        guard normalized.hasPrefix("zh") else { return nil }
+
+        if normalized.contains("-hant") || normalized.contains("-tw") || normalized.contains("-hk") || normalized.contains("-mo") {
+            return "Use Traditional Chinese (繁體中文)."
+        }
+        return "Use Simplified Chinese (简体中文)."
+    }
+
+    private func normalizeIdentifier(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    // MARK: - JSON / Merging
+
+    private func encodeJSON<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    private func mergeTranslations(_ a: [String: [UUID: String]], _ b: [String: [UUID: String]]) -> [String: [UUID: String]] {
+        var out = a
+        for (target, map) in b {
+            var existing = out[target] ?? [:]
+            for (id, text) in map {
+                existing[id] = text
+            }
+            out[target] = existing
+        }
+        return out
     }
 }

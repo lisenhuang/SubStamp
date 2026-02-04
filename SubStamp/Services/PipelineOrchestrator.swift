@@ -250,46 +250,64 @@ final class PipelineOrchestrator: ObservableObject {
         let baseLocaleIdentifier = job.transcriptionLocale
         let sourceLocale = Locale(identifier: baseLocaleIdentifier)
 
-        let lang1NeedsTranslation = job.language1Locale != baseLocaleIdentifier
-        let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocaleIdentifier)
+        let sourceMinimal = Locale.Language(identifier: sourceLocale.identifier(.bcp47)).minimalIdentifier
+
+        let lang1BCP47 = Locale(identifier: job.language1Locale).identifier(.bcp47)
+        let lang1Target = Locale.Language(identifier: lang1BCP47)
+        let lang1NeedsTranslation = lang1Target.minimalIdentifier != sourceMinimal
+
+        var lang2Target: Locale.Language?
+        var lang2NeedsTranslation = false
+        if job.subtitleMode == .bilingual, let lang2ID = job.translationTargetLocale {
+            let lang2BCP47 = Locale(identifier: lang2ID).identifier(.bcp47)
+            let target = Locale.Language(identifier: lang2BCP47)
+            lang2Target = target
+            lang2NeedsTranslation = target.minimalIdentifier != sourceMinimal
+        }
 
         var primaryCues = sourceCues
         var secondaryCues = sourceCues
 
-        let workUnits = Double((lang1NeedsTranslation ? 1 : 0) + (lang2NeedsTranslation ? 1 : 0))
-        let unitSize = workUnits > 0 ? (1.0 / workUnits) : 1.0
-        var completedUnits = 0.0
+        var translationTargets: [Locale.Language] = []
+        if lang1NeedsTranslation { translationTargets.append(lang1Target) }
+        if lang2NeedsTranslation, let lang2Target { translationTargets.append(lang2Target) }
 
-        if lang1NeedsTranslation {
-            let target = Locale.Language(identifier: job.language1Locale)
-            let res = try await appleIntelligenceTranslationService.translate(cues: sourceCues, source: sourceLocale, target: target) { [weak self] completed, total in
+        let translatedByTarget: [String: [SubtitleCue]]
+        if translationTargets.isEmpty {
+            translatedByTarget = [:]
+        } else {
+            translatedByTarget = try await appleIntelligenceTranslationService.translate(
+                cues: sourceCues,
+                source: sourceLocale,
+                targets: translationTargets
+            ) { [weak self] completed, total in
                 let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                self?.stageProgress[.translating] = completedUnits + (frac * unitSize)
+                self?.stageProgress[.translating] = frac
             }
-            primaryCues = res.map { cue in
-                var next = cue
-                next.primaryText = cue.secondaryText ?? cue.primaryText
-                next.secondaryText = nil
-                return next
-            }
-            completedUnits += unitSize
         }
 
-        if lang2NeedsTranslation, let lang2ID = job.translationTargetLocale {
-            let target = Locale.Language(identifier: lang2ID)
-            let res = try await appleIntelligenceTranslationService.translate(cues: sourceCues, source: sourceLocale, target: target) { [weak self] completed, total in
-                let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                self?.stageProgress[.translating] = completedUnits + (frac * unitSize)
+        if lang1NeedsTranslation {
+            let key = lang1Target.minimalIdentifier
+            if let res = translatedByTarget[key] {
+                primaryCues = res.map { cue in
+                    var next = cue
+                    next.primaryText = cue.secondaryText ?? cue.primaryText
+                    next.secondaryText = nil
+                    return next
+                }
             }
-            secondaryCues = res.map { cue in
-                var next = cue
-                next.primaryText = cue.secondaryText ?? cue.primaryText
-                next.secondaryText = nil
-                return next
+        }
+
+        if lang2NeedsTranslation, let lang2Target {
+            let key = lang2Target.minimalIdentifier
+            if let res = translatedByTarget[key] {
+                secondaryCues = res.map { cue in
+                    var next = cue
+                    next.primaryText = cue.secondaryText ?? cue.primaryText
+                    next.secondaryText = nil
+                    return next
+                }
             }
-            completedUnits += unitSize
-        } else if job.subtitleMode == .bilingual && job.translationTargetLocale == baseLocaleIdentifier {
-            secondaryCues = sourceCues
         }
 
         if job.subtitleMode == .bilingual {
