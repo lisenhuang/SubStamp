@@ -91,7 +91,7 @@ struct SubtitleStyle: Codable, Hashable {
     var background: SubtitleBackground = .translucent
     var secondaryStyle: SubtitleSecondaryStyle = .subdued
     var usesShadow: Bool = true
-    var padding: Double = 10
+    var padding: Double = 4
     var lineSpacing: Double = 2
     var position: SubtitlePosition = .bottom
 }

@@ -110,7 +110,9 @@ final class SubtitleRenderer {
         let margin = max(24, renderSize.height * 0.06)
         let maxWidth = renderSize.width * 0.86
         let baseFontSize = fontSize(for: style.fontSize, renderSize: renderSize)
-        let secondaryScale: CGFloat = style.secondaryStyle == .subdued ? 0.84 : 1.0
+        let background: SubtitleBackground = style.usesShadow ? .translucent : .none
+        let padding: CGFloat = 4
+        let secondaryScale: CGFloat = 0.84
 
         var layers: [CALayer] = []
         for cue in cues {
@@ -125,9 +127,9 @@ final class SubtitleRenderer {
                 margin: margin,
                 position: style.position,
                 lineSpacing: style.lineSpacing,
-                background: style.background,
+                background: background,
                 usesShadow: style.usesShadow,
-                padding: CGFloat(style.padding)
+                padding: padding
             )
 
             let secondaryLayer: CALayer?
@@ -140,9 +142,9 @@ final class SubtitleRenderer {
                     margin: margin,
                     position: style.position,
                     lineSpacing: style.lineSpacing,
-                    background: style.background == .none ? .none : .translucent,
+                    background: background,
                     usesShadow: style.usesShadow,
-                    padding: CGFloat(style.padding)
+                    padding: padding
                 )
 
                 // Adjust stacking: Language 1 on top of Language 2
