@@ -338,7 +338,7 @@ struct SetupView: View {
 
                 translationEnginePicker
 
-                Text("AI uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
+                Text("AI uses the on-device system model. Framework uses TranslationSession and may require downloading language assets.")
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
             }
@@ -359,7 +359,7 @@ struct SetupView: View {
                 isSelected: translationProvider == .translationFramework,
                 action: { translationProvider = .translationFramework }
             ) {
-                Text("Translation framework")
+                Text("Framework")
                     .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(translationProvider == .translationFramework ? AppColors.primaryText : AppColors.secondaryText)
                     .lineLimit(1)
@@ -407,15 +407,16 @@ struct SetupView: View {
     ) -> some View {
         Button(action: action) {
             content()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius - 2)
-                        .fill(isSelected ? AppColors.cardBackground : Color.clear)
-                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius - 2)
+                .fill(isSelected ? AppColors.cardBackground : Color.clear)
+        )
     }
 
     @ViewBuilder
