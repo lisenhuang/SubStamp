@@ -51,15 +51,16 @@ struct PipelineStageRow: View {
     }
 
     private var stateLabel: String {
+        let bundle = Bundle.forLocale(locale)
         switch state {
         case .pending:
-            return String(localized: "Pending", locale: locale)
+            return String(localized: "Pending", bundle: bundle)
         case .active:
-            return String(localized: "Running", locale: locale)
+            return String(localized: "Running", bundle: bundle)
         case .done:
-            return String(localized: "Done", locale: locale)
+            return String(localized: "Done", bundle: bundle)
         case .failed:
-            return String(localized: "Failed", locale: locale)
+            return String(localized: "Failed", bundle: bundle)
         }
     }
 

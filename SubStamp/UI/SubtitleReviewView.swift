@@ -18,6 +18,8 @@ struct SubtitleReviewView: View {
     @State private var showAbandonConfirmation = false
     @State private var showCopyConfirmation = false
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -137,21 +139,21 @@ struct SubtitleReviewView: View {
                 player = nil
             }
             .confirmationDialog(
-                "Abandon this job?",
+                Text(String(localized: "Abandon this job?", bundle: .forLocale(locale))),
                 isPresented: $showAbandonConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Abandon and restart", role: .destructive) {
+                Button(String(localized: "Abandon and restart", bundle: .forLocale(locale)), role: .destructive) {
                     onAbandon()
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
             } message: {
-                Text("All progress on this video will be lost.")
+                Text(String(localized: "All progress on this video will be lost.", bundle: .forLocale(locale)))
             }
-            .alert("Copied", isPresented: $showCopyConfirmation) {
-                Button("OK", role: .cancel) {}
+            .alert(Text(String(localized: "Copied", bundle: .forLocale(locale))), isPresented: $showCopyConfirmation) {
+                Button(String(localized: "OK", bundle: .forLocale(locale)), role: .cancel) {}
             } message: {
-                Text("Copied as SRT to your clipboard.")
+                Text(String(localized: "Copied as SRT to your clipboard.", bundle: .forLocale(locale)))
             }
         }
     }

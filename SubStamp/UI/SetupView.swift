@@ -305,7 +305,7 @@ struct SetupView: View {
                 
                 Menu {
                     Picker(selection: $selectedSubtitle1ID) {
-                        Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", locale: locale))").tag("transcript")
+                        Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript")
                         ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
                             Text("\(index + 1). \(targetLabel(target))")
                                 .tag(target.id)
@@ -447,13 +447,13 @@ struct SetupView: View {
                 .stroke(AppColors.cardBorder, lineWidth: 1)
         )
         .accessibilityLabel("Translation engine")
-        .alert("AI Not Enabled", isPresented: $showAINotEnabledAlert) {
-            Button("Open Settings Guide") {
+        .alert(Text(String(localized: "AI Not Enabled", bundle: .forLocale(locale))), isPresented: $showAINotEnabledAlert) {
+            Button(String(localized: "Open Settings Guide", bundle: .forLocale(locale))) {
                 safariURL = URL(string: "https://support.apple.com/guide/iphone/iphc28624b81/ios#:~:text=of%20iOS.-,Turn%20on%20Apple%20Intelligence,-If%20Apple%20Intelligence")
             }
-            Button("Cancel", role: .cancel) { }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
         } message: {
-            Text("To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how.")
+            Text(String(localized: "To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how.", bundle: .forLocale(locale)))
         }
         .sheet(item: Binding(
             get: { safariURL.map { SafariURLItem(url: $0) } },
@@ -645,7 +645,7 @@ struct SetupView: View {
         let flag = flagPrefix(for: target.id)
         var label = "\(flag) \(target.displayName)"
         if target.mode == .pivot {
-            label += " " + String(localized: "(via English)", locale: locale)
+            label += " " + String(localized: "(via English)", bundle: .forLocale(locale))
         }
         return label
     }
@@ -659,7 +659,7 @@ struct SetupView: View {
 
     private func selectedSubtitle1Label() -> String {
         if selectedSubtitle1ID == "transcript" {
-            return "\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", locale: locale))"
+            return "\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))"
         }
         if let target = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }) {
             return targetLabel(target)
@@ -668,7 +668,7 @@ struct SetupView: View {
     }
 
     private func selectedSubtitle2Label() -> String {
-        guard let id = selectedSubtitle2ID else { return String(localized: "Select language", locale: locale) }
+        guard let id = selectedSubtitle2ID else { return String(localized: "Select language", bundle: .forLocale(locale)) }
         if let target = subtitleTargets.first(where: { $0.id == id }) {
             return targetLabel(target)
         }

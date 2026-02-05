@@ -43,15 +43,16 @@ struct AssetStatusCard: View {
     }
 
     private var statusText: String {
+        let bundle = Bundle.forLocale(locale)
         switch state {
         case .notInstalled:
-            return String(localized: "Required", locale: locale)
+            return String(localized: "Required", bundle: bundle)
         case .downloading:
-            return String(localized: "Downloading", locale: locale)
+            return String(localized: "Downloading", bundle: bundle)
         case .ready:
-            return String(localized: "Ready", locale: locale)
+            return String(localized: "Ready", bundle: bundle)
         case .failed:
-            return String(localized: "Failed", locale: locale)
+            return String(localized: "Failed", bundle: bundle)
         }
     }
 

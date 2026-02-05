@@ -100,11 +100,11 @@ struct ResultView: View {
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
-        .alert("Not saved to Photos", isPresented: $showStartOverConfirmation) {
-            Button("Continue", role: .destructive) { onStartOver() }
-            Button("Cancel", role: .cancel) {}
+        .alert(Text(String(localized: "Not saved to Photos", bundle: .forLocale(locale))), isPresented: $showStartOverConfirmation) {
+            Button(String(localized: "Continue", bundle: .forLocale(locale)), role: .destructive) { onStartOver() }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
         } message: {
-            Text("You haven’t saved this video to Photos yet. Continue anyway?")
+            Text(String(localized: "You haven't saved this video to Photos yet. Continue anyway?", bundle: .forLocale(locale)))
         }
         .task {
             metadata = await VideoMetadata.load(from: outputURL)
@@ -117,7 +117,7 @@ struct ResultView: View {
         print("[SAVE] File exists: \(FileManager.default.fileExists(atPath: outputURL.path))")
         
         isSaving = true
-        saveStatus = String(localized: "Saving to Photos...", locale: locale)
+        saveStatus = String(localized: "Saving to Photos...", bundle: .forLocale(locale))
         
         // Use a plain Task (not @MainActor) to avoid the Swift 6 libdispatch crash
         Task.detached { [outputURL] in
@@ -129,7 +129,7 @@ struct ResultView: View {
                 
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveStatus = String(localized: "Saved to Photos!", locale: self.locale)
+                    self.saveStatus = String(localized: "Saved to Photos!", bundle: .forLocale(self.locale))
                     self.hasSavedToPhotos = true
                 }
             } catch {
@@ -137,7 +137,7 @@ struct ResultView: View {
                 
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveStatus = String(localized: "Failed:", locale: self.locale) + " \(error.localizedDescription)"
+                    self.saveStatus = String(localized: "Failed:", bundle: .forLocale(self.locale)) + " \(error.localizedDescription)"
                 }
             }
         }

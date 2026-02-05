@@ -26,6 +26,8 @@ struct ProcessingView: View {
     @State private var keepScreenAwake = false
     @State private var showBackDialog = false
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
@@ -45,11 +47,11 @@ struct ProcessingView: View {
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
-        .confirmationDialog("Cancel processing?", isPresented: $showCancelDialog) {
-            Button("Stop", role: .destructive) { orchestrator.cancel(); onChangeSettings() }
+        .confirmationDialog(Text(String(localized: "Cancel processing?", bundle: .forLocale(locale))), isPresented: $showCancelDialog) {
+            Button(String(localized: "Stop", bundle: .forLocale(locale)), role: .destructive) { orchestrator.cancel(); onChangeSettings() }
         }
-        .confirmationDialog("Go back?", isPresented: $showBackDialog) {
-            Button("Stop and go back", role: .destructive) { orchestrator.cancel(); onBack() }
+        .confirmationDialog(Text(String(localized: "Go back?", bundle: .forLocale(locale))), isPresented: $showBackDialog) {
+            Button(String(localized: "Stop and go back", bundle: .forLocale(locale)), role: .destructive) { orchestrator.cancel(); onBack() }
         }
         .onAppear { startPipelineIfNeeded() }
         .onChange(of: orchestrator.outputURL) { _, newValue in

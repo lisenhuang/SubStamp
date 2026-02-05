@@ -34,7 +34,9 @@ struct ContentView: View {
     @State private var resumeTranslated: [SubtitleCue]?
 
     private let jobStore = JobStore()
-    
+
+    @Environment(\.locale) private var locale
+
     private var subtitleMode: SubtitleMode {
         if let lang2 = language2Locale, lang2 != language1Locale {
             return .bilingual
@@ -132,14 +134,15 @@ struct ContentView: View {
         .onChange(of: orchestrator.readyForReview) { _, ready in
             if ready { step = .review }
         }
-        .alert("Resume unfinished job?", isPresented: $showResumeAlert) {
-            Button("Resume") { resumeIncompleteJob() }
-            Button("Discard", role: .destructive) {
+        .alert(Text(String(localized: "Resume unfinished job?", bundle: .forLocale(locale))), isPresented: $showResumeAlert) {
+            Button(String(localized: "Resume", bundle: .forLocale(locale))) { resumeIncompleteJob() }
+            Button(String(localized: "Discard", bundle: .forLocale(locale)), role: .destructive) {
                 if let job = resumeJob { jobStore.deleteJob(id: job.id) }
                 resumeJob = nil
             }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
         } message: {
-            Text("We found a previous job that didn't finish. Would you like to resume?")
+            Text(String(localized: "We found a previous job that didn't finish. Would you like to resume?", bundle: .forLocale(locale)))
         }
         .task {
             loadSetupSelections()

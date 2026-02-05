@@ -6,10 +6,12 @@ struct WizardHeaderView: View {
     let title: LocalizedStringKey
     var subtitle: LocalizedStringKey?
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             HStack {
-                Text("Step \(step) of \(total)", tableName: nil, bundle: .main)
+                Text("Step \(step) of \(total)", tableName: nil, bundle: .forLocale(locale))
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
                 Spacer()
