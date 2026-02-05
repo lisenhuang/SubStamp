@@ -284,7 +284,11 @@ final class PipelineOrchestrator: ObservableObject {
         }
     }
 
-    private func mapTranslationOutputToPrimary(_ cues: [SubtitleCue], fallbackToSourceTextOnFailure: Bool) -> [SubtitleCue] {
+    private func mapTranslationOutputToPrimary(
+        _ cues: [SubtitleCue],
+        fallbackToSourceTextOnFailure: Bool,
+        showFailureText: Bool = false
+    ) -> [SubtitleCue] {
         cues.map { cue in
             let originalTrimmed = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
             if originalTrimmed.isEmpty {
@@ -302,6 +306,10 @@ final class PipelineOrchestrator: ObservableObject {
             if hasValidTranslation, let translated {
                 next.primaryText = SubtitleTextCleaner.clean(translated)
                 next.hasTranslationError = false
+            } else if showFailureText, let translated, !(translated.isEmpty) {
+                // In testing/debug scenarios we want to surface the model's failure text in-line.
+                next.primaryText = translated
+                next.hasTranslationError = true
             } else {
                 next.primaryText = fallbackToSourceTextOnFailure ? cue.primaryText : ""
                 next.hasTranslationError = true
@@ -442,7 +450,6 @@ final class PipelineOrchestrator: ObservableObject {
         let sourceLocale = Locale(identifier: baseLocaleIdentifier)
 
         let sourceMinimal = Locale.Language(identifier: sourceLocale.identifier(.bcp47)).minimalIdentifier
-        let frameworkSourceLanguage = Locale.Language(identifier: sourceLocale.identifier(.bcp47))
 
         let lang1BCP47 = Locale(identifier: job.language1Locale).identifier(.bcp47)
         let lang1Target = Locale.Language(identifier: lang1BCP47)
@@ -480,39 +487,15 @@ final class PipelineOrchestrator: ObservableObject {
 
         if lang1NeedsTranslation {
             let key = lang1Target.minimalIdentifier
-            if var res = translatedByTarget[key] {
-                res = await applyFrameworkFallbackIfNeeded(
-                    job: job,
-                    aiOutput: res,
-                    sourceCues: sourceCues,
-                    sourceLanguage: frameworkSourceLanguage,
-                    pivotLanguage: job.subtitle1Mode == .pivot ? Locale.Language(identifier: "en-US") : nil,
-                    targetLanguage: Locale.Language(identifier: Locale(identifier: job.language1Locale).identifier(.bcp47)),
-                    firstLegSession: job.subtitle1Mode == .pivot ? frameworkSession1 : nil,
-                    secondLegSession: frameworkSession2,
-                    label: "subtitle1:\(lang1Target.minimalIdentifier)"
-                )
-                translatedByTarget[key] = res
-                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
+            if let res = translatedByTarget[key] {
+                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true, showFailureText: true)
             }
         }
 
         if lang2NeedsTranslation, let lang2Target {
             let key = lang2Target.minimalIdentifier
-            if var res = translatedByTarget[key] {
-                res = await applyFrameworkFallbackIfNeeded(
-                    job: job,
-                    aiOutput: res,
-                    sourceCues: sourceCues,
-                    sourceLanguage: frameworkSourceLanguage,
-                    pivotLanguage: job.subtitle2Mode == .pivot ? Locale.Language(identifier: "en-US") : nil,
-                    targetLanguage: Locale.Language(identifier: Locale(identifier: job.translationTargetLocale ?? "").identifier(.bcp47)),
-                    firstLegSession: job.subtitle2Mode == .pivot ? frameworkSession1 : nil,
-                    secondLegSession: frameworkSession3,
-                    label: "subtitle2:\(lang2Target.minimalIdentifier)"
-                )
-                translatedByTarget[key] = res
-                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false)
+            if let res = translatedByTarget[key] {
+                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false, showFailureText: true)
             }
         }
 

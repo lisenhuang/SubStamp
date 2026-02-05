@@ -138,9 +138,10 @@ final class AppleIntelligenceTranslationService {
         let chunks = makeChunks(from: cues, maxCuesPerChunk: chunkLimits.maxCues, maxCharactersPerChunk: chunkLimits.maxCharacters)
 
         var completedByTarget: [String: Set<UUID>] = Dictionary(uniqueKeysWithValues: targetsNeedingTranslation.map { ($0, Set<UUID>()) })
+        var failuresByCueID: [UUID: String] = [:]
 
         for (chunkIndex, chunk) in chunks.enumerated() {
-            let chunkTranslations = await translateChunkWithFallback(
+            let chunkResult = await translateChunkWithFallback(
                 chunk,
                 original: sourceBCP47,
                 sourceLabel: sourceLabel,
@@ -151,10 +152,11 @@ final class AppleIntelligenceTranslationService {
                 indexByID: indexByID,
                 session: session
             )
+            failuresByCueID.merge(chunkResult.failures, uniquingKeysWith: { existing, _ in existing })
 
             for targetID in targetsNeedingTranslation {
                 guard var output = outputByTarget[targetID] else { continue }
-                let translations = chunkTranslations[targetID] ?? [:]
+                let translations = chunkResult.translations[targetID] ?? [:]
                 for (cueID, text) in translations {
                     guard let cueIndex = indexByID[cueID], output.indices.contains(cueIndex) else { continue }
                     output[cueIndex].secondaryText = SubtitleTextCleaner.clean(text)
@@ -183,6 +185,11 @@ final class AppleIntelligenceTranslationService {
                     continue
                 }
                 guard let translated = output[index].secondaryText else {
+                    if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
+                        output[index].secondaryText = "AI ERROR: \(failure)"
+                    } else {
+                        output[index].secondaryText = "AI ERROR: Missing translation"
+                    }
                     output[index].hasTranslationError = true
 #if DEBUG
                     missingCount += 1
@@ -195,7 +202,6 @@ final class AppleIntelligenceTranslationService {
                     continue
                 }
                 if let reason = invalidTranslationReason(translated, original: originalText, targetID: targetID) {
-                    output[index].secondaryText = nil
                     output[index].hasTranslationError = true
 #if DEBUG
                     invalidCount += 1
@@ -206,6 +212,13 @@ final class AppleIntelligenceTranslationService {
                         loggedSamples += 1
                     }
 #endif
+                    if translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
+                            output[index].secondaryText = "AI ERROR: \(failure)"
+                        } else {
+                            output[index].secondaryText = "AI ERROR: \(reason)"
+                        }
+                    }
                 }
             }
             outputByTarget[targetID] = output
@@ -257,6 +270,18 @@ final class AppleIntelligenceTranslationService {
 
     // MARK: - Translation
 
+    private struct ChunkTranslationResult {
+        var translations: [String: [UUID: String]]
+        var failures: [UUID: String]
+    }
+
+    private func mergeChunkResults(_ left: ChunkTranslationResult, _ right: ChunkTranslationResult) -> ChunkTranslationResult {
+        ChunkTranslationResult(
+            translations: mergeTranslations(left.translations, right.translations),
+            failures: left.failures.merging(right.failures, uniquingKeysWith: { existing, _ in existing })
+        )
+    }
+
     private func translateChunkWithFallback(
         _ cues: [SubtitleCue],
         original: String,
@@ -267,9 +292,9 @@ final class AppleIntelligenceTranslationService {
         chunkCount: Int,
         indexByID: [UUID: Int],
         session: LanguageModelSession
-    ) async -> [String: [UUID: String]] {
+    ) async -> ChunkTranslationResult {
         do {
-            return try await translateChunkOnce(
+            let translations = try await translateChunkOnce(
                 cues,
                 original: original,
                 sourceLabel: sourceLabel,
@@ -279,12 +304,16 @@ final class AppleIntelligenceTranslationService {
                 indexByID: indexByID,
                 session: session
             )
+            return ChunkTranslationResult(translations: translations, failures: [:])
         } catch {
 #if DEBUG
             let reason = isSafetyGuardrailsError(error) ? "safety" : "error"
             AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues) reason=\(reason): \(error.localizedDescription)")
 #endif
-            guard cues.count > 1 else { return [:] }
+            guard cues.count > 1 else {
+                guard let cue = cues.first else { return ChunkTranslationResult(translations: [:], failures: [:]) }
+                return ChunkTranslationResult(translations: [:], failures: [cue.id: error.localizedDescription])
+            }
             let midpoint = cues.count / 2
             let left = Array(cues[..<midpoint])
             let right = Array(cues[midpoint...])
@@ -310,7 +339,7 @@ final class AppleIntelligenceTranslationService {
                 indexByID: indexByID,
                 session: session
             )
-            return mergeTranslations(leftRes, rightRes)
+            return mergeChunkResults(leftRes, rightRes)
         }
     }
 

@@ -121,6 +121,31 @@ final class AssetReadinessManager: ObservableObject {
             return
         }
 
+#if DEBUG
+        // NOTE (test branch): allow proceeding even if the selected audio/target language isn't in the model's supported list.
+        // We still log the mismatch so we can diagnose failures from the model/session.
+        let supported = Set(model.supportedLanguages.map { $0.minimalIdentifier })
+        let sourceLang = Locale.Language(identifier: source.identifier(.bcp47)).minimalIdentifier
+        if !supported.contains(sourceLang) {
+            let sample = supported.prefix(12).joined(separator: ", ")
+            AppLog.append("\(prefix) assetCheck warning: ignoring unsupported source source=\(sourceLang) supportedCount=\(supported.count) sample=\(sample)")
+        }
+        let unsupportedTargets = targets
+            .map { $0.minimalIdentifier }
+            .filter { !supported.contains($0) }
+        if !unsupportedTargets.isEmpty {
+            let sample = supported.prefix(12).joined(separator: ", ")
+            AppLog.append("\(prefix) assetCheck warning: ignoring unsupported targets targets=\(unsupportedTargets.joined(separator: ", ")) supportedCount=\(supported.count) sample=\(sample)")
+        }
+#endif
+
+        // Treat Apple Intelligence as ready as long as the system model is available.
+        // If translation/repair fails later, we will surface the model/session error to the user.
+        lastError = nil
+        translationAssetsState = .ready
+        return
+
+#if false
         let sourceLang = Locale.Language(identifier: source.identifier)
         let supported = model.supportedLanguages.map { $0.minimalIdentifier }
         guard supported.contains(sourceLang.minimalIdentifier) else {
@@ -154,6 +179,7 @@ final class AssetReadinessManager: ObservableObject {
         AppLog.append("\(prefix) assetCheck succeeded: Apple Intelligence ready")
 #endif
         translationAssetsState = .ready
+#endif
     }
 
     func downloadSpeechAssets() async {
