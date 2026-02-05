@@ -1,6 +1,7 @@
 import FoundationModels
 import Speech
 import SwiftUI
+import SafariServices
 @preconcurrency import Translation
 
 struct SetupView: View {
@@ -27,6 +28,9 @@ struct SetupView: View {
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
     @State private var appleIntelligenceAvailable = false
+    @State private var deviceSupportsAppleIntelligence = false
+    @State private var showAINotEnabledAlert = false
+    @State private var safariURL: URL?
     
     @Environment(\.scenePhase) private var scenePhase
 
@@ -57,10 +61,22 @@ struct SetupView: View {
         .task {
             logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
             speechAvailable = SpeechTranscriber.isAvailable
-            appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+            
+            let model = SystemLanguageModel.default
+            appleIntelligenceAvailable = model.isAvailable
+            
+            // Check if device is capable even if AI is not enabled
+            switch model.availability {
+            case .available:
+                deviceSupportsAppleIntelligence = true
+            case .unavailable(let reason):
+                // Device supports AI if reason is NOT deviceNotEligible
+                deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
+            }
+            
             logAppleIntelligenceDiagnostics(context: "SetupView.task(initial-check)")
 
-            if !appleIntelligenceAvailable {
+            if !deviceSupportsAppleIntelligence {
                 translationProvider = .translationFramework
                 fixTranscriptionWithAppleIntelligence = false
             }
@@ -72,9 +88,19 @@ struct SetupView: View {
             // Retry once shortly after launch in case the system model is still initializing.
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                let retryAvailable = SystemLanguageModel.default.isAvailable
+                let retryModel = SystemLanguageModel.default
+                let retryAvailable = retryModel.isAvailable
                 if retryAvailable != appleIntelligenceAvailable {
                     appleIntelligenceAvailable = retryAvailable
+                    
+                    // Update device support status
+                    switch retryModel.availability {
+                    case .available:
+                        deviceSupportsAppleIntelligence = true
+                    case .unavailable(let reason):
+                        deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
+                    }
+                    
                     logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-changed)")
                 } else {
                     logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-unchanged)")
@@ -331,7 +357,7 @@ struct SetupView: View {
 
     @ViewBuilder
     private var translationProviderCard: some View {
-        if appleIntelligenceAvailable {
+        if deviceSupportsAppleIntelligence {
             VStack(alignment: .leading, spacing: AppSpacing.s) {
                 Text("Translation engine")
                     .font(AppTypography.bodyEmphasis)
@@ -367,7 +393,14 @@ struct SetupView: View {
             }
             translationEngineOption(
                 isSelected: translationProvider == .appleIntelligence,
-                action: { translationProvider = .appleIntelligence }
+                action: {
+                    if appleIntelligenceAvailable {
+                        translationProvider = .appleIntelligence
+                    } else {
+                        // AI not enabled, show alert
+                        showAINotEnabledAlert = true
+                    }
+                }
             ) {
                 Text("AI")
                     .font(AppTypography.bodyEmphasis)
@@ -385,6 +418,20 @@ struct SetupView: View {
                 .stroke(AppColors.cardBorder, lineWidth: 1)
         )
         .accessibilityLabel("Translation engine")
+        .alert("AI Not Enabled", isPresented: $showAINotEnabledAlert) {
+            Button("Open Settings Guide") {
+                safariURL = URL(string: "https://support.apple.com/guide/iphone/iphc28624b81/ios#:~:text=of%20iOS.-,Turn%20on%20Apple%20Intelligence,-If%20Apple%20Intelligence")
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how.")
+        }
+        .sheet(item: Binding(
+            get: { safariURL.map { SafariURLItem(url: $0) } },
+            set: { safariURL = $0?.url }
+        )) { item in
+            SafariView(url: item.url)
+        }
     }
 
     private var appleIntelligenceGradient: LinearGradient {
@@ -797,5 +844,24 @@ struct SetupView: View {
         )
         assetManager.configure(with: config)
         Task { await assetManager.check() }
+    }
+}
+
+// MARK: - Safari View Helpers
+
+struct SafariURLItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+    
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {
+        // No updates needed
     }
 }
