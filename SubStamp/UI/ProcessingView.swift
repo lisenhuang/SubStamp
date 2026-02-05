@@ -66,15 +66,15 @@ struct ProcessingView: View {
 
     private var stageList: some View {
         VStack(spacing: AppSpacing.l) {
-            stageRow(title: String(localized: "Speech assets"), stage: .assets, detail: String(localized: "Ensuring models are ready."))
-            stageRow(title: String(localized: "Transcribing"), stage: .transcribing, detail: String(localized: "Generating time-coded subtitles."))
-            stageRow(title: String(localized: "Translating"), stage: .translating, detail: job.subtitleMode == .bilingual ? String(localized: "Bilingual translation.") : String(localized: "Single track translation."))
-            stageRow(title: String(localized: "Rendering"), stage: .rendering, detail: String(localized: "Burning subtitles into video."), showReviewButton: orchestrator.readyForReview)
-            stageRow(title: String(localized: "Exporting"), stage: .exporting, detail: String(localized: "Writing output file."))
+            stageRow(title: "Speech assets", stage: .assets, detail: "Ensuring models are ready.")
+            stageRow(title: "Transcribing", stage: .transcribing, detail: "Generating time-coded subtitles.")
+            stageRow(title: "Translating", stage: .translating, detail: job.subtitleMode == .bilingual ? "Bilingual translation." : "Single track translation.")
+            stageRow(title: "Rendering", stage: .rendering, detail: "Burning subtitles into video.", showReviewButton: orchestrator.readyForReview)
+            stageRow(title: "Exporting", stage: .exporting, detail: "Writing output file.")
         }
     }
 
-    private func stageRow(title: String, stage: ProcessingStage, detail: String, showReviewButton: Bool = false) -> some View {
+    private func stageRow(title: LocalizedStringKey, stage: ProcessingStage, detail: LocalizedStringKey, showReviewButton: Bool = false) -> some View {
         HStack {
             PipelineStageRow(title: title, state: orchestrator.stageStates[stage] ?? .pending, progress: orchestrator.stageProgress[stage] ?? 0, detail: detail)
             if showReviewButton, let onReview {
@@ -98,7 +98,7 @@ struct ProcessingView: View {
     private var actionSection: some View {
         if let error = orchestrator.error {
             VStack(alignment: .leading) {
-                Text(error.errorDescription ?? String(localized: "Failed")).font(AppTypography.bodyEmphasis).foregroundStyle(AppColors.error)
+                Text(LocalizedStringKey(error.errorDescription ?? "Failed")).font(AppTypography.bodyEmphasis).foregroundStyle(AppColors.error)
                 HStack {
                     PrimaryButton(title: "Retry", systemImage: "arrow.clockwise") { restartPipeline() }
                     PrimaryButton(title: "Change settings", systemImage: "slider.horizontal.3") { onChangeSettings() }

@@ -1,9 +1,11 @@
 import SwiftUI
 
 struct AssetStatusCard: View {
-    let title: String
+    let title: LocalizedStringKey
     let state: AssetState
     var description: String?
+
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -43,13 +45,13 @@ struct AssetStatusCard: View {
     private var statusText: String {
         switch state {
         case .notInstalled:
-            return String(localized: "Required")
+            return String(localized: "Required", locale: locale)
         case .downloading:
-            return String(localized: "Downloading")
+            return String(localized: "Downloading", locale: locale)
         case .ready:
-            return String(localized: "Ready")
+            return String(localized: "Ready", locale: locale)
         case .failed:
-            return String(localized: "Failed")
+            return String(localized: "Failed", locale: locale)
         }
     }
 

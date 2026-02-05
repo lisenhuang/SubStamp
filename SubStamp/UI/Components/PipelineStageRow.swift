@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct PipelineStageRow: View {
-    let title: String
+    let title: LocalizedStringKey
     let state: PipelineStageState
     let progress: Double
-    var detail: String?
+    var detail: LocalizedStringKey?
+
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -51,13 +53,13 @@ struct PipelineStageRow: View {
     private var stateLabel: String {
         switch state {
         case .pending:
-            return String(localized: "Pending")
+            return String(localized: "Pending", locale: locale)
         case .active:
-            return String(localized: "Running")
+            return String(localized: "Running", locale: locale)
         case .done:
-            return String(localized: "Done")
+            return String(localized: "Done", locale: locale)
         case .failed:
-            return String(localized: "Failed")
+            return String(localized: "Failed", locale: locale)
         }
     }
 

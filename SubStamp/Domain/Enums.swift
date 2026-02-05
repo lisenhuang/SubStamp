@@ -110,46 +110,46 @@ enum SubStampError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .assetInstallFailed:
-            return String(localized: "Unable to install required language assets.")
+            return "Unable to install required language assets."
         case .unsupportedLanguagePair:
-            return String(localized: "This language pair isn't supported for translation.")
+            return "This language pair isn't supported for translation."
         case .noAudioTrack:
-            return String(localized: "The selected video doesn't contain an audio track.")
+            return "The selected video doesn't contain an audio track."
         case .speechAnalyzerError:
-            return String(localized: "Speech analysis failed.")
+            return "Speech analysis failed."
         case .translationError:
-            return String(localized: "Translation failed.")
+            return "Translation failed."
         case .exportFailed:
-            return String(localized: "Export failed.")
+            return "Export failed."
         case .insufficientStorage:
-            return String(localized: "Not enough storage available.")
+            return "Not enough storage available."
         case .backgroundTaskCancelled:
-            return String(localized: "Background processing was cancelled.")
+            return "Background processing was cancelled."
         case .jobNotFound:
-            return String(localized: "We couldn't find the saved job to resume.")
+            return "We couldn't find the saved job to resume."
         }
     }
 
     var recoverySuggestion: String? {
         switch self {
         case .assetInstallFailed:
-            return String(localized: "Check storage and try downloading again.")
+            return "Check storage and try downloading again."
         case .unsupportedLanguagePair:
-            return String(localized: "Choose a different translation language.")
+            return "Choose a different translation language."
         case .noAudioTrack:
-            return String(localized: "Pick a different video or record one with audio.")
+            return "Pick a different video or record one with audio."
         case .speechAnalyzerError:
-            return String(localized: "Try again or switch the transcription language.")
+            return "Try again or switch the transcription language."
         case .translationError:
-            return String(localized: "Retry translation or continue with transcript only.")
+            return "Retry translation or continue with transcript only."
         case .exportFailed:
-            return String(localized: "Try exporting again or choose a lower quality preset.")
+            return "Try exporting again or choose a lower quality preset."
         case .insufficientStorage:
-            return String(localized: "Free up space and retry.")
+            return "Free up space and retry."
         case .backgroundTaskCancelled:
-            return String(localized: "Resume processing from the last checkpoint.")
+            return "Resume processing from the last checkpoint."
         case .jobNotFound:
-            return String(localized: "Start a new project.")
+            return "Start a new project."
         }
     }
 }

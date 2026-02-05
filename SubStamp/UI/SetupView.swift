@@ -33,6 +33,7 @@ struct SetupView: View {
     @State private var safariURL: URL?
     
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ScrollView {
@@ -304,7 +305,7 @@ struct SetupView: View {
                 
                 Menu {
                     Picker(selection: $selectedSubtitle1ID) {
-                        Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)"))").tag("transcript")
+                        Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", locale: locale))").tag("transcript")
                         ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
                             Text("\(index + 1). \(targetLabel(target))")
                                 .tag(target.id)
@@ -532,8 +533,8 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             Text("Model readiness")
                 .font(AppTypography.bodyEmphasis)
-            AssetStatusCard(title: String(localized: "Speech assets"), state: assetManager.speechAssetsState)
-            AssetStatusCard(title: translationProvider == .appleIntelligence ? String(localized: "AI") : String(localized: "Translation model"), state: assetManager.translationAssetsState)
+            AssetStatusCard(title: "Speech assets", state: assetManager.speechAssetsState)
+            AssetStatusCard(title: translationProvider == .appleIntelligence ? "AI" : "Translation model", state: assetManager.translationAssetsState)
             
             if let warning = assetManager.lowStorageWarning {
                 Text(warning)
@@ -644,7 +645,7 @@ struct SetupView: View {
         let flag = flagPrefix(for: target.id)
         var label = "\(flag) \(target.displayName)"
         if target.mode == .pivot {
-            label += " " + String(localized: "(via English)")
+            label += " " + String(localized: "(via English)", locale: locale)
         }
         return label
     }
@@ -658,7 +659,7 @@ struct SetupView: View {
 
     private func selectedSubtitle1Label() -> String {
         if selectedSubtitle1ID == "transcript" {
-            return "\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)"))"
+            return "\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", locale: locale))"
         }
         if let target = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }) {
             return targetLabel(target)
@@ -667,7 +668,7 @@ struct SetupView: View {
     }
 
     private func selectedSubtitle2Label() -> String {
-        guard let id = selectedSubtitle2ID else { return String(localized: "Select language") }
+        guard let id = selectedSubtitle2ID else { return String(localized: "Select language", locale: locale) }
         if let target = subtitleTargets.first(where: { $0.id == id }) {
             return targetLabel(target)
         }

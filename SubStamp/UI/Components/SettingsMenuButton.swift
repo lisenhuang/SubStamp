@@ -21,8 +21,7 @@ struct SettingsMenuButton: View {
                     }
                 }
             } label: {
-                Label(String(localized: "Display Language", table: nil, bundle: .main, comment: "Settings menu: display language section"),
-                      systemImage: "globe")
+                Label("Display Language", systemImage: "globe")
             }
 
             Divider()
@@ -33,7 +32,7 @@ struct SettingsMenuButton: View {
                     settingsManager.appearanceMode = nil
                 } label: {
                     HStack {
-                        Text(String(localized: "System", table: nil, bundle: .main, comment: "Appearance: follow system"))
+                        Text("System")
                         if settingsManager.appearanceMode == nil {
                             Image(systemName: "checkmark")
                         }
@@ -43,7 +42,7 @@ struct SettingsMenuButton: View {
                     settingsManager.appearanceMode = .light
                 } label: {
                     HStack {
-                        Text(String(localized: "Light", table: nil, bundle: .main, comment: "Appearance: light mode"))
+                        Text("Light")
                         if settingsManager.appearanceMode == .light {
                             Image(systemName: "checkmark")
                         }
@@ -53,15 +52,14 @@ struct SettingsMenuButton: View {
                     settingsManager.appearanceMode = .dark
                 } label: {
                     HStack {
-                        Text(String(localized: "Dark", table: nil, bundle: .main, comment: "Appearance: dark mode"))
+                        Text("Dark")
                         if settingsManager.appearanceMode == .dark {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
             } label: {
-                Label(String(localized: "Appearance", table: nil, bundle: .main, comment: "Settings menu: appearance section"),
-                      systemImage: "moon.circle")
+                Label("Appearance", systemImage: "moon.circle")
             }
         } label: {
             Image(systemName: "gearshape")

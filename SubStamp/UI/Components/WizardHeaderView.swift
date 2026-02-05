@@ -3,8 +3,8 @@ import SwiftUI
 struct WizardHeaderView: View {
     let step: Int
     let total: Int
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {

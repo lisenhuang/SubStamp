@@ -43,6 +43,8 @@ struct VideoPickerView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
@@ -154,14 +156,14 @@ struct VideoPickerView: View {
             Task { @MainActor in
                 do {
                     guard let imported = try await newValue.loadTransferable(type: ImportedVideo.self) else {
-                        errorMessage = String(localized: "Could not load video. Try another clip.")
+                        errorMessage = String(localized: "Could not load video. Try another clip.", locale: locale)
                         isLoading = false
                         return
                     }
                     selectedVideoURL = imported.url
                     metadata = await VideoMetadata.load(from: imported.url)
                 } catch {
-                    errorMessage = String(localized: "Could not load video. Try another clip.")
+                    errorMessage = String(localized: "Could not load video. Try another clip.", locale: locale)
                 }
                 isLoading = false
             }

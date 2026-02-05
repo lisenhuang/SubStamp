@@ -12,6 +12,8 @@ struct ResultView: View {
     @State private var hasSavedToPhotos = false
     @State private var showStartOverConfirmation = false
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
@@ -115,7 +117,7 @@ struct ResultView: View {
         print("[SAVE] File exists: \(FileManager.default.fileExists(atPath: outputURL.path))")
         
         isSaving = true
-        saveStatus = String(localized: "Saving to Photos...")
+        saveStatus = String(localized: "Saving to Photos...", locale: locale)
         
         // Use a plain Task (not @MainActor) to avoid the Swift 6 libdispatch crash
         Task.detached { [outputURL] in
@@ -127,7 +129,7 @@ struct ResultView: View {
                 
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveStatus = String(localized: "Saved to Photos!")
+                    self.saveStatus = String(localized: "Saved to Photos!", locale: self.locale)
                     self.hasSavedToPhotos = true
                 }
             } catch {
@@ -135,7 +137,7 @@ struct ResultView: View {
                 
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveStatus = String(localized: "Failed:") + " \(error.localizedDescription)"
+                    self.saveStatus = String(localized: "Failed:", locale: self.locale) + " \(error.localizedDescription)"
                 }
             }
         }
