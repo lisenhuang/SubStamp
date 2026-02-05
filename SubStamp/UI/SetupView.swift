@@ -334,14 +334,7 @@ struct SetupView: View {
                 Text("Translation engine")
                     .font(AppTypography.bodyEmphasis)
 
-                Picker("Translation engine", selection: $translationProvider) {
-                    Text("Translation framework").tag(TranslationProvider.translationFramework)
-                    Text("Apple Intelligence")
-                        .foregroundStyle(AppColors.appleIntelligence)
-                        .tag(TranslationProvider.appleIntelligence)
-                }
-                .pickerStyle(.segmented)
-                .tint(translationProvider == .appleIntelligence ? AppColors.appleIntelligence : AppColors.accent)
+                translationEnginePicker
 
                 Text("Apple Intelligence uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
                     .font(AppTypography.caption)
@@ -356,6 +349,71 @@ struct SetupView: View {
                     .stroke(AppColors.cardBorder, lineWidth: 1)
             )
         }
+    }
+
+    private var translationEnginePicker: some View {
+        HStack(spacing: 0) {
+            translationEngineOption(
+                isSelected: translationProvider == .translationFramework,
+                action: { translationProvider = .translationFramework }
+            ) {
+                Text("Translation framework")
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(translationProvider == .translationFramework ? AppColors.primaryText : AppColors.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            translationEngineOption(
+                isSelected: translationProvider == .appleIntelligence,
+                action: { translationProvider = .appleIntelligence }
+            ) {
+                Text("Apple Intelligence")
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appleIntelligenceGradient)
+                    .shadow(color: .purple.opacity(0.25), radius: 12, x: 0, y: 0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+        }
+        .padding(2)
+        .background(AppColors.secondaryBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+        .accessibilityLabel("Translation engine")
+    }
+
+    private var appleIntelligenceGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 1.0, green: 0.31, blue: 0.85), // pink-ish
+                Color(red: 0.54, green: 0.36, blue: 1.0), // purple-ish
+                Color(red: 0.18, green: 0.48, blue: 1.0), // blue-ish
+                Color(red: 1.0, green: 0.54, blue: 0.24)  // orange-ish
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private func translationEngineOption<Content: View>(
+        isSelected: Bool,
+        action: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Button(action: action) {
+            content()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius - 2)
+                        .fill(isSelected ? AppColors.cardBackground : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

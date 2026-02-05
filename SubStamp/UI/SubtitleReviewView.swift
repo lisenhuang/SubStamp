@@ -32,16 +32,24 @@ struct SubtitleReviewView: View {
                             Text("Subtitle style")
                                 .font(AppTypography.bodyEmphasis)
                             Picker("Font size", selection: $style.fontSize) {
-                                Label("Small", systemImage: "textformat.size.smaller").tag(SubtitleFontSize.small)
-                                Label("Medium", systemImage: "textformat.size").tag(SubtitleFontSize.medium)
-                                Label("Large", systemImage: "textformat.size.larger").tag(SubtitleFontSize.large)
+                                Label("Small", systemImage: "textformat.size.smaller")
+                                    .tag(SubtitleFontSize.small)
+                                Label("Medium", systemImage: "textformat.size")
+                                    .tag(SubtitleFontSize.medium)
+                                Label("Large", systemImage: "textformat.size.larger")
+                                    .tag(SubtitleFontSize.large)
                             }
                             .pickerStyle(.segmented)
-                            Toggle("Text shadow", isOn: $style.usesShadow)
+                            Toggle(isOn: $style.usesShadow) {
+                                Label("Text shadow", systemImage: "square.3.layers.3d.down.right")
+                            }
                             Picker("Position", selection: $style.position) {
-                                Label("Top", systemImage: "arrow.up").tag(SubtitlePosition.top)
-                                Label("Middle", systemImage: "arrow.up.and.down").tag(SubtitlePosition.middle)
-                                Label("Bottom", systemImage: "arrow.down").tag(SubtitlePosition.bottom)
+                                Label("Top", systemImage: "align.vertical.top")
+                                    .tag(SubtitlePosition.top)
+                                Label("Middle", systemImage: "align.vertical.center")
+                                    .tag(SubtitlePosition.middle)
+                                Label("Bottom", systemImage: "align.vertical.bottom")
+                                    .tag(SubtitlePosition.bottom)
                             }
                             .pickerStyle(.segmented)
                             Button {
