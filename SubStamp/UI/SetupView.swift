@@ -282,9 +282,18 @@ struct SetupView: View {
                 }
             }
             
-            Text("Select the language spoken in the video to produce accurate subtitles.")
-                .font(AppTypography.caption)
-                .foregroundStyle(AppColors.secondaryText)
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(AppColors.warning)
+                    .font(.system(size: 14))
+                Text("Must match the language spoken in the video. Incorrect selection will cause transcription to fail.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.warning)
+            }
+            .padding(AppSpacing.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.warning.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -775,20 +784,35 @@ struct SetupView: View {
         // Keep this list small and obvious; unknowns fall back to 🌐.
         let map: [String: String] = [
             "ar": "SA",
+            "ca": "ES",
+            "cs": "CZ",
+            "da": "DK",
             "de": "DE",
+            "el": "GR",
             "en": "US",
             "es": "ES",
             "fa": "IR",
+            "fi": "FI",
             "fr": "FR",
+            "he": "IL",
             "hi": "IN",
+            "hr": "HR",
+            "hu": "HU",
             "id": "ID",
             "it": "IT",
             "ja": "JP",
             "ko": "KR",
+            "ms": "MY",
+            "nb": "NO",
             "nl": "NL",
+            "nn": "NO",
+            "no": "NO",
             "pl": "PL",
             "pt": "BR",
+            "ro": "RO",
             "ru": "RU",
+            "sk": "SK",
+            "sv": "SE",
             "th": "TH",
             "tr": "TR",
             "uk": "UA",

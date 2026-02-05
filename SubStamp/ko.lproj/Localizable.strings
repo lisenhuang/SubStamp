@@ -15,6 +15,7 @@
 "Select your transcription and subtitle options." = "전사 및 자막 옵션을 선택하세요.";
 "Audio language" = "오디오 언어";
 "Select the language spoken in the video to produce accurate subtitles." = "정확한 자막 생성을 위해 동영상에서 사용되는 언어를 선택하세요.";
+"Must match the language spoken in the video. Incorrect selection will cause transcription to fail." = "동영상에서 사용되는 언어와 일치해야 합니다. 잘못된 선택은 전사 실패를 초래합니다.";
 "Subtitle 1" = "자막 1";
 "Transcript (Audio Language)" = "원문 (오디오 언어)";
 "Subtitle 2" = "자막 2";

@@ -15,6 +15,7 @@
 "Select your transcription and subtitle options." = "Select your transcription and subtitle options.";
 "Audio language" = "Audio language";
 "Select the language spoken in the video to produce accurate subtitles." = "Select the language spoken in the video to produce accurate subtitles.";
+"Must match the language spoken in the video. Incorrect selection will cause transcription to fail." = "Must match the language spoken in the video. Incorrect selection will cause transcription to fail.";
 "Subtitle 1" = "Subtitle 1";
 "Transcript (Audio Language)" = "Transcript (Audio Language)";
 "Subtitle 2" = "Subtitle 2";

@@ -15,6 +15,7 @@
 "Select your transcription and subtitle options." = "选择转录和字幕选项。";
 "Audio language" = "音频语言";
 "Select the language spoken in the video to produce accurate subtitles." = "选择视频中使用的语言以生成准确的字幕。";
+"Must match the language spoken in the video. Incorrect selection will cause transcription to fail." = "必须与视频中的语言一致。选择错误将导致转录失败。";
 "Subtitle 1" = "字幕 1";
 "Transcript (Audio Language)" = "原文（音频语言）";
 "Subtitle 2" = "字幕 2";
