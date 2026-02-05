@@ -35,18 +35,6 @@ struct SubtitleReviewView: View {
                                 }
                             }
                             .pickerStyle(.segmented)
-                            Picker("Background", selection: $style.background) {
-                                ForEach(SubtitleBackground.allCases) { background in
-                                    Text(background.rawValue.capitalized).tag(background)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            Picker("Secondary style", selection: $style.secondaryStyle) {
-                                ForEach(SubtitleSecondaryStyle.allCases) { style in
-                                    Text(style.rawValue.capitalized).tag(style)
-                                }
-                            }
-                            .pickerStyle(.menu)
                             Toggle("Text shadow", isOn: $style.usesShadow)
                             Picker("Position", selection: $style.position) {
                                 ForEach(SubtitlePosition.allCases) { pos in
@@ -54,13 +42,6 @@ struct SubtitleReviewView: View {
                                 }
                             }
                             .pickerStyle(.segmented)
-                            HStack {
-                                Text("Padding")
-                                Slider(value: $style.padding, in: 4...18, step: 1)
-                                Text("\(Int(style.padding))")
-                                    .frame(width: 32)
-                                    .font(AppTypography.caption)
-                            }
                         }
                         .font(AppTypography.caption)
                         .padding()
