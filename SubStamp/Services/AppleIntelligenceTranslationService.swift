@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+@preconcurrency import Translation
 
 @available(iOS 26.0, *)
 final class AppleIntelligenceTranslationService {
@@ -40,6 +41,26 @@ final class AppleIntelligenceTranslationService {
 
     init(model: SystemLanguageModel = .default) {
         self.model = model
+    }
+    
+    /// Fallback translation using the built-in Translation Framework
+    private func fallbackTranslate(
+        text: String,
+        source: Locale,
+        target: Locale.Language
+    ) async -> String? {
+        guard #available(iOS 17.4, *) else { return nil }
+        
+        do {
+            let session = TranslationSession(installedSource: source.language, target: target)
+            let response = try await session.translate(text)
+            return SubtitleTextCleaner.clean(response.targetText)
+        } catch {
+#if DEBUG
+            AppLog.append("[FALLBACK-TRANSLATE] Failed: \(error.localizedDescription)")
+#endif
+            return nil
+        }
     }
 
     func translate(
@@ -185,20 +206,35 @@ final class AppleIntelligenceTranslationService {
                     continue
                 }
                 guard let translated = output[index].secondaryText else {
-                    if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
-                        output[index].secondaryText = "AI ERROR: \(failure)"
-                    } else {
-                        output[index].secondaryText = "AI ERROR: Missing translation"
-                    }
-                    output[index].hasTranslationError = true
+                    // Try fallback translation using the Translation Framework
+                    let targetLanguage = Locale.Language(identifier: targetID)
+                    if let fallbackTranslation = await fallbackTranslate(
+                        text: originalText,
+                        source: source,
+                        target: targetLanguage
+                    ) {
+                        output[index].secondaryText = fallbackTranslation
+                        output[index].hasTranslationError = false
 #if DEBUG
-                    missingCount += 1
-                    if loggedSamples < 6 {
-                        let preview = originalText.replacingOccurrences(of: "\n", with: " ").prefix(80)
-                        AppLog.append("[AI-TRANSLATE] missing target=\(targetID) cueIndex=\(index) id=\(output[index].id.uuidString) original='\(preview)'")
-                        loggedSamples += 1
-                    }
+                        AppLog.append("[AI-TRANSLATE] fallback successful for target=\(targetID) cueIndex=\(index)")
 #endif
+                    } else {
+                        // Fallback also failed, set error
+                        if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
+                            output[index].secondaryText = "AI ERROR: \(failure)"
+                        } else {
+                            output[index].secondaryText = "AI ERROR: Missing translation"
+                        }
+                        output[index].hasTranslationError = true
+#if DEBUG
+                        missingCount += 1
+                        if loggedSamples < 6 {
+                            let preview = originalText.replacingOccurrences(of: "\n", with: " ").prefix(80)
+                            AppLog.append("[AI-TRANSLATE] missing (fallback failed) target=\(targetID) cueIndex=\(index) id=\(output[index].id.uuidString) original='\(preview)'")
+                            loggedSamples += 1
+                        }
+#endif
+                    }
                     continue
                 }
                 if let reason = invalidTranslationReason(translated, original: originalText, targetID: targetID) {
@@ -213,10 +249,25 @@ final class AppleIntelligenceTranslationService {
                     }
 #endif
                     if translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
-                            output[index].secondaryText = "AI ERROR: \(failure)"
+                        // Try fallback translation for empty/invalid AI translation
+                        let targetLanguage = Locale.Language(identifier: targetID)
+                        if let fallbackTranslation = await fallbackTranslate(
+                            text: originalText,
+                            source: source,
+                            target: targetLanguage
+                        ) {
+                            output[index].secondaryText = fallbackTranslation
+                            output[index].hasTranslationError = false
+#if DEBUG
+                            AppLog.append("[AI-TRANSLATE] fallback successful for invalid translation target=\(targetID) cueIndex=\(index)")
+#endif
                         } else {
-                            output[index].secondaryText = "AI ERROR: \(reason)"
+                            // Fallback also failed, set error
+                            if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
+                                output[index].secondaryText = "AI ERROR: \(failure)"
+                            } else {
+                                output[index].secondaryText = "AI ERROR: \(reason)"
+                            }
                         }
                     }
                 }
