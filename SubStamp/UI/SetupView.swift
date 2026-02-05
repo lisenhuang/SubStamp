@@ -652,7 +652,7 @@ struct SetupView: View {
 
     private func targetLabel(_ target: TargetOption) -> String {
         let flag = flagPrefix(for: target.id)
-        var label = "\(flag) \(target.displayName)"
+        var label = "\(flag) \(target.displayName) (\(target.id))"
         if target.mode == .pivot {
             label += " " + String(localized: "(via English)", bundle: .forLocale(locale))
         }
