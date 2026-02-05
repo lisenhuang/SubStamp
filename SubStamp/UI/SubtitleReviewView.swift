@@ -148,14 +148,7 @@ struct SubtitleReviewView: View {
                 player = AVPlayer(url: videoURL)
                 let transcribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
                 transcribedTextByID = Dictionary(uniqueKeysWithValues: transcribed.map { ($0.id, $0.primaryText) })
-
-                if job.translationProvider == .translationFramework {
-                    configureTranslationFrameworkSessions()
-                } else {
-                    config1 = nil
-                    config2 = nil
-                    config3 = nil
-                }
+                configureTranslationFrameworkSessions()
             }
             .onDisappear {
                 player?.pause()
@@ -454,11 +447,26 @@ struct SubtitleReviewView: View {
             AppLog.append("[REVIEW-RETRY] done provider=appleIntelligence cueIndex=\(index) ok=\(!anyError)")
 #endif
         } catch {
-            cues[index].hasTranslationError = true
 #if DEBUG
             AppLog.append("[REVIEW-RETRY] appleIntelligence failed cueIndex=\(index): \(error.localizedDescription)")
 #endif
+            if isSafetyGuardrailsError(error) {
+#if DEBUG
+                AppLog.append("[REVIEW-RETRY] fallback provider=translationFramework cueIndex=\(index)")
+#endif
+                await retryWithTranslationFramework(cueIndex: index, retryPrimary: retryPrimary, retrySecondary: retrySecondary)
+                return
+            }
+
+            cues[index].hasTranslationError = true
         }
+    }
+
+    private func isSafetyGuardrailsError(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("unsafe")
+            || message.contains("safety guardrails")
+            || message.contains("guardrails were triggered")
     }
 
     private func buildTranscriptionContext(around index: Int, radius: Int) -> [SubtitleCue] {

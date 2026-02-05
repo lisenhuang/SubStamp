@@ -281,7 +281,8 @@ final class AppleIntelligenceTranslationService {
             )
         } catch {
 #if DEBUG
-            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues): \(error.localizedDescription)")
+            let reason = isSafetyGuardrailsError(error) ? "safety" : "error"
+            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues) reason=\(reason): \(error.localizedDescription)")
 #endif
             guard cues.count > 1 else { return [:] }
             let midpoint = cues.count / 2
@@ -532,6 +533,13 @@ final class AppleIntelligenceTranslationService {
         text.unicodeScalars.contains { scalar in
             scalar.isASCII && CharacterSet.letters.contains(scalar)
         }
+    }
+
+    private func isSafetyGuardrailsError(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("unsafe")
+            || message.contains("safety guardrails")
+            || message.contains("guardrails were triggered")
     }
 
     private func normalizeForLooseComparison(_ text: String) -> String {
