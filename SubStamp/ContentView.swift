@@ -14,8 +14,8 @@ struct ContentView: View {
     @StateObject private var assetManager = AssetReadinessManager()
     @StateObject private var orchestrator = PipelineOrchestrator()
 
-    @State private var transcriptionLocaleIdentifier: String = Locale.current.identifier
-    @State private var language1Locale: String = Locale.current.identifier
+    @State private var transcriptionLocaleIdentifier: String = Self.sanitizedCurrentLocaleIdentifier()
+    @State private var language1Locale: String = Self.sanitizedCurrentLocaleIdentifier()
     @State private var subtitle1Mode: TranslationMode? = nil
     @State private var language2Locale: String?
     @State private var subtitle2Mode: TranslationMode?
@@ -152,7 +152,7 @@ struct ContentView: View {
     }
 
     private func loadSetupSelections() {
-        transcriptionLocaleIdentifier = SetupPreferences.loadTranscriptionLocale() ?? Locale.current.identifier
+        transcriptionLocaleIdentifier = SetupPreferences.loadTranscriptionLocale() ?? Self.sanitizedCurrentLocaleIdentifier()
         language1Locale = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
         language2Locale = SetupPreferences.loadLanguage2()
         translationProvider = SetupPreferences.loadTranslationProvider() ?? .translationFramework
@@ -206,6 +206,14 @@ struct ContentView: View {
         activeJob = nil
         orchestrator.resetStages()
         isTestClip = false
+    }
+
+    /// Strips region-override suffixes (e.g. "en_US@rg=nzzzzz" → "en_US") so the
+    /// identifier matches SpeechTranscriber locale identifiers used as Picker tags.
+    private static func sanitizedCurrentLocaleIdentifier() -> String {
+        let raw = Locale.current.identifier
+        // Remove everything after "@" which contains region overrides
+        return raw.components(separatedBy: "@").first ?? raw
     }
 
     private func resumeIncompleteJob() {

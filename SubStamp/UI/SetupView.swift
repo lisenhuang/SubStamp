@@ -114,9 +114,21 @@ struct SetupView: View {
                 return name1 < name2
             }
             self.supportedSpeechLocales = speechLocales
+            AppLog.append("[SETUP] Available audio languages (\(speechLocales.count)): \(speechLocales.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
             
             let installed = await SpeechTranscriber.installedLocales
             self.installedSpeechIDs = Set(installed.map { $0.identifier(.bcp47) })
+            AppLog.append("[SETUP] Installed audio languages (\(installed.count)): \(installed.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
+            
+            // Normalize transcription locale to match a valid picker tag.
+            // Locale.current.identifier can return values like "en_US@rg=nzzzzz" which
+            // won't match any SpeechTranscriber locale identifier (e.g. "en_US").
+            let normalizedTranscription = bestMatchingSpeechLocale(for: transcriptionLocaleIdentifier, in: speechLocales)
+            if normalizedTranscription != transcriptionLocaleIdentifier {
+                AppLog.append("[SETUP] Normalized audio locale: \(transcriptionLocaleIdentifier) -> \(normalizedTranscription)")
+                transcriptionLocaleIdentifier = normalizedTranscription
+                language1Identifier = normalizedTranscription
+            }
             
             await updateSubtitleTargets()
 
@@ -781,6 +793,52 @@ struct SetupView: View {
             .replacingOccurrences(of: "_", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+
+    /// Finds the best matching speech locale identifier for a raw locale string.
+    /// Handles cases where Locale.current.identifier returns values like "en_US@rg=nzzzzz"
+    /// which don't match any SpeechTranscriber locale identifier.
+    private func bestMatchingSpeechLocale(for rawIdentifier: String, in locales: [Locale]) -> String {
+        // 1. Exact match
+        if locales.contains(where: { $0.identifier == rawIdentifier }) {
+            return rawIdentifier
+        }
+        
+        // 2. Strip everything after "@" (removes @rg=nzzzzz etc.) and try exact match
+        let stripped = rawIdentifier.components(separatedBy: "@").first ?? rawIdentifier
+        if locales.contains(where: { $0.identifier == stripped }) {
+            return stripped
+        }
+        
+        // 3. Use Locale to extract language code and region, then match by BCP-47
+        let parsed = Locale(identifier: rawIdentifier)
+        let parsedBCP47 = parsed.identifier(.bcp47)
+        if let match = locales.first(where: { $0.identifier(.bcp47) == parsedBCP47 }) {
+            return match.identifier
+        }
+        
+        // 4. Match by language + region (e.g. en + US)
+        let parsedLang = parsed.language.languageCode?.identifier
+        let parsedRegion = parsed.language.region?.identifier
+        if let lang = parsedLang, let region = parsedRegion {
+            if let match = locales.first(where: {
+                $0.language.languageCode?.identifier == lang && $0.language.region?.identifier == region
+            }) {
+                return match.identifier
+            }
+        }
+        
+        // 5. Match by language code only (first available variant)
+        if let lang = parsedLang {
+            if let match = locales.first(where: {
+                $0.language.languageCode?.identifier == lang
+            }) {
+                return match.identifier
+            }
+        }
+        
+        // 6. Give up, return first locale or the raw identifier
+        return locales.first?.identifier ?? rawIdentifier
     }
 
     private func languageCode(from normalizedIdentifier: String) -> String? {
