@@ -336,9 +336,12 @@ struct SetupView: View {
 
                 Picker("Translation engine", selection: $translationProvider) {
                     Text("Translation framework").tag(TranslationProvider.translationFramework)
-                    Text("Apple Intelligence").tag(TranslationProvider.appleIntelligence)
+                    Text("Apple Intelligence")
+                        .foregroundStyle(AppColors.appleIntelligence)
+                        .tag(TranslationProvider.appleIntelligence)
                 }
                 .pickerStyle(.segmented)
+                .tint(translationProvider == .appleIntelligence ? AppColors.appleIntelligence : AppColors.accent)
 
                 Text("Apple Intelligence uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
                     .font(AppTypography.caption)

@@ -1,6 +1,7 @@
 import AVFoundation
 import AVKit
 import SwiftUI
+import UIKit
 
 struct SubtitleReviewView: View {
     @Binding var cues: [SubtitleCue]
@@ -15,6 +16,7 @@ struct SubtitleReviewView: View {
     @State private var isPlayingPreview = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var showAbandonConfirmation = false
+    @State private var showCopyConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -30,18 +32,26 @@ struct SubtitleReviewView: View {
                             Text("Subtitle style")
                                 .font(AppTypography.bodyEmphasis)
                             Picker("Font size", selection: $style.fontSize) {
-                                ForEach(SubtitleFontSize.allCases) { size in
-                                    Text(size.rawValue.capitalized).tag(size)
-                                }
+                                Label("Small", systemImage: "textformat.size.smaller").tag(SubtitleFontSize.small)
+                                Label("Medium", systemImage: "textformat.size").tag(SubtitleFontSize.medium)
+                                Label("Large", systemImage: "textformat.size.larger").tag(SubtitleFontSize.large)
                             }
                             .pickerStyle(.segmented)
                             Toggle("Text shadow", isOn: $style.usesShadow)
                             Picker("Position", selection: $style.position) {
-                                ForEach(SubtitlePosition.allCases) { pos in
-                                    Text(pos.rawValue.capitalized).tag(pos)
-                                }
+                                Label("Top", systemImage: "arrow.up").tag(SubtitlePosition.top)
+                                Label("Middle", systemImage: "arrow.up.and.down").tag(SubtitlePosition.middle)
+                                Label("Bottom", systemImage: "arrow.down").tag(SubtitlePosition.bottom)
                             }
                             .pickerStyle(.segmented)
+                            Button {
+                                copyCuesToClipboard()
+                                showCopyConfirmation = true
+                            } label: {
+                                Label("Copy subtitles", systemImage: "doc.on.doc")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
                         }
                         .font(AppTypography.caption)
                         .padding()
@@ -129,7 +139,32 @@ struct SubtitleReviewView: View {
             } message: {
                 Text("All progress on this video will be lost.")
             }
+            .alert("Copied", isPresented: $showCopyConfirmation) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Copied as SRT to your clipboard.")
+            }
         }
+    }
+
+    private func copyCuesToClipboard() {
+        let srt = cues.enumerated().map { index, cue in
+            let start = TimeFormatting.srtTimestamp(cue.start)
+            let end = TimeFormatting.srtTimestamp(cue.end)
+
+            var lines: [String] = [
+                "\(index + 1)",
+                "\(start) --> \(end)",
+                cue.primaryText
+            ]
+            if let secondary = cue.secondaryText, !secondary.isEmpty {
+                lines.append(secondary)
+            }
+            return lines.joined(separator: "\n")
+        }
+        .joined(separator: "\n\n")
+
+        UIPasteboard.general.string = srt
     }
 
     private func splitCue(at index: Int) {
