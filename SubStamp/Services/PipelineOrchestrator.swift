@@ -24,6 +24,9 @@ final class PipelineOrchestrator: ObservableObject {
     @Published var readyForReview = false
 
     private var task: Task<Void, Never>?
+    private var frameworkSession1: TranslationSession?
+    private var frameworkSession2: TranslationSession?
+    private var frameworkSession3: TranslationSession?
 
     init() {
         resetStages()
@@ -58,10 +61,11 @@ final class PipelineOrchestrator: ObservableObject {
         self.job = job
         isRunning = true
         readyForReview = false
+        updateTranslationSessions(s1: translationSession1, s2: translationSession2, s3: translationSession3)
         print("[SUBSTAMP] start() mode=\(job.subtitleMode) lang1=\(job.language1Locale) lang2=\(job.translationTargetLocale ?? "nil") s1=\(translationSession1 != nil) s2=\(translationSession2 != nil) s3=\(translationSession3 != nil)")
         task = Task { [weak self] in
             guard let self else { return }
-            await self.runPipeline(job: job, s1: translationSession1, s2: translationSession2, s3: translationSession3)
+            await self.runPipeline(job: job)
         }
     }
 
@@ -76,6 +80,7 @@ final class PipelineOrchestrator: ObservableObject {
         cancel()
         resetStages()
         self.job = job
+        updateTranslationSessions(s1: s1, s2: s2, s3: s3)
         cues = translated ?? transcribed
         stageStates[.transcribing] = .done
         stageProgress[.transcribing] = 1
@@ -96,9 +101,15 @@ final class PipelineOrchestrator: ObservableObject {
             readyForReview = false
             task = Task { [weak self] in
                 guard let self else { return }
-                await self.runTranslationOnly(job: job, s1: s1, s2: s2, s3: s3)
+                await self.runTranslationOnly(job: job)
             }
         }
+    }
+
+    func updateTranslationSessions(s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) {
+        frameworkSession1 = s1
+        frameworkSession2 = s2
+        frameworkSession3 = s3
     }
 
     func cancel() {
@@ -107,7 +118,7 @@ final class PipelineOrchestrator: ObservableObject {
         isRunning = false
     }
 
-    private func runPipeline(job: JobModel, s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) async {
+    private func runPipeline(job: JobModel) async {
         do {
             stageStates[.assets] = .done
             stageProgress[.assets] = 1
@@ -170,7 +181,7 @@ final class PipelineOrchestrator: ObservableObject {
                 currentStage = .translating
                 stageStates[.translating] = .active
                 
-                cues = try await performTranslations(job: job, sourceCues: cues, s1: s1, s2: s2, s3: s3)
+                cues = try await performTranslations(job: job, sourceCues: cues)
                 try jobStore.saveCues(cues, id: job.id, type: .translated)
                 stageStates[.translating] = .done
                 stageProgress[.translating] = 1
@@ -200,16 +211,16 @@ final class PipelineOrchestrator: ObservableObject {
         }
     }
 
-    private func performTranslations(job: JobModel, sourceCues: [SubtitleCue], s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) async throws -> [SubtitleCue] {
+    private func performTranslations(job: JobModel, sourceCues: [SubtitleCue]) async throws -> [SubtitleCue] {
         switch job.translationProvider {
         case .translationFramework:
-            return try await performFrameworkTranslations(job: job, sourceCues: sourceCues, s1: s1, s2: s2, s3: s3)
+            return try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
         case .appleIntelligence:
             return try await performAppleIntelligenceTranslations(job: job, sourceCues: sourceCues)
         }
     }
 
-    private func performFrameworkTranslations(job: JobModel, sourceCues: [SubtitleCue], s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) async throws -> [SubtitleCue] {
+    private func performFrameworkTranslations(job: JobModel, sourceCues: [SubtitleCue]) async throws -> [SubtitleCue] {
         let baseLocale = job.transcriptionLocale
         let lang1NeedsTranslation = job.language1Locale != baseLocale
         let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocale)
@@ -224,41 +235,41 @@ final class PipelineOrchestrator: ObservableObject {
 
         if lang1NeedsTranslation {
             if job.subtitle1Mode == .pivot {
-                guard let sessionA = s1, let sessionB = s2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -40)) }
+                guard let sessionA = frameworkSession1, let sessionB = frameworkSession2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -40)) }
                 let mid = try await translationService.translate(cues: sourceCues, session: sessionA) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0 : (Double(c)/Double(t)) * 0.25
                 }
-                let english = mid.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                let english = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
                 let finalRes = try await translationService.translate(cues: english, session: sessionB) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.25 : 0.25 + (Double(c)/Double(t)) * 0.25
                 }
-                primaryCues = finalRes.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                primaryCues = mapTranslationOutputToPrimary(finalRes, fallbackToSourceTextOnFailure: true)
             } else {
-                guard let session = s2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -41)) }
+                guard let session = frameworkSession2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -41)) }
                 let res = try await translationService.translate(cues: sourceCues, session: session) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0 : (Double(c)/Double(t)) * 0.5
                 }
-                primaryCues = res.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
             }
         }
 
         if lang2NeedsTranslation {
             if job.subtitle2Mode == .pivot {
-                guard let sessionA = s1, let sessionC = s3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -42)) }
+                guard let sessionA = frameworkSession1, let sessionC = frameworkSession3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -42)) }
                 let mid = try await translationService.translate(cues: sourceCues, session: sessionA) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.25
                 }
-                let english = mid.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                let english = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
                 let finalRes = try await translationService.translate(cues: english, session: sessionC) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.75 : 0.75 + (Double(c)/Double(t)) * 0.25
                 }
-                secondaryCues = finalRes.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                secondaryCues = mapTranslationOutputToPrimary(finalRes, fallbackToSourceTextOnFailure: false)
             } else {
-                guard let session = s3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -43)) }
+                guard let session = frameworkSession3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -43)) }
                 let res = try await translationService.translate(cues: sourceCues, session: session) { [weak self] c, t in
                     self?.stageProgress[.translating] = t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.5
                 }
-                secondaryCues = res.map { var n = $0; n.primaryText = $0.secondaryText ?? $0.primaryText; n.secondaryText = nil; return n }
+                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false)
             }
         } else if job.subtitleMode == .bilingual && job.translationTargetLocale == baseLocale {
             secondaryCues = sourceCues
@@ -273,11 +284,165 @@ final class PipelineOrchestrator: ObservableObject {
         }
     }
 
+    private func mapTranslationOutputToPrimary(_ cues: [SubtitleCue], fallbackToSourceTextOnFailure: Bool) -> [SubtitleCue] {
+        cues.map { cue in
+            let originalTrimmed = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if originalTrimmed.isEmpty {
+                var next = cue
+                next.primaryText = ""
+                next.secondaryText = nil
+                next.hasTranslationError = false
+                return next
+            }
+
+            let translated = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasValidTranslation = (translated != nil && !(translated?.isEmpty ?? true) && cue.hasTranslationError == false)
+
+            var next = cue
+            if hasValidTranslation, let translated {
+                next.primaryText = SubtitleTextCleaner.clean(translated)
+                next.hasTranslationError = false
+            } else {
+                next.primaryText = fallbackToSourceTextOnFailure ? cue.primaryText : ""
+                next.hasTranslationError = true
+            }
+            next.secondaryText = nil
+            return next
+        }
+    }
+
+    private func applyFrameworkFallbackIfNeeded(
+        job: JobModel,
+        aiOutput: [SubtitleCue],
+        sourceCues: [SubtitleCue],
+        sourceLanguage: Locale.Language,
+        pivotLanguage: Locale.Language?,
+        targetLanguage: Locale.Language,
+        firstLegSession: TranslationSession?,
+        secondLegSession: TranslationSession?,
+        label: String
+    ) async -> [SubtitleCue] {
+        let failedIDs = cuesNeedingFrameworkFallback(aiOutput)
+        guard !failedIDs.isEmpty else { return aiOutput }
+
+        guard let secondLegSession else {
+#if DEBUG
+            AppLog.append("[AI-FALLBACK] skip label=\(label) reason=noFrameworkSession failed=\(failedIDs.count)")
+#endif
+            return aiOutput
+        }
+
+        if let pivotLanguage, firstLegSession == nil {
+#if DEBUG
+            AppLog.append("[AI-FALLBACK] skip label=\(label) reason=missingPivotSession failed=\(failedIDs.count)")
+#endif
+            return aiOutput
+        }
+
+        let canTranslate = await canUseFrameworkFallback(
+            source: sourceLanguage,
+            pivot: pivotLanguage,
+            target: targetLanguage
+        )
+        guard canTranslate else {
+#if DEBUG
+            let pivotID = pivotLanguage?.minimalIdentifier ?? "nil"
+            AppLog.append("[AI-FALLBACK] skip label=\(label) reason=frameworkUnsupported source=\(sourceLanguage.minimalIdentifier) pivot=\(pivotID) target=\(targetLanguage.minimalIdentifier) failed=\(failedIDs.count)")
+#endif
+            return aiOutput
+        }
+
+        let sourceByID = Dictionary(uniqueKeysWithValues: sourceCues.map { ($0.id, $0) })
+        let subset = failedIDs.compactMap { sourceByID[$0] }
+        guard !subset.isEmpty else { return aiOutput }
+
+#if DEBUG
+        AppLog.append("[AI-FALLBACK] start label=\(label) failed=\(subset.count) mode=\(pivotLanguage == nil ? "direct" : "pivot")")
+#endif
+
+        let translatedSubset: [SubtitleCue]
+        do {
+            if let pivotLanguage, let firstLegSession {
+                let mid = try await translationService.translate(cues: subset, session: firstLegSession) { _, _ in }
+                let pivoted = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
+                translatedSubset = try await translationService.translate(cues: pivoted, session: secondLegSession) { _, _ in }
+            } else {
+                translatedSubset = try await translationService.translate(cues: subset, session: secondLegSession) { _, _ in }
+            }
+        } catch {
+#if DEBUG
+            AppLog.append("[AI-FALLBACK] failed label=\(label) error=\(error.localizedDescription)")
+#endif
+            return aiOutput
+        }
+
+        let fallbackByID: [UUID: String] = Dictionary(uniqueKeysWithValues: translatedSubset.compactMap { cue in
+            guard cue.hasTranslationError == false,
+                  let text = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { return nil }
+            return (cue.id, text)
+        })
+
+        if fallbackByID.isEmpty {
+#if DEBUG
+            AppLog.append("[AI-FALLBACK] done label=\(label) fixed=0")
+#endif
+            return aiOutput
+        }
+
+        var output = aiOutput
+        var fixed = 0
+        for index in output.indices {
+            let cueID = output[index].id
+            guard failedIDs.contains(cueID), let text = fallbackByID[cueID] else { continue }
+            output[index].secondaryText = SubtitleTextCleaner.clean(text)
+            output[index].hasTranslationError = false
+            fixed += 1
+        }
+
+#if DEBUG
+        AppLog.append("[AI-FALLBACK] done label=\(label) fixed=\(fixed)/\(failedIDs.count)")
+#endif
+
+        return output
+    }
+
+    private func cuesNeedingFrameworkFallback(_ cues: [SubtitleCue]) -> Set<UUID> {
+        Set(cues.compactMap { cue in
+            let original = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !original.isEmpty else { return nil }
+            if cue.hasTranslationError { return cue.id }
+            let translated = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if translated == nil || translated?.isEmpty == true { return cue.id }
+            return nil
+        })
+    }
+
+    private func canUseFrameworkFallback(
+        source: Locale.Language,
+        pivot: Locale.Language?,
+        target: Locale.Language
+    ) async -> Bool {
+        let availability = LanguageAvailability()
+
+        if let pivot {
+            let status1 = await availability.status(from: source, to: pivot)
+            let status2 = await availability.status(from: pivot, to: target)
+            let ok1 = (status1 == .installed || status1 == .supported)
+            let ok2 = (status2 == .installed || status2 == .supported)
+            return ok1 && ok2
+        }
+
+        let status = await availability.status(from: source, to: target)
+        return status == .installed || status == .supported
+    }
+
     private func performAppleIntelligenceTranslations(job: JobModel, sourceCues: [SubtitleCue]) async throws -> [SubtitleCue] {
         let baseLocaleIdentifier = job.transcriptionLocale
         let sourceLocale = Locale(identifier: baseLocaleIdentifier)
 
         let sourceMinimal = Locale.Language(identifier: sourceLocale.identifier(.bcp47)).minimalIdentifier
+        let frameworkSourceLanguage = Locale.Language(identifier: sourceLocale.identifier(.bcp47))
 
         let lang1BCP47 = Locale(identifier: job.language1Locale).identifier(.bcp47)
         let lang1Target = Locale.Language(identifier: lang1BCP47)
@@ -299,7 +464,7 @@ final class PipelineOrchestrator: ObservableObject {
         if lang1NeedsTranslation { translationTargets.append(lang1Target) }
         if lang2NeedsTranslation, let lang2Target { translationTargets.append(lang2Target) }
 
-        let translatedByTarget: [String: [SubtitleCue]]
+        var translatedByTarget: [String: [SubtitleCue]]
         if translationTargets.isEmpty {
             translatedByTarget = [:]
         } else {
@@ -315,25 +480,39 @@ final class PipelineOrchestrator: ObservableObject {
 
         if lang1NeedsTranslation {
             let key = lang1Target.minimalIdentifier
-            if let res = translatedByTarget[key] {
-                primaryCues = res.map { cue in
-                    var next = cue
-                    next.primaryText = cue.secondaryText ?? cue.primaryText
-                    next.secondaryText = nil
-                    return next
-                }
+            if var res = translatedByTarget[key] {
+                res = await applyFrameworkFallbackIfNeeded(
+                    job: job,
+                    aiOutput: res,
+                    sourceCues: sourceCues,
+                    sourceLanguage: frameworkSourceLanguage,
+                    pivotLanguage: job.subtitle1Mode == .pivot ? Locale.Language(identifier: "en-US") : nil,
+                    targetLanguage: Locale.Language(identifier: Locale(identifier: job.language1Locale).identifier(.bcp47)),
+                    firstLegSession: job.subtitle1Mode == .pivot ? frameworkSession1 : nil,
+                    secondLegSession: frameworkSession2,
+                    label: "subtitle1:\(lang1Target.minimalIdentifier)"
+                )
+                translatedByTarget[key] = res
+                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
             }
         }
 
         if lang2NeedsTranslation, let lang2Target {
             let key = lang2Target.minimalIdentifier
-            if let res = translatedByTarget[key] {
-                secondaryCues = res.map { cue in
-                    var next = cue
-                    next.primaryText = cue.secondaryText ?? cue.primaryText
-                    next.secondaryText = nil
-                    return next
-                }
+            if var res = translatedByTarget[key] {
+                res = await applyFrameworkFallbackIfNeeded(
+                    job: job,
+                    aiOutput: res,
+                    sourceCues: sourceCues,
+                    sourceLanguage: frameworkSourceLanguage,
+                    pivotLanguage: job.subtitle2Mode == .pivot ? Locale.Language(identifier: "en-US") : nil,
+                    targetLanguage: Locale.Language(identifier: Locale(identifier: job.translationTargetLocale ?? "").identifier(.bcp47)),
+                    firstLegSession: job.subtitle2Mode == .pivot ? frameworkSession1 : nil,
+                    secondLegSession: frameworkSession3,
+                    label: "subtitle2:\(lang2Target.minimalIdentifier)"
+                )
+                translatedByTarget[key] = res
+                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false)
             }
         }
 
@@ -353,7 +532,7 @@ final class PipelineOrchestrator: ObservableObject {
         return primaryCues
     }
 
-    private func runTranslationOnly(job: JobModel, s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) async {
+    private func runTranslationOnly(job: JobModel) async {
         do {
             currentStage = .translating
             stageStates[.translating] = .active
@@ -362,7 +541,7 @@ final class PipelineOrchestrator: ObservableObject {
             updatedJob.updatedAt = Date()
             try jobStore.save(job: updatedJob)
             
-            cues = try await performTranslations(job: job, sourceCues: cues, s1: s1, s2: s2, s3: s3)
+            cues = try await performTranslations(job: job, sourceCues: cues)
             try jobStore.saveCues(cues, id: job.id, type: .translated)
             stageStates[.translating] = .done
             stageProgress[.translating] = 1

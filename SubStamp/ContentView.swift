@@ -109,8 +109,6 @@ struct ContentView: View {
                         style: styleBinding,
                         videoURL: videoURL,
                         mode: subtitleMode,
-                        translationTarget: language2Locale.map { Locale.Language(identifier: $0) },
-                        sourceLocaleIdentifier: language1Locale,
                         onContinue: {
                             orchestrator.continueAfterReview()
                             step = .processing

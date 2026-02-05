@@ -1,23 +1,18 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-import Translation
 
 struct SubtitleReviewView: View {
     @Binding var cues: [SubtitleCue]
     @Binding var style: SubtitleStyle
     let videoURL: URL
     var mode: SubtitleMode
-    var translationTarget: Locale.Language?
-    var sourceLocaleIdentifier: String?
     var onContinue: () -> Void
     var onBack: () -> Void
     var onAbandon: () -> Void
 
     @State private var player: AVPlayer?
     @State private var isPlayingPreview = false
-    @State private var translationConfig: TranslationSession.Configuration?
-    @State private var translationSession: TranslationSession?
     @FocusState private var isTextFieldFocused: Bool
     @State private var showAbandonConfirmation = false
 
@@ -86,8 +81,7 @@ struct SubtitleReviewView: View {
                                     onMergeNext: { mergeCue(at: index) },
                                     onShiftBack: { shiftCue(at: index, by: -0.1) },
                                     onShiftForward: { shiftCue(at: index, by: 0.1) },
-                                    onPreview: { previewCue(cues[index]) },
-                                    onRetryTranslation: { retryTranslation(at: index) }
+                                    onPreview: { previewCue(cues[index]) }
                                 )
                                 .focused($isTextFieldFocused)
                             }
@@ -137,17 +131,10 @@ struct SubtitleReviewView: View {
             }
             .onAppear {
                 player = AVPlayer(url: videoURL)
-                if let target = translationTarget {
-                    let source = sourceLocaleIdentifier.map { Locale.Language(identifier: $0) }
-                    translationConfig = TranslationSession.Configuration(source: source, target: target)
-                }
             }
             .onDisappear {
                 player?.pause()
                 player = nil
-            }
-            .translationTask(translationConfig) { session in
-                translationSession = session
             }
             .confirmationDialog(
                 "Abandon this job?",
@@ -228,19 +215,6 @@ struct SubtitleReviewView: View {
             await MainActor.run {
                 player.pause()
                 isPlayingPreview = false
-            }
-        }
-    }
-
-    private func retryTranslation(at index: Int) {
-        guard cues.indices.contains(index), let session = translationSession else { return }
-        Task {
-            do {
-                let response = try await session.translate(cues[index].primaryText)
-                cues[index].secondaryText = response.targetText
-                cues[index].hasTranslationError = false
-            } catch {
-                cues[index].hasTranslationError = true
             }
         }
     }

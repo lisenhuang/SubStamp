@@ -55,9 +55,9 @@ struct ProcessingView: View {
         .onChange(of: orchestrator.outputURL) { _, newValue in
             if let url = newValue { BackgroundTaskManager.shared.end(success: true); onCompleted(url) }
         }
-        .translationTask(config1) { session1 = $0; startPipelineIfNeeded() }
-        .translationTask(config2) { session2 = $0; startPipelineIfNeeded() }
-        .translationTask(config3) { session3 = $0; startPipelineIfNeeded() }
+        .translationTask(config1) { session1 = $0; orchestrator.updateTranslationSessions(s1: session1, s2: session2, s3: session3); startPipelineIfNeeded() }
+        .translationTask(config2) { session2 = $0; orchestrator.updateTranslationSessions(s1: session1, s2: session2, s3: session3); startPipelineIfNeeded() }
+        .translationTask(config3) { session3 = $0; orchestrator.updateTranslationSessions(s1: session1, s2: session2, s3: session3); startPipelineIfNeeded() }
         .onReceive(orchestrator.$error) { if $0 != nil { BackgroundTaskManager.shared.end(success: false) } }
         .onChange(of: orchestrator.stageProgress) { _, _ in updateBackgroundProgress() }
         .onChange(of: keepScreenAwake) { _, newValue in UIApplication.shared.isIdleTimerDisabled = newValue }
@@ -115,19 +115,6 @@ struct ProcessingView: View {
     private func startPipelineIfNeeded() {
         guard !orchestrator.isRunning else { return }
 
-        if job.translationProvider == .appleIntelligence {
-            config1 = nil
-            config2 = nil
-            config3 = nil
-            if let transcribed = resumeTranscribed, !didResume {
-                orchestrator.resume(job: job, s1: nil, s2: nil, s3: nil, transcribed: transcribed, translated: resumeTranslated)
-                didResume = true
-            } else {
-                orchestrator.start(job: job, translationSession1: nil, translationSession2: nil, translationSession3: nil)
-            }
-            return
-        }
-        
         let base = Locale.Language(identifier: job.transcriptionLocale)
         let english = Locale.Language(identifier: "en-US")
         let t1 = Locale.Language(identifier: job.language1Locale)
@@ -161,6 +148,18 @@ struct ProcessingView: View {
                 if config3 == nil { config3 = .init(source: base, target: target2) }
             }
             if session3 == nil { needsS3 = true }
+        }
+
+        if job.translationProvider == .appleIntelligence {
+            // Still prepare TranslationSession configs so we can fall back to the Translation framework if Apple Intelligence refuses.
+            orchestrator.updateTranslationSessions(s1: session1, s2: session2, s3: session3)
+            if let transcribed = resumeTranscribed, !didResume {
+                orchestrator.resume(job: job, s1: session1, s2: session2, s3: session3, transcribed: transcribed, translated: resumeTranslated)
+                didResume = true
+            } else {
+                orchestrator.start(job: job, translationSession1: session1, translationSession2: session2, translationSession3: session3)
+            }
+            return
         }
 
         if (needsS1 && session1 == nil) || (needsS2 && session2 == nil) || (needsS3 && session3 == nil) { return }

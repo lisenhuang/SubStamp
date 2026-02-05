@@ -170,6 +170,11 @@ final class AppleIntelligenceTranslationService {
 
         for targetID in targetsNeedingTranslation {
             guard var output = outputByTarget[targetID] else { continue }
+#if DEBUG
+            var missingCount = 0
+            var invalidCount = 0
+            var loggedSamples = 0
+#endif
             for index in output.indices {
                 let originalText = output[index].primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
                 if originalText.isEmpty {
@@ -179,14 +184,37 @@ final class AppleIntelligenceTranslationService {
                 }
                 guard let translated = output[index].secondaryText else {
                     output[index].hasTranslationError = true
+#if DEBUG
+                    missingCount += 1
+                    if loggedSamples < 6 {
+                        let preview = originalText.replacingOccurrences(of: "\n", with: " ").prefix(80)
+                        AppLog.append("[AI-TRANSLATE] missing target=\(targetID) cueIndex=\(index) id=\(output[index].id.uuidString) original='\(preview)'")
+                        loggedSamples += 1
+                    }
+#endif
                     continue
                 }
-                if isClearlyInvalidTranslation(translated, original: originalText, targetID: targetID) {
+                if let reason = invalidTranslationReason(translated, original: originalText, targetID: targetID) {
                     output[index].secondaryText = nil
                     output[index].hasTranslationError = true
+#if DEBUG
+                    invalidCount += 1
+                    if loggedSamples < 6 {
+                        let origPreview = originalText.replacingOccurrences(of: "\n", with: " ").prefix(60)
+                        let transPreview = translated.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ").prefix(60)
+                        AppLog.append("[AI-TRANSLATE] invalid(\(reason)) target=\(targetID) cueIndex=\(index) id=\(output[index].id.uuidString) original='\(origPreview)' translated='\(transPreview)'")
+                        loggedSamples += 1
+                    }
+#endif
                 }
             }
             outputByTarget[targetID] = output
+
+#if DEBUG
+            if missingCount > 0 || invalidCount > 0 {
+                AppLog.append("[AI-TRANSLATE] summary target=\(targetID) missing=\(missingCount) invalid=\(invalidCount)")
+            }
+#endif
         }
 
         return outputByTarget
@@ -253,7 +281,8 @@ final class AppleIntelligenceTranslationService {
             )
         } catch {
 #if DEBUG
-            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues): \(error.localizedDescription)")
+            let reason = isSafetyGuardrailsError(error) ? "safety" : "error"
+            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues) reason=\(reason): \(error.localizedDescription)")
 #endif
             guard cues.count > 1 else { return [:] }
             let midpoint = cues.count / 2
@@ -480,26 +509,37 @@ final class AppleIntelligenceTranslationService {
     }
 
     private func isClearlyInvalidTranslation(_ text: String, original: String, targetID: String) -> Bool {
+        invalidTranslationReason(text, original: original, targetID: targetID) != nil
+    }
+
+    private func invalidTranslationReason(_ text: String, original: String, targetID: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return true }
+        if trimmed.isEmpty { return "empty" }
 
         let lower = trimmed.lowercased()
-        if lower.contains("please provide the subtitles") && lower.contains("translated") { return true }
-        if lower.hasPrefix("sure") && lower.contains("provide") { return true }
+        if lower.contains("please provide the subtitles") && lower.contains("translated") { return "promptLeak" }
+        if lower.hasPrefix("sure") && lower.contains("provide") { return "promptLeak" }
 
         if normalizeForLooseComparison(trimmed) == normalizeForLooseComparison(original) {
             if normalizeIdentifier(targetID).hasPrefix("zh") && containsASCIIAlpha(original) && original.count > 12 {
-                return true
+                return "sameAsOriginal"
             }
         }
 
-        return false
+        return nil
     }
 
     private func containsASCIIAlpha(_ text: String) -> Bool {
         text.unicodeScalars.contains { scalar in
             scalar.isASCII && CharacterSet.letters.contains(scalar)
         }
+    }
+
+    private func isSafetyGuardrailsError(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("unsafe")
+            || message.contains("safety guardrails")
+            || message.contains("guardrails were triggered")
     }
 
     private func normalizeForLooseComparison(_ text: String) -> String {
