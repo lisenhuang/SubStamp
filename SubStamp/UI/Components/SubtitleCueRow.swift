@@ -8,7 +8,6 @@ struct SubtitleCueRow: View {
     var onShiftBack: (() -> Void)?
     var onShiftForward: (() -> Void)?
     var onPreview: (() -> Void)?
-    var onRetryTranslation: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -36,9 +35,6 @@ struct SubtitleCueRow: View {
             }
             HStack(spacing: AppSpacing.s) {
                 Button("Preview") { onPreview?() }
-                if cue.hasTranslationError {
-                    Button("Retry") { onRetryTranslation?() }
-                }
                 Spacer()
                 Button("-0.1s") { onShiftBack?() }
                 Button("+0.1s") { onShiftForward?() }

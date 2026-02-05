@@ -108,7 +108,6 @@ struct ContentView: View {
                         cues: $orchestrator.cues,
                         style: styleBinding,
                         videoURL: videoURL,
-                        job: activeJob!,
                         mode: subtitleMode,
                         onContinue: {
                             orchestrator.continueAfterReview()
