@@ -44,7 +44,7 @@ final class AppleIntelligenceTranscriptionRepairService {
             throw SubStampError.translationError(underlying: NSError(
                 domain: "SubStamp",
                 code: -240,
-                userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence is not available."]
+                userInfo: [NSLocalizedDescriptionKey: "AI is not available."]
             ))
         }
 

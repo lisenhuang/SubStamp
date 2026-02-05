@@ -30,7 +30,10 @@ enum SetupPreferences {
     }
 
     static func loadFixTranscriptionWithAppleIntelligence() -> Bool {
-        UserDefaults.standard.bool(forKey: fixTranscriptionWithAppleIntelligenceKey)
+        if UserDefaults.standard.object(forKey: fixTranscriptionWithAppleIntelligenceKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: fixTranscriptionWithAppleIntelligenceKey)
     }
 
     static func save(
@@ -44,7 +47,9 @@ enum SetupPreferences {
         UserDefaults.standard.set(subtitleMode.rawValue, forKey: subtitleModeKey)
         UserDefaults.standard.set(translationTarget, forKey: translationTargetKey)
         UserDefaults.standard.set(translationProvider.rawValue, forKey: translationProviderKey)
-        UserDefaults.standard.set(fixTranscriptionWithAppleIntelligence, forKey: fixTranscriptionWithAppleIntelligenceKey)
+        if translationProvider == .appleIntelligence {
+            UserDefaults.standard.set(fixTranscriptionWithAppleIntelligence, forKey: fixTranscriptionWithAppleIntelligenceKey)
+        }
     }
     
     // MARK: - Subtitle Style Persistence

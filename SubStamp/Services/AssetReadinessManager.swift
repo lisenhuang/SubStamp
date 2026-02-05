@@ -110,14 +110,14 @@ final class AssetReadinessManager: ObservableObject {
 
         guard model.isAvailable else {
 #if DEBUG
-            AppLog.append("\(prefix) assetCheck failed: Apple Intelligence unavailable")
+            AppLog.append("\(prefix) assetCheck failed: AI unavailable")
 #endif
             lastError = .translationError(underlying: NSError(
                 domain: "SubStamp",
                 code: -200,
-                userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence is not available on this device."]
+                userInfo: [NSLocalizedDescriptionKey: "AI is not available on this device."]
             ))
-            translationAssetsState = .failed(message: "Apple Intelligence unavailable.")
+            translationAssetsState = .failed(message: "AI unavailable.")
             return
         }
 
@@ -156,7 +156,7 @@ final class AssetReadinessManager: ObservableObject {
             lastError = .translationError(underlying: NSError(
                 domain: "SubStamp",
                 code: -201,
-                userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence doesn't support the selected audio language."]
+                userInfo: [NSLocalizedDescriptionKey: "AI doesn't support the selected audio language."]
             ))
             translationAssetsState = .failed(message: "Audio language unsupported.")
             return
@@ -176,7 +176,7 @@ final class AssetReadinessManager: ObservableObject {
         }
 
 #if DEBUG
-        AppLog.append("\(prefix) assetCheck succeeded: Apple Intelligence ready")
+        AppLog.append("\(prefix) assetCheck succeeded: AI ready")
 #endif
         translationAssetsState = .ready
 #endif

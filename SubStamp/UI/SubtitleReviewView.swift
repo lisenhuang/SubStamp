@@ -74,6 +74,7 @@ struct SubtitleReviewView: View {
                         VStack(spacing: AppSpacing.s) {
                             ForEach(Array(cues.indices), id: \.self) { index in
                                 SubtitleCueRow(
+                                    index: index,
                                     cue: $cues[index],
                                     showSecondary: mode == .bilingual,
                                     onSplit: { splitCue(at: index) },
