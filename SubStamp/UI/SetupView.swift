@@ -358,6 +358,7 @@ struct SetupView: View {
                         Menu {
                             Picker(selection: $selectedSubtitle2ID) {
                                 Text("Select language").tag(nil as String?)
+                                Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript" as String?)
                                 ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
                                     Text("\(index + 1). \(targetLabel(target))")
                                         .tag(target.id as String?)
@@ -621,7 +622,7 @@ struct SetupView: View {
         ) {
             // Update bindings
             language1Identifier = (selectedSubtitle1ID == "transcript") ? transcriptionLocaleIdentifier : selectedSubtitle1ID
-            language2Identifier = subtitle2Enabled ? selectedSubtitle2ID : nil
+            language2Identifier = subtitle2Enabled ? (selectedSubtitle2ID == "transcript" ? transcriptionLocaleIdentifier : selectedSubtitle2ID) : nil
             
             // Mode 1
             if selectedSubtitle1ID == "transcript" {
@@ -631,9 +632,14 @@ struct SetupView: View {
             }
             
             // Mode 2
-            if subtitle2Enabled, let targetID = selectedSubtitle2ID,
-               let option = subtitleTargets.first(where: { $0.id == targetID }) {
-                subtitle2Mode = option.mode
+            if subtitle2Enabled, let targetID = selectedSubtitle2ID {
+                if targetID == "transcript" {
+                    subtitle2Mode = nil
+                } else if let option = subtitleTargets.first(where: { $0.id == targetID }) {
+                    subtitle2Mode = option.mode
+                } else {
+                    subtitle2Mode = nil
+                }
             } else {
                 subtitle2Mode = nil
             }
@@ -678,6 +684,9 @@ struct SetupView: View {
 
     private func selectedSubtitle2Label() -> String {
         guard let id = selectedSubtitle2ID else { return String(localized: "Select language", bundle: .forLocale(locale)) }
+        if id == "transcript" {
+            return "\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))"
+        }
         if let target = subtitleTargets.first(where: { $0.id == id }) {
             return targetLabel(target)
         }
@@ -929,7 +938,7 @@ struct SetupView: View {
         if selectedSubtitle1ID != "transcript" && !subtitleTargets.contains(where: { $0.id == selectedSubtitle1ID }) {
             selectedSubtitle1ID = mappedSubtitleSelection(selectedSubtitle1ID) ?? "transcript"
         }
-        if let current = selectedSubtitle2ID, !subtitleTargets.contains(where: { $0.id == current }) {
+        if let current = selectedSubtitle2ID, current != "transcript" && !subtitleTargets.contains(where: { $0.id == current }) {
             selectedSubtitle2ID = mappedSubtitleSelection(current)
         }
     }
@@ -949,13 +958,16 @@ struct SetupView: View {
         }
         
         var s2: LanguageSelectionConfig.SubtitleTrackConfig? = nil
-        if subtitle2Enabled, let targetID = selectedSubtitle2ID,
-           let option = subtitleTargets.first(where: { $0.id == targetID }) {
-            let targetLang = Locale.Language(identifier: targetID)
-            if option.mode == .direct {
-                s2 = .direct(targetLang)
-            } else {
-                s2 = .pivot(pivot: Locale.Language(identifier: "en-US"), target: targetLang)
+        if subtitle2Enabled, let targetID = selectedSubtitle2ID {
+            if targetID == "transcript" {
+                s2 = .transcript(audioLocale)
+            } else if let option = subtitleTargets.first(where: { $0.id == targetID }) {
+                let targetLang = Locale.Language(identifier: targetID)
+                if option.mode == .direct {
+                    s2 = .direct(targetLang)
+                } else {
+                    s2 = .pivot(pivot: Locale.Language(identifier: "en-US"), target: targetLang)
+                }
             }
         }
         
