@@ -1,0 +1,167 @@
+/* 简体中文 — SubStamp 本地化 */
+
+/* SettingsMenuButton */
+"Display Language" = "显示语言";
+"Appearance" = "外观";
+"System" = "跟随系统";
+"Light" = "浅色";
+"Dark" = "深色";
+
+/* WizardHeaderView */
+"Step %lld of %lld" = "第 %1$lld 步，共 %2$lld 步";
+
+/* SetupView - Step 1 */
+"Setup languages" = "设置语言";
+"Select your transcription and subtitle options." = "选择转录和字幕选项。";
+"Audio language" = "音频语言";
+"Select the language spoken in the video to produce accurate subtitles." = "选择视频中使用的语言以生成准确的字幕。";
+"Subtitle 1" = "字幕 1";
+"Transcript (Audio Language)" = "原文（音频语言）";
+"Subtitle 2" = "字幕 2";
+"Add Subtitle 2" = "添加字幕 2";
+"Select language" = "选择语言";
+"Translation not available for this audio language." = "此音频语言暂不支持翻译。";
+"May reduce quality (via English)" = "可能降低质量（经英语中转）";
+"(via English)" = "（经英语中转）";
+"Translation engine" = "翻译引擎";
+"Framework" = "系统翻译";
+"AI" = "AI";
+"AI uses the on-device system model. Framework uses TranslationSession and may require downloading language assets." = "AI 使用设备端系统模型。系统翻译使用 TranslationSession，可能需要下载语言资源。";
+"AI Not Enabled" = "AI 未启用";
+"Open Settings Guide" = "打开设置指南";
+"Cancel" = "取消";
+"To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how." = "要使用 AI 翻译，请在 iPhone 设置中启用 AI。点击\"打开设置指南\"了解详情。";
+"Transcription quality" = "转录质量";
+"Fix transcription mistakes (AI)" = "修正转录错误（AI）";
+"Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export." = "可选。校对转录内容以修正明显的语音识别错误，同时保持字幕对齐（数量/顺序不变）。导出前可审阅和编辑。";
+"Model readiness" = "模型就绪状态";
+"Speech assets" = "语音资源";
+"Translation model" = "翻译模型";
+"Download required assets" = "下载所需资源";
+"Continue" = "继续";
+
+/* VideoPickerView - Step 2 */
+"Back" = "返回";
+"Pick a video" = "选择视频";
+"Choose a clip and confirm it has audio." = "选择一段视频并确认包含音频。";
+"Choose video" = "选择视频";
+"Loading video…" = "加载视频中…";
+"Video details" = "视频详情";
+"Duration" = "时长";
+"Resolution" = "分辨率";
+"Estimated size" = "预估大小";
+"Audio track" = "音轨";
+"Yes" = "有";
+"No" = "无";
+"Long video detected. Consider running a 1-minute test first." = "检测到长视频。建议先进行 1 分钟测试。";
+"Test on first 1 minute" = "测试前 1 分钟";
+"Generate subtitles" = "生成字幕";
+"Could not load video. Try another clip." = "无法加载视频，请尝试其他片段。";
+
+/* ProcessingView - Step 3 */
+"Processing" = "处理中";
+"We'll continue even if the screen locks." = "即使屏幕锁定也会继续处理。";
+"Ensuring models are ready." = "确认模型就绪。";
+"Transcribing" = "转录中";
+"Generating time-coded subtitles." = "生成带时间码的字幕。";
+"Translating" = "翻译中";
+"Bilingual translation." = "双语翻译。";
+"Single track translation." = "单轨翻译。";
+"Rendering" = "渲染中";
+"Burning subtitles into video." = "将字幕烧录到视频中。";
+"Exporting" = "导出中";
+"Writing output file." = "写入输出文件。";
+"Review" = "审阅";
+"Tips" = "提示";
+"iOS may stop work in the background. Keep the screen awake for fastest processing." = "iOS 可能会在后台停止工作。保持屏幕常亮可加快处理速度。";
+"Keep screen awake" = "保持屏幕常亮";
+"Failed" = "失败";
+"Retry" = "重试";
+"Change settings" = "更改设置";
+"Cancel processing?" = "取消处理？";
+"Stop" = "停止";
+"Go back?" = "返回？";
+"Stop and go back" = "停止并返回";
+"Background" = "后台运行";
+
+/* SubtitleReviewView */
+"Subtitle style" = "字幕样式";
+"Font size" = "字体大小";
+"Position" = "位置";
+"Small" = "小";
+"Medium" = "中";
+"Large" = "大";
+"Text shadow" = "文字阴影";
+"Top" = "顶部";
+"Middle" = "居中";
+"Bottom" = "底部";
+"Copy subtitles" = "复制字幕";
+"Continue to export" = "继续导出";
+"Abandon and restart" = "放弃并重新开始";
+"Abandon this job?" = "放弃此任务？";
+"All progress on this video will be lost." = "此视频的所有进度将丢失。";
+"Copied" = "已复制";
+"OK" = "好";
+"Copied as SRT to your clipboard." = "已将 SRT 格式字幕复制到剪贴板。";
+
+/* ResultView - Step 4 */
+"Result" = "结果";
+"Your subtitled video is ready." = "带字幕的视频已就绪。";
+"Export details" = "导出详情";
+"Preset" = "预设";
+"Saving..." = "保存中...";
+"Save to Photos" = "保存到相册";
+"Share" = "分享";
+"Start another" = "处理下一个";
+"Not saved to Photos" = "未保存到相册";
+"You haven't saved this video to Photos yet. Continue anyway?" = "视频尚未保存到相册。是否继续？";
+"Saved to Photos!" = "已保存到相册！";
+"Saving to Photos..." = "正在保存到相册...";
+"Failed:" = "失败:";
+
+/* VideoPreviewView */
+"No video selected" = "未选择视频";
+
+/* SubtitleCueRow */
+"Primary subtitle" = "主字幕";
+"Secondary subtitle" = "副字幕";
+"Translation error" = "翻译错误";
+"Preview" = "预览";
+"Split" = "拆分";
+"Merge" = "合并";
+
+/* PipelineStageRow */
+"Pending" = "等待中";
+"Running" = "运行中";
+"Done" = "完成";
+
+/* AssetStatusCard */
+"Required" = "需下载";
+"Downloading" = "下载中";
+"Ready" = "就绪";
+
+/* ContentView */
+"Resume unfinished job?" = "恢复未完成的任务？";
+"Resume" = "恢复";
+"Discard" = "丢弃";
+"We found a previous job that didn't finish. Would you like to resume?" = "发现一个未完成的任务，是否恢复？";
+
+/* Enums - Error descriptions */
+"Unable to install required language assets." = "无法安装所需的语言资源。";
+"This language pair isn't supported for translation." = "不支持此语言对的翻译。";
+"The selected video doesn't contain an audio track." = "所选视频不包含音轨。";
+"Speech analysis failed." = "语音分析失败。";
+"Translation failed." = "翻译失败。";
+"Export failed." = "导出失败。";
+"Not enough storage available." = "存储空间不足。";
+"Background processing was cancelled." = "后台处理已取消。";
+"We couldn't find the saved job to resume." = "找不到已保存的任务。";
+"Check storage and try downloading again." = "检查存储空间后重试下载。";
+"Choose a different translation language." = "选择其他翻译语言。";
+"Pick a different video or record one with audio." = "选择其他视频或录制含音频的视频。";
+"Try again or switch the transcription language." = "重试或切换转录语言。";
+"Retry translation or continue with transcript only." = "重试翻译或仅使用原文。";
+"Try exporting again or choose a lower quality preset." = "重试导出或选择较低质量的预设。";
+"Free up space and retry." = "释放空间后重试。";
+"Resume processing from the last checkpoint." = "从上次中断处恢复处理。";
+"Start a new project." = "开始新项目。";

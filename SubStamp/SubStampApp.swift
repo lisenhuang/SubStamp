@@ -10,6 +10,8 @@ import SwiftUI
 
 @main
 struct SubStampApp: App {
+    @StateObject private var settingsManager = SettingsManager()
+
     init() {
         configureAudioSession()
     }
@@ -17,6 +19,9 @@ struct SubStampApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(settingsManager)
+                .preferredColorScheme(settingsManager.appearanceMode)
+                .environment(\.locale, settingsManager.overrideLocale ?? .current)
         }
     }
 

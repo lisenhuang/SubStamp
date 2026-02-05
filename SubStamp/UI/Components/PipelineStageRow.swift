@@ -51,13 +51,13 @@ struct PipelineStageRow: View {
     private var stateLabel: String {
         switch state {
         case .pending:
-            return "Pending"
+            return String(localized: "Pending")
         case .active:
-            return "Running"
+            return String(localized: "Running")
         case .done:
-            return "Done"
+            return String(localized: "Done")
         case .failed:
-            return "Failed"
+            return String(localized: "Failed")
         }
     }
 

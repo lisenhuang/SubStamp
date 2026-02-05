@@ -154,14 +154,14 @@ struct VideoPickerView: View {
             Task { @MainActor in
                 do {
                     guard let imported = try await newValue.loadTransferable(type: ImportedVideo.self) else {
-                        errorMessage = "Could not load video. Try another clip."
+                        errorMessage = String(localized: "Could not load video. Try another clip.")
                         isLoading = false
                         return
                     }
                     selectedVideoURL = imported.url
                     metadata = await VideoMetadata.load(from: imported.url)
                 } catch {
-                    errorMessage = "Could not load video. Try another clip."
+                    errorMessage = String(localized: "Could not load video. Try another clip.")
                 }
                 isLoading = false
             }

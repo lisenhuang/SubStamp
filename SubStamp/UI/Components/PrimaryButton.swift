@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct PrimaryButton: View {
-    let title: String
+    let title: LocalizedStringKey
     var systemImage: String? = nil
     var isEnabled: Bool = true
     var action: () -> Void

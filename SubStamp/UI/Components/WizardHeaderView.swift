@@ -9,7 +9,7 @@ struct WizardHeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             HStack {
-                Text("Step \(step) of \(total)")
+                Text("Step \(step) of \(total)", tableName: nil, bundle: .main)
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
                 Spacer()

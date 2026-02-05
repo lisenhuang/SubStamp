@@ -115,7 +115,7 @@ struct ResultView: View {
         print("[SAVE] File exists: \(FileManager.default.fileExists(atPath: outputURL.path))")
         
         isSaving = true
-        saveStatus = "Saving to Photos..."
+        saveStatus = String(localized: "Saving to Photos...")
         
         // Use a plain Task (not @MainActor) to avoid the Swift 6 libdispatch crash
         Task.detached { [outputURL] in
@@ -127,7 +127,7 @@ struct ResultView: View {
                 
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveStatus = "Saved to Photos!"
+                    self.saveStatus = String(localized: "Saved to Photos!")
                     self.hasSavedToPhotos = true
                 }
             } catch {
@@ -135,7 +135,7 @@ struct ResultView: View {
                 
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveStatus = "Failed: \(error.localizedDescription)"
+                    self.saveStatus = String(localized: "Failed:") + " \(error.localizedDescription)"
                 }
             }
         }

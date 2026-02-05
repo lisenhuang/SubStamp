@@ -43,13 +43,13 @@ struct AssetStatusCard: View {
     private var statusText: String {
         switch state {
         case .notInstalled:
-            return "Required"
+            return String(localized: "Required")
         case .downloading:
-            return "Downloading"
+            return String(localized: "Downloading")
         case .ready:
-            return "Ready"
+            return String(localized: "Ready")
         case .failed:
-            return "Failed"
+            return String(localized: "Failed")
         }
     }
 

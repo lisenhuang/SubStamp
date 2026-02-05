@@ -1,0 +1,168 @@
+/* English — Base localization for SubStamp */
+
+/* SettingsMenuButton */
+"Display Language" = "Display Language";
+"Appearance" = "Appearance";
+"System" = "System";
+"Light" = "Light";
+"Dark" = "Dark";
+
+/* WizardHeaderView */
+"Step %lld of %lld" = "Step %lld of %lld";
+
+/* SetupView - Step 1 */
+"Setup languages" = "Setup languages";
+"Select your transcription and subtitle options." = "Select your transcription and subtitle options.";
+"Audio language" = "Audio language";
+"Select the language spoken in the video to produce accurate subtitles." = "Select the language spoken in the video to produce accurate subtitles.";
+"Subtitle 1" = "Subtitle 1";
+"Transcript (Audio Language)" = "Transcript (Audio Language)";
+"Subtitle 2" = "Subtitle 2";
+"Add Subtitle 2" = "Add Subtitle 2";
+"Select language" = "Select language";
+"Translation not available for this audio language." = "Translation not available for this audio language.";
+"May reduce quality (via English)" = "May reduce quality (via English)";
+"(via English)" = "(via English)";
+"Translation engine" = "Translation engine";
+"Framework" = "Framework";
+"AI" = "AI";
+"AI uses the on-device system model. Framework uses TranslationSession and may require downloading language assets." = "AI uses the on-device system model. Framework uses TranslationSession and may require downloading language assets.";
+"AI Not Enabled" = "AI Not Enabled";
+"Open Settings Guide" = "Open Settings Guide";
+"Cancel" = "Cancel";
+"To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how." = "To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how.";
+"Transcription quality" = "Transcription quality";
+"Fix transcription mistakes (AI)" = "Fix transcription mistakes (AI)";
+"Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export." = "Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export.";
+"Model readiness" = "Model readiness";
+"Speech assets" = "Speech assets";
+"Translation model" = "Translation model";
+"Download required assets" = "Download required assets";
+"Continue" = "Continue";
+
+/* VideoPickerView - Step 2 */
+"Back" = "Back";
+"Pick a video" = "Pick a video";
+"Choose a clip and confirm it has audio." = "Choose a clip and confirm it has audio.";
+"Choose video" = "Choose video";
+"Loading video…" = "Loading video…";
+"Video details" = "Video details";
+"Duration" = "Duration";
+"Resolution" = "Resolution";
+"Estimated size" = "Estimated size";
+"Audio track" = "Audio track";
+"Yes" = "Yes";
+"No" = "No";
+"Long video detected. Consider running a 1-minute test first." = "Long video detected. Consider running a 1-minute test first.";
+"Test on first 1 minute" = "Test on first 1 minute";
+"Generate subtitles" = "Generate subtitles";
+"Could not load video. Try another clip." = "Could not load video. Try another clip.";
+
+/* ProcessingView - Step 3 */
+"Processing" = "Processing";
+"We'll continue even if the screen locks." = "We'll continue even if the screen locks.";
+"Speech assets" = "Speech assets";
+"Ensuring models are ready." = "Ensuring models are ready.";
+"Transcribing" = "Transcribing";
+"Generating time-coded subtitles." = "Generating time-coded subtitles.";
+"Translating" = "Translating";
+"Bilingual translation." = "Bilingual translation.";
+"Single track translation." = "Single track translation.";
+"Rendering" = "Rendering";
+"Burning subtitles into video." = "Burning subtitles into video.";
+"Exporting" = "Exporting";
+"Writing output file." = "Writing output file.";
+"Review" = "Review";
+"Tips" = "Tips";
+"iOS may stop work in the background. Keep the screen awake for fastest processing." = "iOS may stop work in the background. Keep the screen awake for fastest processing.";
+"Keep screen awake" = "Keep screen awake";
+"Failed" = "Failed";
+"Retry" = "Retry";
+"Change settings" = "Change settings";
+"Cancel processing?" = "Cancel processing?";
+"Stop" = "Stop";
+"Go back?" = "Go back?";
+"Stop and go back" = "Stop and go back";
+"Background" = "Background";
+
+/* SubtitleReviewView */
+"Subtitle style" = "Subtitle style";
+"Font size" = "Font size";
+"Position" = "Position";
+"Small" = "Small";
+"Medium" = "Medium";
+"Large" = "Large";
+"Text shadow" = "Text shadow";
+"Top" = "Top";
+"Middle" = "Middle";
+"Bottom" = "Bottom";
+"Copy subtitles" = "Copy subtitles";
+"Continue to export" = "Continue to export";
+"Abandon and restart" = "Abandon and restart";
+"Abandon this job?" = "Abandon this job?";
+"All progress on this video will be lost." = "All progress on this video will be lost.";
+"Copied" = "Copied";
+"OK" = "OK";
+"Copied as SRT to your clipboard." = "Copied as SRT to your clipboard.";
+
+/* ResultView - Step 4 */
+"Result" = "Result";
+"Your subtitled video is ready." = "Your subtitled video is ready.";
+"Export details" = "Export details";
+"Preset" = "Preset";
+"Saving..." = "Saving...";
+"Save to Photos" = "Save to Photos";
+"Share" = "Share";
+"Start another" = "Start another";
+"Not saved to Photos" = "Not saved to Photos";
+"You haven't saved this video to Photos yet. Continue anyway?" = "You haven't saved this video to Photos yet. Continue anyway?";
+"Saved to Photos!" = "Saved to Photos!";
+"Saving to Photos..." = "Saving to Photos...";
+"Failed:" = "Failed:";
+
+/* VideoPreviewView */
+"No video selected" = "No video selected";
+
+/* SubtitleCueRow */
+"Primary subtitle" = "Primary subtitle";
+"Secondary subtitle" = "Secondary subtitle";
+"Translation error" = "Translation error";
+"Preview" = "Preview";
+"Split" = "Split";
+"Merge" = "Merge";
+
+/* PipelineStageRow */
+"Pending" = "Pending";
+"Running" = "Running";
+"Done" = "Done";
+
+/* AssetStatusCard */
+"Required" = "Required";
+"Downloading" = "Downloading";
+"Ready" = "Ready";
+
+/* ContentView */
+"Resume unfinished job?" = "Resume unfinished job?";
+"Resume" = "Resume";
+"Discard" = "Discard";
+"We found a previous job that didn't finish. Would you like to resume?" = "We found a previous job that didn't finish. Would you like to resume?";
+
+/* Enums - Error descriptions */
+"Unable to install required language assets." = "Unable to install required language assets.";
+"This language pair isn't supported for translation." = "This language pair isn't supported for translation.";
+"The selected video doesn't contain an audio track." = "The selected video doesn't contain an audio track.";
+"Speech analysis failed." = "Speech analysis failed.";
+"Translation failed." = "Translation failed.";
+"Export failed." = "Export failed.";
+"Not enough storage available." = "Not enough storage available.";
+"Background processing was cancelled." = "Background processing was cancelled.";
+"We couldn't find the saved job to resume." = "We couldn't find the saved job to resume.";
+"Check storage and try downloading again." = "Check storage and try downloading again.";
+"Choose a different translation language." = "Choose a different translation language.";
+"Pick a different video or record one with audio." = "Pick a different video or record one with audio.";
+"Try again or switch the transcription language." = "Try again or switch the transcription language.";
+"Retry translation or continue with transcript only." = "Retry translation or continue with transcript only.";
+"Try exporting again or choose a lower quality preset." = "Try exporting again or choose a lower quality preset.";
+"Free up space and retry." = "Free up space and retry.";
+"Resume processing from the last checkpoint." = "Resume processing from the last checkpoint.";
+"Start a new project." = "Start a new project.";
