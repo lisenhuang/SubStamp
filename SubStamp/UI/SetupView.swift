@@ -119,7 +119,9 @@ struct SetupView: View {
         .onChange(of: translationProvider) { _, newValue in
             appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
             logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
-            if newValue != .appleIntelligence {
+            if newValue == .appleIntelligence {
+                fixTranscriptionWithAppleIntelligence = SetupPreferences.loadFixTranscriptionWithAppleIntelligence()
+            } else {
                 fixTranscriptionWithAppleIntelligence = false
             }
             if newValue == .appleIntelligence, !appleIntelligenceAvailable {
@@ -336,7 +338,7 @@ struct SetupView: View {
 
                 translationEnginePicker
 
-                Text("Apple Intelligence uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
+                Text("AI uses the on-device system model. The Translation framework uses TranslationSession and may require downloading language assets.")
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
             }
@@ -367,7 +369,7 @@ struct SetupView: View {
                 isSelected: translationProvider == .appleIntelligence,
                 action: { translationProvider = .appleIntelligence }
             ) {
-                Text("Apple Intelligence")
+                Text("AI")
                     .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appleIntelligenceGradient)
                     .shadow(color: .purple.opacity(0.25), radius: 12, x: 0, y: 0)
@@ -423,7 +425,7 @@ struct SetupView: View {
                 Text("Transcription quality")
                     .font(AppTypography.bodyEmphasis)
 
-                Toggle("Fix transcription mistakes (Apple Intelligence)", isOn: $fixTranscriptionWithAppleIntelligence)
+                Toggle("Fix transcription mistakes (AI)", isOn: $fixTranscriptionWithAppleIntelligence)
                     .font(AppTypography.caption)
 
                 Text("Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export.")
@@ -455,7 +457,7 @@ struct SetupView: View {
             Text("Model readiness")
                 .font(AppTypography.bodyEmphasis)
             AssetStatusCard(title: "Speech assets", state: assetManager.speechAssetsState)
-            AssetStatusCard(title: translationProvider == .appleIntelligence ? "Apple Intelligence" : "Translation model", state: assetManager.translationAssetsState)
+            AssetStatusCard(title: translationProvider == .appleIntelligence ? "AI" : "Translation model", state: assetManager.translationAssetsState)
             
             if let warning = assetManager.lowStorageWarning {
                 Text(warning)

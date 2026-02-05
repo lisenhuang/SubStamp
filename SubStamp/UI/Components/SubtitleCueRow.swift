@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SubtitleCueRow: View {
+    let index: Int
     @Binding var cue: SubtitleCue
     var showSecondary: Bool = true
     var onSplit: (() -> Void)?
@@ -11,7 +12,11 @@ struct SubtitleCueRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
-            HStack {
+            HStack(spacing: AppSpacing.s) {
+                Text("\(index + 1)")
+                    .font(AppTypography.monospace)
+                    .foregroundStyle(AppColors.secondaryText)
+                    .frame(minWidth: 24, alignment: .leading)
                 Text("\(TimeFormatting.timestamp(cue.start)) - \(TimeFormatting.timestamp(cue.end))")
                     .font(AppTypography.monospace)
                     .foregroundStyle(AppColors.secondaryText)

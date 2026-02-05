@@ -9,6 +9,8 @@ struct ResultView: View {
     @State private var metadata: VideoMetadata?
     @State private var saveStatus: String?
     @State private var isSaving = false
+    @State private var hasSavedToPhotos = false
+    @State private var showStartOverConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -86,12 +88,22 @@ struct ResultView: View {
                 }
 
                 PrimaryButton(title: "Start another", systemImage: "arrow.counterclockwise") {
-                    onStartOver()
+                    if hasSavedToPhotos {
+                        onStartOver()
+                    } else {
+                        showStartOverConfirmation = true
+                    }
                 }
             }
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
+        .alert("Not saved to Photos", isPresented: $showStartOverConfirmation) {
+            Button("Continue", role: .destructive) { onStartOver() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You haven’t saved this video to Photos yet. Continue anyway?")
+        }
         .task {
             metadata = await VideoMetadata.load(from: outputURL)
         }
@@ -116,6 +128,7 @@ struct ResultView: View {
                 await MainActor.run {
                     self.isSaving = false
                     self.saveStatus = "Saved to Photos!"
+                    self.hasSavedToPhotos = true
                 }
             } catch {
                 print("[SAVE] Save failed: \(error)")
