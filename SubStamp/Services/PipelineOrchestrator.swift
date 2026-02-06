@@ -116,12 +116,22 @@ final class PipelineOrchestrator: ObservableObject {
         task?.cancel()
         task = nil
         isRunning = false
+        // Nil out framework sessions so cancelled work can't use stale sessions
+        // (ProcessingView's .translationTask modifiers are torn down when the view disappears)
+        frameworkSession1 = nil
+        frameworkSession2 = nil
+        frameworkSession3 = nil
+        BackgroundTaskManager.shared.end(success: false)
     }
 
     private func runPipeline(job: JobModel) async {
         do {
+            try Task.checkCancellation()
+
             stageStates[.assets] = .done
             stageProgress[.assets] = 1
+
+            try Task.checkCancellation()
 
             var updatedJob = job
             updatedJob.stage = .transcribing
@@ -141,6 +151,9 @@ final class PipelineOrchestrator: ObservableObject {
             ) { [weak self] progress, count in
                 self?.stageProgress[.transcribing] = progress * transcriptionWeight
             }
+
+            try Task.checkCancellation()
+
             cues = transcriptionResult.cues
             try jobStore.saveCues(cues, id: job.id, type: .transcribed)
 
@@ -149,6 +162,7 @@ final class PipelineOrchestrator: ObservableObject {
                 AppLog.append("[AI-TRANSCRIPT] repair(start) cues=\(cues.count) locale=\(job.transcriptionLocale)")
 #endif
                 do {
+                    try Task.checkCancellation()
                     cues = try await appleIntelligenceTranscriptionRepairService.repair(
                         cues: cues,
                         locale: Locale(identifier: job.transcriptionLocale)
@@ -160,12 +174,16 @@ final class PipelineOrchestrator: ObservableObject {
 #if DEBUG
                     AppLog.append("[AI-TRANSCRIPT] repair(done)")
 #endif
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
 #if DEBUG
                     AppLog.append("[AI-TRANSCRIPT] repair(failed): \(error.localizedDescription)")
 #endif
                 }
             }
+
+            try Task.checkCancellation()
 
             stageStates[.transcribing] = .done
             stageProgress[.transcribing] = 1
@@ -174,6 +192,8 @@ final class PipelineOrchestrator: ObservableObject {
             let lang1NeedsTranslation = job.language1Locale != baseLocale
             let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocale)
             
+            try Task.checkCancellation()
+
             if lang1NeedsTranslation || lang2NeedsTranslation {
                 updatedJob.stage = .translating
                 updatedJob.updatedAt = Date()
@@ -182,6 +202,9 @@ final class PipelineOrchestrator: ObservableObject {
                 stageStates[.translating] = .active
                 
                 cues = try await performTranslations(job: job, sourceCues: cues)
+
+                try Task.checkCancellation()
+
                 try jobStore.saveCues(cues, id: job.id, type: .translated)
                 stageStates[.translating] = .done
                 stageProgress[.translating] = 1
@@ -199,13 +222,20 @@ final class PipelineOrchestrator: ObservableObject {
                 stageProgress[.translating] = 1
             }
 
+            try Task.checkCancellation()
+
             updatedJob.stage = .rendering
             updatedJob.updatedAt = Date()
             try jobStore.save(job: updatedJob)
             readyForReview = true
             isRunning = false
             currentStage = .rendering
+        } catch is CancellationError {
+            // Task was cancelled by user — clean up silently, do not set error state
+            isRunning = false
+            return
         } catch {
+            guard !Task.isCancelled else { isRunning = false; return }
             self.error = (error as? SubStampError) ?? .translationError(underlying: error)
             markFailed()
         }
@@ -233,6 +263,8 @@ final class PipelineOrchestrator: ObservableObject {
         // s2: Sub 1 Final Leg (A->T1 or E->T1)
         // s3: Sub 2 Final Leg (A->T2 or E->T2)
 
+        try Task.checkCancellation()
+
         if lang1NeedsTranslation {
             if job.subtitle1Mode == .pivot {
                 guard let sessionA = frameworkSession1, let sessionB = frameworkSession2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -40)) }
@@ -252,6 +284,8 @@ final class PipelineOrchestrator: ObservableObject {
                 primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
             }
         }
+
+        try Task.checkCancellation()
 
         if lang2NeedsTranslation {
             if job.subtitle2Mode == .pivot {
@@ -517,6 +551,8 @@ final class PipelineOrchestrator: ObservableObject {
 
     private func runTranslationOnly(job: JobModel) async {
         do {
+            try Task.checkCancellation()
+
             currentStage = .translating
             stageStates[.translating] = .active
             var updatedJob = job
@@ -525,6 +561,9 @@ final class PipelineOrchestrator: ObservableObject {
             try jobStore.save(job: updatedJob)
             
             cues = try await performTranslations(job: job, sourceCues: cues)
+
+            try Task.checkCancellation()
+
             try jobStore.saveCues(cues, id: job.id, type: .translated)
             stageStates[.translating] = .done
             stageProgress[.translating] = 1
@@ -534,7 +573,11 @@ final class PipelineOrchestrator: ObservableObject {
             readyForReview = true
             isRunning = false
             currentStage = .rendering
+        } catch is CancellationError {
+            isRunning = false
+            return
         } catch {
+            guard !Task.isCancelled else { isRunning = false; return }
             self.error = (error as? SubStampError) ?? .translationError(underlying: error)
             markFailed()
         }
@@ -553,6 +596,8 @@ final class PipelineOrchestrator: ObservableObject {
 
     private func runRenderExport(job: JobModel) async {
         do {
+            try Task.checkCancellation()
+
             let asset = AVAsset(url: job.videoURL)
             currentStage = .rendering
             stageStates[.rendering] = .active
@@ -570,6 +615,9 @@ final class PipelineOrchestrator: ObservableObject {
                 layout: job.subtitleLayout,
                 timeRange: range
             )
+
+            try Task.checkCancellation()
+
             stageStates[.rendering] = .done
             stageProgress[.rendering] = 1
 
@@ -587,6 +635,9 @@ final class PipelineOrchestrator: ObservableObject {
                     self?.stageProgress[.exporting] = progress
                 }
             }
+
+            try Task.checkCancellation()
+
             stageStates[.exporting] = .done
             stageProgress[.exporting] = 1
             outputURL = exportedURL
@@ -597,7 +648,11 @@ final class PipelineOrchestrator: ObservableObject {
             try jobStore.save(job: updatedJob)
             currentStage = .completed
             isRunning = false
+        } catch is CancellationError {
+            isRunning = false
+            return
         } catch {
+            guard !Task.isCancelled else { isRunning = false; return }
             self.error = (error as? SubStampError) ?? .exportFailed(underlying: error)
             markFailed()
         }

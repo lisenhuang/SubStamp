@@ -48,6 +48,7 @@ final class TranslationService {
 
         // Fallback for cues that weren't filled by chunk translation (e.g., marker parsing failed).
         for index in output.indices {
+            try Task.checkCancellation()
             if output[index].secondaryText != nil { continue }
             do {
                 let response = try await session.translate(output[index].primaryText)

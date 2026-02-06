@@ -63,7 +63,13 @@ struct ProcessingView: View {
         .onReceive(orchestrator.$error) { if $0 != nil { BackgroundTaskManager.shared.end(success: false) } }
         .onChange(of: orchestrator.stageProgress) { _, _ in updateBackgroundProgress() }
         .onChange(of: keepScreenAwake) { _, newValue in UIApplication.shared.isIdleTimerDisabled = newValue }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+            // Clear local session references so stale sessions can't be used
+            session1 = nil
+            session2 = nil
+            session3 = nil
+        }
     }
 
     private var stageList: some View {

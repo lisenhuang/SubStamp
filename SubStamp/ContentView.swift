@@ -80,7 +80,6 @@ struct ContentView: View {
                         resumeTranscribed: resumeTranscribed,
                         resumeTranslated: resumeTranslated,
                         onBack: {
-                            orchestrator.cancel()
                             step = .pickVideo
                         },
                         onChangeSettings: { resetToSetup() },
@@ -202,6 +201,7 @@ struct ContentView: View {
     }
 
     private func resetToSetup() {
+        orchestrator.cancel()
         step = .setup
         selectedVideoURL = nil
         metadata = nil

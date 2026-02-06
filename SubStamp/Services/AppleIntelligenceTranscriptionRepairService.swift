@@ -78,6 +78,8 @@ final class AppleIntelligenceTranscriptionRepairService {
         progressHandler(0, cues.count)
 
         for (chunkIndex, chunk) in chunks.enumerated() {
+            try Task.checkCancellation()
+
             let repaired = await repairChunkWithFallback(
                 chunk,
                 original: sourceBCP47,

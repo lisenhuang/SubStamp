@@ -162,6 +162,8 @@ final class AppleIntelligenceTranslationService {
         var failuresByCueID: [UUID: String] = [:]
 
         for (chunkIndex, chunk) in chunks.enumerated() {
+            try Task.checkCancellation()
+
             let chunkResult = await translateChunkWithFallback(
                 chunk,
                 original: sourceBCP47,
