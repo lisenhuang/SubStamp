@@ -27,8 +27,13 @@ struct SubStampApp: App {
 
     private func configureAudioSession() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .default,
+                options: [.mixWithOthers]
+            )
+            // Don't activate eagerly — let AVPlayer activate on demand
+            // so other audio apps (Spotify, Podcasts, etc.) keep playing.
         } catch {
             print("Failed to set audio session category: \(error.localizedDescription)")
         }
