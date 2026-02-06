@@ -144,7 +144,12 @@ struct SetupView: View {
 
             if let lang2 = language2Identifier {
                 subtitle2Enabled = true
-                selectedSubtitle2ID = mappedSubtitleSelection(lang2)
+                let desiredSubtitle2ID = lang2 == transcriptionLocaleIdentifier ? "transcript" : lang2
+                if desiredSubtitle2ID == "transcript" {
+                    selectedSubtitle2ID = "transcript"
+                } else {
+                    selectedSubtitle2ID = mappedSubtitleSelection(lang2)
+                }
                 if selectedSubtitle2ID == nil { subtitle2Enabled = false }
             } else {
                 subtitle2Enabled = false
