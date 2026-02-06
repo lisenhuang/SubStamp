@@ -1,0 +1,168 @@
+/* 日本語 — SubStamp ローカライズ */
+
+/* SettingsMenuButton */
+"Display Language" = "表示言語";
+"Appearance" = "外観";
+"System" = "システム";
+"Light" = "ライト";
+"Dark" = "ダーク";
+
+/* WizardHeaderView */
+"Step %lld of %lld" = "ステップ %1$lld / %2$lld";
+
+/* SetupView - Step 1 */
+"Setup languages" = "言語設定";
+"Select your transcription and subtitle options." = "文字起こしと字幕のオプションを選択してください。";
+"Audio language" = "音声言語";
+"Select the language spoken in the video to produce accurate subtitles." = "正確な字幕を生成するために、動画で使用されている言語を選択してください。";
+"Must match the language spoken in the video. Incorrect selection will cause transcription to fail." = "動画の音声言語と一致させてください。誤った選択は文字起こしの失敗につながります。";
+"Subtitle 1" = "字幕 1";
+"Transcript (Audio Language)" = "原文（音声言語）";
+"Subtitle 2" = "字幕 2";
+"Add Subtitle 2" = "字幕 2 を追加";
+"Select language" = "言語を選択";
+"Translation not available for this audio language." = "この音声言語では翻訳を利用できません。";
+"May reduce quality (via English)" = "品質が低下する可能性があります（英語経由）";
+"(via English)" = "（英語経由）";
+"Translation engine" = "翻訳エンジン";
+"Framework" = "システム翻訳";
+"AI" = "AI";
+"AI uses the on-device system model. Framework uses TranslationSession and may require downloading language assets." = "AIはデバイス上のシステムモデルを使用します。システム翻訳はTranslationSessionを使用し、言語リソースのダウンロードが必要な場合があります。";
+"AI Not Enabled" = "AIが有効になっていません";
+"Open Settings Guide" = "設定ガイドを開く";
+"Cancel" = "キャンセル";
+"To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how." = "AI翻訳を使用するには、iPhoneの設定でAIを有効にする必要があります。「設定ガイドを開く」をタップして詳細をご確認ください。";
+"Transcription quality" = "文字起こし品質";
+"Fix transcription mistakes (AI)" = "文字起こしの誤りを修正（AI）";
+"Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export." = "オプション。字幕の整列を維持しながら（同じ数/順序）、明らかな音声認識エラーを校正します。エクスポート前に確認・編集できます。";
+"Model readiness" = "モデル準備状態";
+"Speech assets" = "音声リソース";
+"Translation model" = "翻訳モデル";
+"Download required assets" = "必要なリソースをダウンロード";
+"Continue" = "続行";
+
+/* VideoPickerView - Step 2 */
+"Back" = "戻る";
+"Pick a video" = "動画を選択";
+"Choose a clip and confirm it has audio." = "クリップを選択し、音声が含まれていることを確認してください。";
+"Choose video" = "動画を選択";
+"Loading video…" = "動画を読み込み中…";
+"Video details" = "動画の詳細";
+"Duration" = "再生時間";
+"Resolution" = "解像度";
+"Estimated size" = "推定サイズ";
+"Audio track" = "音声トラック";
+"Yes" = "あり";
+"No" = "なし";
+"Long video detected. Consider running a 1-minute test first." = "長い動画が検出されました。まず1分間のテストを実行することをお勧めします。";
+"Test on first 1 minute" = "最初の1分でテスト";
+"Generate subtitles" = "字幕を生成";
+"Could not load video. Try another clip." = "動画を読み込めませんでした。別のクリップをお試しください。";
+
+/* ProcessingView - Step 3 */
+"Processing" = "処理中";
+"We'll continue even if the screen locks." = "画面がロックされても処理を続行します。";
+"Ensuring models are ready." = "モデルの準備を確認中。";
+"Transcribing" = "文字起こし中";
+"Generating time-coded subtitles." = "タイムコード付き字幕を生成中。";
+"Translating" = "翻訳中";
+"Bilingual translation." = "二言語翻訳。";
+"Single track translation." = "単一トラック翻訳。";
+"Rendering" = "レンダリング中";
+"Burning subtitles into video." = "動画に字幕を焼き込み中。";
+"Exporting" = "エクスポート中";
+"Writing output file." = "出力ファイルを書き込み中。";
+"Review" = "レビュー";
+"Tips" = "ヒント";
+"iOS may stop work in the background. Keep the screen awake for fastest processing." = "iOSはバックグラウンドで処理を停止する場合があります。最速で処理するには画面を点灯したままにしてください。";
+"Keep screen awake" = "画面を点灯したままにする";
+"Failed" = "失敗";
+"Retry" = "再試行";
+"Change settings" = "設定を変更";
+"Cancel processing?" = "処理をキャンセルしますか？";
+"Stop" = "停止";
+"Go back?" = "戻りますか？";
+"Stop and go back" = "停止して戻る";
+"Background" = "バックグラウンド";
+
+/* SubtitleReviewView */
+"Subtitle style" = "字幕スタイル";
+"Font size" = "フォントサイズ";
+"Position" = "位置";
+"Small" = "小";
+"Medium" = "中";
+"Large" = "大";
+"Text shadow" = "テキストシャドウ";
+"Top" = "上";
+"Middle" = "中央";
+"Bottom" = "下";
+"Copy subtitles" = "字幕をコピー";
+"Continue to export" = "エクスポートを続行";
+"Abandon and restart" = "破棄してやり直す";
+"Abandon this job?" = "このジョブを破棄しますか？";
+"All progress on this video will be lost." = "この動画のすべての進捗が失われます。";
+"Copied" = "コピー完了";
+"OK" = "OK";
+"Copied as SRT to your clipboard." = "SRT形式でクリップボードにコピーしました。";
+
+/* ResultView - Step 4 */
+"Result" = "結果";
+"Your subtitled video is ready." = "字幕付き動画の準備ができました。";
+"Export details" = "エクスポート詳細";
+"Preset" = "プリセット";
+"Saving..." = "保存中...";
+"Save to Photos" = "写真に保存";
+"Share" = "共有";
+"Start another" = "別の動画を処理";
+"Not saved to Photos" = "写真に保存されていません";
+"You haven't saved this video to Photos yet. Continue anyway?" = "この動画はまだ写真に保存されていません。続行しますか？";
+"Saved to Photos!" = "写真に保存しました！";
+"Saving to Photos..." = "写真に保存中...";
+"Failed:" = "失敗:";
+
+/* VideoPreviewView */
+"No video selected" = "動画が選択されていません";
+
+/* SubtitleCueRow */
+"Primary subtitle" = "主字幕";
+"Secondary subtitle" = "副字幕";
+"Translation error" = "翻訳エラー";
+"Preview" = "プレビュー";
+"Split" = "分割";
+"Merge" = "結合";
+
+/* PipelineStageRow */
+"Pending" = "待機中";
+"Running" = "実行中";
+"Done" = "完了";
+
+/* AssetStatusCard */
+"Required" = "必要";
+"Downloading" = "ダウンロード中";
+"Ready" = "準備完了";
+
+/* ContentView */
+"Resume unfinished job?" = "未完了のジョブを再開しますか？";
+"Resume" = "再開";
+"Discard" = "破棄";
+"We found a previous job that didn't finish. Would you like to resume?" = "完了しなかった前回のジョブが見つかりました。再開しますか？";
+
+/* Enums - Error descriptions */
+"Unable to install required language assets." = "必要な言語リソースをインストールできません。";
+"This language pair isn't supported for translation." = "この言語ペアは翻訳に対応していません。";
+"The selected video doesn't contain an audio track." = "選択した動画に音声トラックが含まれていません。";
+"Speech analysis failed." = "音声分析に失敗しました。";
+"Translation failed." = "翻訳に失敗しました。";
+"Export failed." = "エクスポートに失敗しました。";
+"Not enough storage available." = "十分なストレージがありません。";
+"Background processing was cancelled." = "バックグラウンド処理がキャンセルされました。";
+"We couldn't find the saved job to resume." = "再開するための保存済みジョブが見つかりませんでした。";
+"Check storage and try downloading again." = "ストレージを確認して再度ダウンロードしてください。";
+"Choose a different translation language." = "別の翻訳言語を選択してください。";
+"Pick a different video or record one with audio." = "別の動画を選択するか、音声付きで録画してください。";
+"Try again or switch the transcription language." = "再試行するか、文字起こし言語を変更してください。";
+"Retry translation or continue with transcript only." = "翻訳を再試行するか、原文のみで続行してください。";
+"Try exporting again or choose a lower quality preset." = "再度エクスポートするか、低品質のプリセットを選択してください。";
+"Free up space and retry." = "空き容量を確保して再試行してください。";
+"Resume processing from the last checkpoint." = "最後のチェックポイントから処理を再開してください。";
+"Start a new project." = "新しいプロジェクトを開始してください。";

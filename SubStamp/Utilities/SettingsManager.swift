@@ -40,6 +40,7 @@ final class SettingsManager: ObservableObject {
         DisplayLanguageOption(id: nil, label: "System Default", nativeLabel: "System"),
         DisplayLanguageOption(id: "en", label: "English", nativeLabel: "English"),
         DisplayLanguageOption(id: "zh-Hans", label: "简体中文", nativeLabel: "简体中文"),
+        DisplayLanguageOption(id: "ja", label: "日本語", nativeLabel: "日本語"),
         DisplayLanguageOption(id: "ko", label: "한국어", nativeLabel: "한국어"),
     ]
 
