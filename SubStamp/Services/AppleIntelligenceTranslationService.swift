@@ -219,12 +219,8 @@ final class AppleIntelligenceTranslationService {
                         AppLog.append("[AI-TRANSLATE] fallback successful for target=\(targetID) cueIndex=\(index)")
 #endif
                     } else {
-                        // Fallback also failed, set error
-                        if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
-                            output[index].secondaryText = "AI ERROR: \(failure)"
-                        } else {
-                            output[index].secondaryText = "AI ERROR: Missing translation"
-                        }
+                        // Both AI and fallback failed — keep original text as subtitle
+                        output[index].secondaryText = originalText
                         output[index].hasTranslationError = true
 #if DEBUG
                         missingCount += 1
@@ -238,18 +234,8 @@ final class AppleIntelligenceTranslationService {
                     continue
                 }
                 if let reason = invalidTranslationReason(translated, original: originalText, targetID: targetID) {
-                    output[index].hasTranslationError = true
-#if DEBUG
-                    invalidCount += 1
-                    if loggedSamples < 6 {
-                        let origPreview = originalText.replacingOccurrences(of: "\n", with: " ").prefix(60)
-                        let transPreview = translated.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ").prefix(60)
-                        AppLog.append("[AI-TRANSLATE] invalid(\(reason)) target=\(targetID) cueIndex=\(index) id=\(output[index].id.uuidString) original='\(origPreview)' translated='\(transPreview)'")
-                        loggedSamples += 1
-                    }
-#endif
                     if translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        // Try fallback translation for empty/invalid AI translation
+                        // Empty translation — try fallback
                         let targetLanguage = Locale.Language(identifier: targetID)
                         if let fallbackTranslation = await fallbackTranslate(
                             text: originalText,
@@ -262,14 +248,21 @@ final class AppleIntelligenceTranslationService {
                             AppLog.append("[AI-TRANSLATE] fallback successful for invalid translation target=\(targetID) cueIndex=\(index)")
 #endif
                         } else {
-                            // Fallback also failed, set error
-                            if let failure = failuresByCueID[output[index].id], !failure.isEmpty {
-                                output[index].secondaryText = "AI ERROR: \(failure)"
-                            } else {
-                                output[index].secondaryText = "AI ERROR: \(reason)"
-                            }
+                            // Both AI and fallback failed — keep original text
+                            output[index].secondaryText = originalText
+                            output[index].hasTranslationError = false
                         }
                     }
+                    // Non-empty translation (possibly from Framework fallback) — accept as-is
+#if DEBUG
+                    invalidCount += 1
+                    if loggedSamples < 6 {
+                        let origPreview = originalText.replacingOccurrences(of: "\n", with: " ").prefix(60)
+                        let transPreview = translated.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ").prefix(60)
+                        AppLog.append("[AI-TRANSLATE] invalid(\(reason)) target=\(targetID) cueIndex=\(index) id=\(output[index].id.uuidString) original='\(origPreview)' translated='\(transPreview)'")
+                        loggedSamples += 1
+                    }
+#endif
                 }
             }
             outputByTarget[targetID] = output
@@ -359,38 +352,28 @@ final class AppleIntelligenceTranslationService {
         } catch {
 #if DEBUG
             let reason = isSafetyGuardrailsError(error) ? "safety" : "error"
-            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues) reason=\(reason): \(error.localizedDescription)")
+            AppLog.append("[AI-TRANSLATE] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues) reason=\(reason): \(error.localizedDescription) — falling back to Translation Framework")
 #endif
-            guard cues.count > 1 else {
-                guard let cue = cues.first else { return ChunkTranslationResult(translations: [:], failures: [:]) }
-                return ChunkTranslationResult(translations: [:], failures: [cue.id: error.localizedDescription])
+            // AI failed for this chunk — fallback to Translation Framework per cue
+            let sourceLocale = Locale(identifier: original)
+            var translations: [String: [UUID: String]] = [:]
+            var failures: [UUID: String] = [:]
+
+            for cue in cues {
+                let text = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+
+                for targetID in targetIDs {
+                    let targetLang = Locale.Language(identifier: targetID)
+                    if let translated = await fallbackTranslate(text: text, source: sourceLocale, target: targetLang) {
+                        translations[targetID, default: [:]][cue.id] = translated
+                    } else {
+                        failures[cue.id] = error.localizedDescription
+                    }
+                }
             }
-            let midpoint = cues.count / 2
-            let left = Array(cues[..<midpoint])
-            let right = Array(cues[midpoint...])
-            let leftRes = await translateChunkWithFallback(
-                left,
-                original: original,
-                sourceLabel: sourceLabel,
-                targetIDs: targetIDs,
-                targetHints: targetHints,
-                chunkIndex: chunkIndex,
-                chunkCount: chunkCount,
-                indexByID: indexByID,
-                session: session
-            )
-            let rightRes = await translateChunkWithFallback(
-                right,
-                original: original,
-                sourceLabel: sourceLabel,
-                targetIDs: targetIDs,
-                targetHints: targetHints,
-                chunkIndex: chunkIndex,
-                chunkCount: chunkCount,
-                indexByID: indexByID,
-                session: session
-            )
-            return mergeChunkResults(leftRes, rightRes)
+
+            return ChunkTranslationResult(translations: translations, failures: failures)
         }
     }
 

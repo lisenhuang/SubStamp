@@ -167,31 +167,10 @@ final class AppleIntelligenceTranscriptionRepairService {
             )
         } catch {
 #if DEBUG
-            AppLog.append("[AI-TRANSCRIPT] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues): \(error.localizedDescription)")
+            AppLog.append("[AI-TRANSCRIPT] chunk \(chunkIndex + 1)/\(chunkCount) failed (\(cues.count) cues): \(error.localizedDescription) — keeping original transcription")
 #endif
-            guard cues.count > 1 else { return [:] }
-            let midpoint = cues.count / 2
-            let left = Array(cues[..<midpoint])
-            let right = Array(cues[midpoint...])
-            let leftRes = await repairChunkWithFallback(
-                left,
-                original: original,
-                sourceLabel: sourceLabel,
-                chunkIndex: chunkIndex,
-                chunkCount: chunkCount,
-                indexByID: indexByID,
-                session: session
-            )
-            let rightRes = await repairChunkWithFallback(
-                right,
-                original: original,
-                sourceLabel: sourceLabel,
-                chunkIndex: chunkIndex,
-                chunkCount: chunkCount,
-                indexByID: indexByID,
-                session: session
-            )
-            return mergeRepairs(leftRes, rightRes)
+            // AI failed — keep original transcription for all cues in this chunk (no retry)
+            return [:]
         }
     }
 
