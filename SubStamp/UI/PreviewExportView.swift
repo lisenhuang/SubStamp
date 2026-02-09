@@ -157,14 +157,20 @@ struct PreviewExportView: View {
                         }
                         .padding(AppSpacing.l)
                     }
-                    .onChange(of: orchestrator.stageStates[.translating]) { _, newValue in
-                        if newValue == .active {
-                            withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                    .onChange(of: orchestrator.currentStage) { _, newValue in
+                        if newValue == .translating || newValue == .rendering || newValue == .exporting {
+                            // Small delay to let SwiftUI render the progress section first
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                            }
                         }
                     }
-                    .onChange(of: orchestrator.stageStates[.rendering]) { _, newValue in
-                        if newValue == .active {
-                            withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                    .onChange(of: orchestrator.isRunning) { _, isRunning in
+                        // Additional trigger for rendering/exporting since it depends on isRunning + stage
+                        if isRunning && (orchestrator.currentStage == .rendering || orchestrator.currentStage == .exporting) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                            }
                         }
                     }
                 }
