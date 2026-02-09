@@ -31,6 +31,8 @@ struct PreviewExportView: View {
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
     @State private var translationsAreStale = false
+    // Track whether cues changed since last export (for "Next" vs "Export" button)
+    @State private var cuesChangedSinceExport = false
 
     @Environment(\.locale) private var locale
 
@@ -102,6 +104,11 @@ struct PreviewExportView: View {
         return !orchestrator.translationComplete || translationsAreStale
     }
 
+    /// Whether we have a valid previous export (came back from Step 4 with no changes)
+    private var hasValidExport: Bool {
+        orchestrator.outputURL != nil && !cuesChangedSinceExport
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -139,12 +146,12 @@ struct PreviewExportView: View {
 
                             cueList
 
-                            // Export section (render/export progress or Export button)
-                            exportSection
-
-                            // Translation progress + translate button (at bottom)
+                            // Translation progress + translate button
                             translationProgressSection
                             translateButtonSection
+
+                            // Export / render progress / Next button
+                            exportSection
 
                             // Scroll anchor
                             Color.clear.frame(height: 1).id("bottomAnchor")
@@ -177,6 +184,10 @@ struct PreviewExportView: View {
         .onAppear {
             player = AVPlayer(url: videoURL)
             prepareTranslationConfigs()
+            // Re-snapshot translations if returning with completed translation (e.g. from Step 4)
+            if orchestrator.translationComplete {
+                snapshotTranslations()
+            }
         }
         .onDisappear {
             player?.pause()
@@ -248,7 +259,7 @@ struct PreviewExportView: View {
         } else if showTranslateButton {
             VStack(spacing: AppSpacing.s) {
                 if translationsAreStale {
-                    Text("Original transcription was edited. Re-translate to update.")
+                    Text("Original transcription was edited. You can re-translate or export directly.")
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.warning)
                 }
@@ -274,6 +285,7 @@ struct PreviewExportView: View {
                 orchestrator.job = updated
                 try? jobStore.save(job: updated)
                 SetupPreferences.saveSubtitleStyle(newValue)
+                cuesChangedSinceExport = true
             }
         )
 
@@ -382,6 +394,16 @@ struct PreviewExportView: View {
                         .stroke(AppColors.cardBorder, lineWidth: 1)
                 )
             }
+        } else if hasValidExport {
+            // Came back from Step 4 with no changes — just go forward
+            PrimaryButton(
+                title: "Next",
+                systemImage: "arrow.right"
+            ) {
+                if let url = orchestrator.outputURL {
+                    onExportComplete(url)
+                }
+            }
         } else if canExport {
             PrimaryButton(
                 title: "Export Video",
@@ -455,6 +477,7 @@ struct PreviewExportView: View {
     }
 
     private func markTranslationsStale() {
+        cuesChangedSinceExport = true
         guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
         // Check if any original transcription differs from snapshot
         for cue in orchestrator.cues {
@@ -496,6 +519,7 @@ struct PreviewExportView: View {
             hasTranslationError: cue.hasTranslationError
         )
         orchestrator.cues.insert(newCue, at: index + 1)
+        cuesChangedSinceExport = true
         if orchestrator.translationComplete { translationsAreStale = true }
     }
 
@@ -522,6 +546,7 @@ struct PreviewExportView: View {
         )
         orchestrator.cues[index] = merged
         orchestrator.cues.remove(at: index + 1)
+        cuesChangedSinceExport = true
         if orchestrator.translationComplete { translationsAreStale = true }
     }
 

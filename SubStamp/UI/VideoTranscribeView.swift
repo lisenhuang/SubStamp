@@ -32,40 +32,55 @@ struct VideoTranscribeView: View {
     private let jobStore = JobStore()
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: AppSpacing.l) {
-                backButton
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(spacing: AppSpacing.l) {
+                    backButton
 
-                WizardHeaderView(
-                    step: 2,
-                    total: 4,
-                    title: "Video & Transcribe",
-                    subtitle: "Select a video, then transcribe the audio."
-                )
+                    WizardHeaderView(
+                        step: 2,
+                        total: 4,
+                        title: "Video & Transcribe",
+                        subtitle: "Select a video, then transcribe the audio."
+                    )
 
-                VideoPreviewView(url: selectedVideoURL)
-                    .frame(height: 240)
+                    VideoPreviewView(url: selectedVideoURL)
+                        .frame(height: 240)
 
-                videoPicker
+                    videoPicker
 
-                if isLoadingVideo {
-                    ProgressView("Loading video…")
+                    if isLoadingVideo {
+                        ProgressView("Loading video…")
+                    }
+
+                    if let metadata {
+                        metadataCard(metadata)
+                    }
+
+                    if let videoError {
+                        Text(videoError)
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.error)
+                    }
+
+                    transcriptionSection
+
+                    // Next button (shown when returning from Step 3 with transcription already done)
+                    if orchestrator.transcriptionComplete && !orchestrator.isRunning {
+                        PrimaryButton(title: "Next", systemImage: "arrow.right") {
+                            onNext()
+                        }
+                    }
+
+                    Color.clear.frame(height: 1).id("bottomAnchor")
                 }
-
-                if let metadata {
-                    metadataCard(metadata)
-                }
-
-                if let videoError {
-                    Text(videoError)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.error)
-                }
-
-                transcriptionSection
-
+                .padding(AppSpacing.l)
             }
-            .padding(AppSpacing.l)
+            .onChange(of: orchestrator.stageStates[.transcribing]) { _, newValue in
+                if newValue == .active {
+                    withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                }
+            }
         }
         .background(AppColors.background)
         .onChange(of: pickerItem) { _, newValue in
