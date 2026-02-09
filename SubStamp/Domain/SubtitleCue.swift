@@ -6,6 +6,7 @@ struct SubtitleCue: Identifiable, Codable, Hashable {
     var end: CMTime
     var primaryText: String
     var secondaryText: String?
+    var originalTranscription: String?
     var hasTranslationError: Bool
 
     init(
@@ -14,6 +15,7 @@ struct SubtitleCue: Identifiable, Codable, Hashable {
         end: CMTime,
         primaryText: String,
         secondaryText: String? = nil,
+        originalTranscription: String? = nil,
         hasTranslationError: Bool = false
     ) {
         self.id = id
@@ -21,6 +23,7 @@ struct SubtitleCue: Identifiable, Codable, Hashable {
         self.end = end
         self.primaryText = primaryText
         self.secondaryText = secondaryText
+        self.originalTranscription = originalTranscription
         self.hasTranslationError = hasTranslationError
     }
 
@@ -47,6 +50,7 @@ private extension SubtitleCue {
         case endSeconds
         case primaryText
         case secondaryText
+        case originalTranscription
         case hasTranslationError
     }
 }
@@ -59,6 +63,8 @@ extension SubtitleCue {
         let endSeconds = try container.decode(Double.self, forKey: .endSeconds)
         primaryText = try container.decode(String.self, forKey: .primaryText)
         secondaryText = try container.decodeIfPresent(String.self, forKey: .secondaryText)
+        let decodedOriginal = try container.decodeIfPresent(String.self, forKey: .originalTranscription)
+        originalTranscription = decodedOriginal ?? primaryText
         hasTranslationError = try container.decodeIfPresent(Bool.self, forKey: .hasTranslationError) ?? false
         start = CMTime(seconds: startSeconds, preferredTimescale: 600)
         end = CMTime(seconds: endSeconds, preferredTimescale: 600)
@@ -71,6 +77,7 @@ extension SubtitleCue {
         try container.encode(end.seconds, forKey: .endSeconds)
         try container.encode(primaryText, forKey: .primaryText)
         try container.encodeIfPresent(secondaryText, forKey: .secondaryText)
+        try container.encodeIfPresent(originalTranscription, forKey: .originalTranscription)
         try container.encode(hasTranslationError, forKey: .hasTranslationError)
     }
 }

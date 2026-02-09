@@ -4,9 +4,8 @@ import Translation
 struct ContentView: View {
     enum WizardStep {
         case setup
-        case pickVideo
-        case processing
-        case review
+        case videoAndTranscribe
+        case previewAndExport
         case result
     }
 
@@ -30,19 +29,10 @@ struct ContentView: View {
 
     @State private var resumeJob: JobModel?
     @State private var showResumeAlert = false
-    @State private var resumeTranscribed: [SubtitleCue]?
-    @State private var resumeTranslated: [SubtitleCue]?
 
     private let jobStore = JobStore()
 
     @Environment(\.locale) private var locale
-
-    private var subtitleMode: SubtitleMode {
-        if let lang2 = language2Locale, lang2 != language1Locale {
-            return .bilingual
-        }
-        return .single
-    }
 
     var body: some View {
         ZStack {
@@ -60,78 +50,50 @@ struct ContentView: View {
                     fixTranscriptionWithAppleIntelligence: $fixTranscriptionWithAppleIntelligence,
                     onContinue: {
                         saveSetupSelections()
-                        step = .pickVideo
+                        step = .videoAndTranscribe
                     }
                 )
-            case .pickVideo:
-                VideoPickerView(
+            case .videoAndTranscribe:
+                VideoTranscribeView(
+                    orchestrator: orchestrator,
                     selectedVideoURL: $selectedVideoURL,
                     metadata: $metadata,
                     isTestClip: $isTestClip,
-                    onBack: { step = .setup }
-                ) {
-                    createJobAndStart()
-                }
-            case .processing:
-                if let job = activeJob {
-                    ProcessingView(
+                    activeJob: $activeJob,
+                    transcriptionLocale: transcriptionLocaleIdentifier,
+                    language1Locale: language1Locale,
+                    subtitle1Mode: subtitle1Mode,
+                    language2Locale: language2Locale,
+                    subtitle2Mode: subtitle2Mode,
+                    translationProvider: translationProvider,
+                    fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
+                    onBack: { step = .setup },
+                    onNext: { step = .previewAndExport }
+                )
+            case .previewAndExport:
+                if let videoURL = selectedVideoURL {
+                    PreviewExportView(
                         orchestrator: orchestrator,
-                        job: job,
-                        resumeTranscribed: resumeTranscribed,
-                        resumeTranslated: resumeTranslated,
-                        onBack: {
-                            step = .pickVideo
-                        },
-                        onChangeSettings: { resetToSetup() },
-                        onCompleted: { url in
+                        activeJob: $activeJob,
+                        videoURL: videoURL,
+                        onBack: { step = .videoAndTranscribe },
+                        onExportComplete: { url in
                             outputURL = url
                             step = .result
                         },
-                        onReview: {
-                            step = .review
-                        }
-                    )
-                }
-            case .review:
-                if activeJob != nil, let videoURL = selectedVideoURL {
-                    let styleBinding = Binding<SubtitleStyle>(
-                        get: { activeJob?.subtitleStyle ?? SubtitleStyle() },
-                        set: { newValue in
-                            guard var updated = activeJob else { return }
-                            updated.subtitleStyle = newValue
-                            activeJob = updated
-                            orchestrator.job = updated
-                            try? jobStore.save(job: updated)
-                            SetupPreferences.saveSubtitleStyle(newValue)
-                        }
-                    )
-                    SubtitleReviewView(
-                        cues: $orchestrator.cues,
-                        style: styleBinding,
-                        videoURL: videoURL,
-                        mode: subtitleMode,
-                        onContinue: {
-                            orchestrator.continueAfterReview()
-                            step = .processing
-                        },
-                        onBack: {
-                            step = .processing
-                        },
-                        onAbandon: {
-                            resetToSetup()
-                        }
+                        onAbandon: { resetToSetup() }
                     )
                 }
             case .result:
                 if let outputURL, let job = activeJob {
-                    ResultView(outputURL: outputURL, exportPreset: job.exportPreset) {
-                        resetToSetup()
-                    }
+                    ResultView(
+                        outputURL: outputURL,
+                        exportPreset: job.exportPreset,
+                        onBackToEdit: { step = .previewAndExport },
+                        onStartOver: { resetToSetup() }
+                    )
                 }
             }
-        }
-        .onChange(of: orchestrator.readyForReview) { _, ready in
-            if ready { step = .review }
         }
         .alert(Text(String(localized: "Resume unfinished job?", bundle: .forLocale(locale))), isPresented: $showResumeAlert) {
             Button(String(localized: "Resume", bundle: .forLocale(locale))) { resumeIncompleteJob() }
@@ -167,37 +129,12 @@ struct ContentView: View {
     private func saveSetupSelections() {
         SetupPreferences.save(
             transcriptionLocale: transcriptionLocaleIdentifier,
-            subtitleMode: subtitleMode,
+            subtitleMode: language2Locale == nil ? .single : .bilingual,
             translationTarget: language2Locale,
             translationProvider: translationProvider,
             fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence
         )
         SetupPreferences.saveLanguages(language1: language1Locale, language2: language2Locale)
-    }
-
-    private func createJobAndStart() {
-        guard let selectedVideoURL else { return }
-        let savedStyle = SetupPreferences.loadSubtitleStyle()
-        let job = JobModel(
-            videoURL: selectedVideoURL,
-            transcriptionLocale: transcriptionLocaleIdentifier,
-            language1Locale: language1Locale,
-            subtitle1Mode: subtitle1Mode,
-            subtitleMode: language2Locale == nil ? .single : .bilingual,
-            translationTargetLocale: language2Locale,
-            subtitle2Mode: subtitle2Mode,
-            subtitleLayout: (language2Locale == nil) ? .single : .stacked,
-            subtitleStyle: savedStyle,
-            exportPreset: .balanced,
-            translationProvider: translationProvider,
-            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
-            isTestClip: isTestClip
-        )
-        activeJob = job
-        resumeTranscribed = nil
-        resumeTranslated = nil
-        try? jobStore.save(job: job)
-        step = .processing
     }
 
     private func resetToSetup() {
@@ -231,8 +168,23 @@ struct ContentView: View {
         translationProvider = job.translationProvider
         fixTranscriptionWithAppleIntelligence = job.fixTranscriptionWithAppleIntelligence
 
-        resumeTranscribed = jobStore.loadCues(id: job.id, type: .transcribed) ?? []
-        resumeTranslated = jobStore.loadCues(id: job.id, type: .translated)
-        step = .processing
+        let transcribed = jobStore.loadCues(id: job.id, type: .transcribed)
+        let translated = jobStore.loadCues(id: job.id, type: .translated)
+
+        if let translated, !translated.isEmpty {
+            // Has translated cues → go to preview/export with both flags set
+            orchestrator.cues = translated
+            orchestrator.transcriptionComplete = true
+            orchestrator.translationComplete = true
+            step = .previewAndExport
+        } else if let transcribed, !transcribed.isEmpty {
+            // Has transcribed cues → go to preview/export with transcription done
+            orchestrator.cues = transcribed
+            orchestrator.transcriptionComplete = true
+            step = .previewAndExport
+        } else {
+            // No cues saved yet → go to video & transcribe
+            step = .videoAndTranscribe
+        }
     }
 }

@@ -61,8 +61,24 @@ Info.plist keys are configured via Xcode build settings (`INFOPLIST_KEY_*`), inc
 
 Run tests from Xcode, or with `xcodebuild test` using the `SubStamp` scheme and a suitable destination.
 
+## Known limitations
+
+### WeChat video sharing
+
+When sharing an exported video to WeChat via the iOS share sheet, WeChat receives it as a **file** rather than a video message — the chat shows no inline preview or playback. This is a WeChat limitation: its share extension does not treat videos from third-party apps the same way it treats videos shared from the Photos app.
+
+To get proper video previews in WeChat (thumbnail, inline playback), the app would need to integrate the [WeChat Open SDK](https://developers.weixin.qq.com/doc/oplatform/Mobile_App/Share_and_Favorites/iOS.html) and share via `WXMediaMessage` + `WXVideoObject`. This requires a WeChat developer account, a registered App ID, and Universal Links configuration, which is beyond the current scope of this project.
+
+**Workaround:** Save the video to Photos first, then share it to WeChat from the Photos app — WeChat will send it as a proper video message with preview.
+
+### Apple Intelligence rate limiting
+
+The on-device Foundation Models framework (`SystemLanguageModel`) used for transcription repair and AI translation has an undocumented rate limit. In the foreground it is unlikely to trigger under normal use, but background processing has a stricter budget and long videos with many subtitle cues may hit [`GenerationError.rateLimited`](https://developer.apple.com/documentation/foundationmodels/languagemodelsession/generationerror/ratelimited(_:)). The combined input + output token limit per session is **4,096 tokens**.
+
+The app handles this gracefully: transcription repair falls back to the original (uncorrected) text, and AI translation falls back to Apple's Translation framework, which runs independently and is not subject to the same limit. No subtitles are lost — only the AI-enhanced quality may be reduced for affected cues.
+
 ## Notes / troubleshooting
 
 - If transcription/translation downloads fail, check free space and retry.
-- Some language pairs may route “via English” pivot translation; quality may vary.
+- Some language pairs may route "via English" pivot translation; quality may vary.
 - iOS can pause background work; keeping the screen awake is usually fastest.

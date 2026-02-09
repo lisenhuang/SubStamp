@@ -4,6 +4,7 @@ import SwiftUI
 struct ResultView: View {
     let outputURL: URL
     let exportPreset: ExportPreset
+    var onBackToEdit: (() -> Void)?
     var onStartOver: () -> Void
 
     @State private var metadata: VideoMetadata?
@@ -17,6 +18,19 @@ struct ResultView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
+                if let onBackToEdit {
+                    HStack {
+                        Button {
+                            onBackToEdit()
+                        } label: {
+                            Label("Back to edit", systemImage: "chevron.left")
+                                .font(AppTypography.bodyEmphasis)
+                                .foregroundStyle(AppColors.secondaryText)
+                        }
+                        Spacer()
+                    }
+                }
+
                 WizardHeaderView(
                     step: 4,
                     total: 4,

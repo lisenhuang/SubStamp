@@ -21,7 +21,8 @@ final class PipelineOrchestrator: ObservableObject {
     @Published var error: SubStampError?
     @Published var job: JobModel?
     @Published var isRunning = false
-    @Published var readyForReview = false
+    @Published var transcriptionComplete = false
+    @Published var translationComplete = false
 
     private var task: Task<Void, Never>?
     private var frameworkSession1: TranslationSession?
@@ -52,58 +53,8 @@ final class PipelineOrchestrator: ObservableObject {
         outputURL = nil
         error = nil
         isRunning = false
-        readyForReview = false
-    }
-
-    func start(job: JobModel, translationSession1: TranslationSession?, translationSession2: TranslationSession?, translationSession3: TranslationSession?) {
-        cancel()
-        resetStages()
-        self.job = job
-        isRunning = true
-        readyForReview = false
-        updateTranslationSessions(s1: translationSession1, s2: translationSession2, s3: translationSession3)
-        print("[SUBSTAMP] start() mode=\(job.subtitleMode) lang1=\(job.language1Locale) lang2=\(job.translationTargetLocale ?? "nil") s1=\(translationSession1 != nil) s2=\(translationSession2 != nil) s3=\(translationSession3 != nil)")
-        task = Task { [weak self] in
-            guard let self else { return }
-            await self.runPipeline(job: job)
-        }
-    }
-
-    func resume(
-        job: JobModel,
-        s1: TranslationSession?,
-        s2: TranslationSession?,
-        s3: TranslationSession?,
-        transcribed: [SubtitleCue],
-        translated: [SubtitleCue]?
-    ) {
-        cancel()
-        resetStages()
-        self.job = job
-        updateTranslationSessions(s1: s1, s2: s2, s3: s3)
-        cues = translated ?? transcribed
-        stageStates[.transcribing] = .done
-        stageProgress[.transcribing] = 1
-        if let translated {
-            stageStates[.translating] = .done
-            stageProgress[.translating] = 1
-            readyForReview = true
-            isRunning = false
-            currentStage = .rendering
-        } else if job.subtitleMode == .single && job.language1Locale == job.transcriptionLocale {
-            stageStates[.translating] = .done
-            stageProgress[.translating] = 1
-            readyForReview = true
-            isRunning = false
-            currentStage = .rendering
-        } else {
-            isRunning = true
-            readyForReview = false
-            task = Task { [weak self] in
-                guard let self else { return }
-                await self.runTranslationOnly(job: job)
-            }
-        }
+        transcriptionComplete = false
+        translationComplete = false
     }
 
     func updateTranslationSessions(s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) {
@@ -117,14 +68,56 @@ final class PipelineOrchestrator: ObservableObject {
         task = nil
         isRunning = false
         // Nil out framework sessions so cancelled work can't use stale sessions
-        // (ProcessingView's .translationTask modifiers are torn down when the view disappears)
         frameworkSession1 = nil
         frameworkSession2 = nil
         frameworkSession3 = nil
         BackgroundTaskManager.shared.end(success: false)
     }
 
-    private func runPipeline(job: JobModel) async {
+    // MARK: - New Phase Methods (Step 2/3/4 wizard)
+
+    func startTranscription(job: JobModel) {
+        cancel()
+        resetStages()
+        self.job = job
+        isRunning = true
+        transcriptionComplete = false
+        task = Task { [weak self] in
+            guard let self else { return }
+            await self.runTranscriptionPhase(job: job)
+        }
+    }
+
+    func startTranslation(job: JobModel, translationSession1: TranslationSession?, translationSession2: TranslationSession?, translationSession3: TranslationSession?) {
+        self.job = job
+        isRunning = true
+        translationComplete = false
+        error = nil
+        updateTranslationSessions(s1: translationSession1, s2: translationSession2, s3: translationSession3)
+        stageStates[.translating] = .pending
+        stageProgress[.translating] = 0
+        task = Task { [weak self] in
+            guard let self else { return }
+            await self.runTranslationPhase(job: job)
+        }
+    }
+
+    func startRenderExport(job: JobModel) {
+        self.job = job
+        isRunning = true
+        error = nil
+        stageStates[.rendering] = .pending
+        stageProgress[.rendering] = 0
+        stageStates[.exporting] = .pending
+        stageProgress[.exporting] = 0
+        outputURL = nil
+        task = Task { [weak self] in
+            guard let self else { return }
+            await self.runRenderExport(job: job)
+        }
+    }
+
+    private func runTranscriptionPhase(job: JobModel) async {
         do {
             try Task.checkCancellation()
 
@@ -185,53 +178,60 @@ final class PipelineOrchestrator: ObservableObject {
 
             try Task.checkCancellation()
 
+            // Preserve raw transcription in originalTranscription before any translation
+            cues = cues.map { cue in
+                var updated = cue
+                updated.originalTranscription = cue.primaryText
+                return updated
+            }
+            try jobStore.saveCues(cues, id: job.id, type: .transcribed)
+
             stageStates[.transcribing] = .done
             stageProgress[.transcribing] = 1
+            transcriptionComplete = true
+            isRunning = false
+        } catch is CancellationError {
+            isRunning = false
+            return
+        } catch {
+            guard !Task.isCancelled else { isRunning = false; return }
+            self.error = (error as? SubStampError) ?? .speechAnalyzerError(underlying: error)
+            markFailed()
+        }
+    }
 
-            let baseLocale = job.transcriptionLocale
-            let lang1NeedsTranslation = job.language1Locale != baseLocale
-            let lang2NeedsTranslation = job.subtitleMode == .bilingual && (job.translationTargetLocale != nil && job.translationTargetLocale != baseLocale)
-            
+    private func runTranslationPhase(job: JobModel) async {
+        do {
             try Task.checkCancellation()
 
-            if lang1NeedsTranslation || lang2NeedsTranslation {
-                updatedJob.stage = .translating
-                updatedJob.updatedAt = Date()
-                try jobStore.save(job: updatedJob)
-                currentStage = .translating
-                stageStates[.translating] = .active
-                
-                cues = try await performTranslations(job: job, sourceCues: cues)
-
-                try Task.checkCancellation()
-
-                try jobStore.saveCues(cues, id: job.id, type: .translated)
-                stageStates[.translating] = .done
-                stageProgress[.translating] = 1
-            } else {
-                // For bilingual where Lang2 == base: use same text for both
-                if job.subtitleMode == .bilingual && job.translationTargetLocale == baseLocale {
-                    cues = cues.map { cue in
-                        var newCue = cue
-                        newCue.secondaryText = cue.primaryText
-                        return newCue
-                    }
-                    try jobStore.saveCues(cues, id: job.id, type: .translated)
-                }
-                stageStates[.translating] = .done
-                stageProgress[.translating] = 1
-            }
-
-            try Task.checkCancellation()
-
-            updatedJob.stage = .rendering
+            currentStage = .translating
+            stageStates[.translating] = .active
+            var updatedJob = job
+            updatedJob.stage = .translating
             updatedJob.updatedAt = Date()
             try jobStore.save(job: updatedJob)
-            readyForReview = true
+
+            // Build source cues from originalTranscription so retranslation uses the original text
+            let sourceCues = cues.map { cue -> SubtitleCue in
+                var source = cue
+                if let original = cue.originalTranscription {
+                    source.primaryText = original
+                }
+                source.secondaryText = nil
+                source.hasTranslationError = false
+                return source
+            }
+
+            cues = try await performTranslations(job: job, sourceCues: sourceCues)
+
+            try Task.checkCancellation()
+
+            try jobStore.saveCues(cues, id: job.id, type: .translated)
+            stageStates[.translating] = .done
+            stageProgress[.translating] = 1
+            translationComplete = true
             isRunning = false
-            currentStage = .rendering
         } catch is CancellationError {
-            // Task was cancelled by user — clean up silently, do not set error state
             isRunning = false
             return
         } catch {
@@ -547,51 +547,6 @@ final class PipelineOrchestrator: ObservableObject {
         }
 
         return primaryCues
-    }
-
-    private func runTranslationOnly(job: JobModel) async {
-        do {
-            try Task.checkCancellation()
-
-            currentStage = .translating
-            stageStates[.translating] = .active
-            var updatedJob = job
-            updatedJob.stage = .translating
-            updatedJob.updatedAt = Date()
-            try jobStore.save(job: updatedJob)
-            
-            cues = try await performTranslations(job: job, sourceCues: cues)
-
-            try Task.checkCancellation()
-
-            try jobStore.saveCues(cues, id: job.id, type: .translated)
-            stageStates[.translating] = .done
-            stageProgress[.translating] = 1
-            updatedJob.stage = .rendering
-            updatedJob.updatedAt = Date()
-            try jobStore.save(job: updatedJob)
-            readyForReview = true
-            isRunning = false
-            currentStage = .rendering
-        } catch is CancellationError {
-            isRunning = false
-            return
-        } catch {
-            guard !Task.isCancelled else { isRunning = false; return }
-            self.error = (error as? SubStampError) ?? .translationError(underlying: error)
-            markFailed()
-        }
-    }
-
-    func continueAfterReview() {
-        guard let job else { return }
-        cancel()
-        isRunning = true
-        readyForReview = false
-        task = Task { [weak self] in
-            guard let self else { return }
-            await self.runRenderExport(job: job)
-        }
     }
 
     private func runRenderExport(job: JobModel) async {
