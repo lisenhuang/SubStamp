@@ -12,7 +12,6 @@ struct PreviewExportView: View {
     let videoURL: URL
     var onBack: () -> Void
     var onExportComplete: (URL) -> Void
-    var onAbandon: () -> Void
 
     // Translation session state
     @State private var config1: TranslationSession.Configuration?
@@ -25,7 +24,6 @@ struct PreviewExportView: View {
     @State private var player: AVPlayer?
     @State private var isPlayingPreview = false
     @FocusState private var isTextFieldFocused: Bool
-    @State private var showAbandonConfirmation = false
     @State private var showCopyConfirmation = false
     @State private var showBackDialog = false
     @State private var keepScreenAwake = false
@@ -89,9 +87,23 @@ struct PreviewExportView: View {
         return "Subtitle 2 (\(name))"
     }
 
+    /// Whether cue list and style card should be visible
+    private var showCueEditor: Bool {
+        !needsTranslation || orchestrator.translationComplete
+    }
+
+    /// Whether the Export button should be visible
+    private var canExport: Bool {
+        guard !orchestrator.isRunning else { return false }
+        if needsTranslation {
+            return orchestrator.translationComplete && !translationsAreStale
+        }
+        return true
+    }
+
+    /// Whether the Translate button should be visible
     private var showTranslateButton: Bool {
-        guard needsTranslation else { return false }
-        // Show if translation hasn't been done yet, or if translations are stale
+        guard needsTranslation, !orchestrator.isRunning else { return false }
         return !orchestrator.translationComplete || translationsAreStale
     }
 
@@ -120,32 +132,20 @@ struct PreviewExportView: View {
                             subtitle: "Edit subtitles, translate, and export."
                         )
 
-                        // Translation section
-                        translationSection
+                        // Translation progress (shown inline when translating)
+                        translationProgressSection
 
-                        // Subtitle style controls
-                        styleCard
+                        // Cue list + style (shown only after translation, or when no translation needed)
+                        if showCueEditor {
+                            styleCard
+                            cueList
+                        }
 
-                        // Cue list
-                        cueList
-
-                        // Export section
+                        // Export section (only when translation is done)
                         exportSection
 
-                        // Abandon button
-                        Button(role: .destructive) {
-                            showAbandonConfirmation = true
-                        } label: {
-                            Text("Abandon and restart")
-                                .font(AppTypography.bodyEmphasis)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, AppSpacing.m)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
-                                        .stroke(AppColors.error, lineWidth: 1)
-                                )
-                        }
-                        .padding(.top, AppSpacing.m)
+                        // Translate / re-translate button (at bottom)
+                        translateButtonSection
                     }
                     .padding(AppSpacing.l)
                 }
@@ -198,19 +198,6 @@ struct PreviewExportView: View {
             }
             Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
         }
-        .confirmationDialog(
-            Text(String(localized: "Abandon this job?", bundle: .forLocale(locale))),
-            isPresented: $showAbandonConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(String(localized: "Abandon and restart", bundle: .forLocale(locale)), role: .destructive) {
-                orchestrator.cancel()
-                onAbandon()
-            }
-            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
-        } message: {
-            Text(String(localized: "All progress on this video will be lost.", bundle: .forLocale(locale)))
-        }
         .alert(Text(String(localized: "Copied", bundle: .forLocale(locale))), isPresented: $showCopyConfirmation) {
             Button(String(localized: "OK", bundle: .forLocale(locale)), role: .cancel) {}
         } message: {
@@ -218,19 +205,34 @@ struct PreviewExportView: View {
         }
     }
 
-    // MARK: - Translation section
+    // MARK: - Translation progress (inline, shown when translating)
 
     @ViewBuilder
-    private var translationSection: some View {
+    private var translationProgressSection: some View {
         if orchestrator.isRunning && orchestrator.stageStates[.translating] == .active {
-            // Translation in progress
             PipelineStageRow(
                 title: "Translating",
                 state: .active,
                 progress: orchestrator.stageProgress[.translating] ?? 0,
                 detail: "Translating subtitles."
             )
-        } else if showTranslateButton && !orchestrator.isRunning {
+        }
+    }
+
+    // MARK: - Translate button (at bottom)
+
+    @ViewBuilder
+    private var translateButtonSection: some View {
+        if let error = orchestrator.error, !orchestrator.isRunning {
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
+                Text(LocalizedStringKey(error.errorDescription ?? "Translation failed"))
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(AppColors.error)
+                PrimaryButton(title: "Retry", systemImage: "arrow.clockwise") {
+                    startTranslation()
+                }
+            }
+        } else if showTranslateButton {
             VStack(spacing: AppSpacing.s) {
                 if translationsAreStale {
                     Text("Original transcription was edited. Re-translate to update.")
@@ -239,18 +241,8 @@ struct PreviewExportView: View {
                 }
                 PrimaryButton(
                     title: "Translate",
-                    systemImage: "globe",
-                    isEnabled: !orchestrator.isRunning
+                    systemImage: "globe"
                 ) {
-                    startTranslation()
-                }
-            }
-        } else if let error = orchestrator.error, !orchestrator.isRunning {
-            VStack(alignment: .leading, spacing: AppSpacing.s) {
-                Text(LocalizedStringKey(error.errorDescription ?? "Translation failed"))
-                    .font(AppTypography.bodyEmphasis)
-                    .foregroundStyle(AppColors.error)
-                PrimaryButton(title: "Retry Translation", systemImage: "arrow.clockwise") {
                     startTranslation()
                 }
             }
@@ -377,7 +369,7 @@ struct PreviewExportView: View {
                         .stroke(AppColors.cardBorder, lineWidth: 1)
                 )
             }
-        } else if !orchestrator.isRunning {
+        } else if canExport {
             PrimaryButton(
                 title: "Export Video",
                 systemImage: "square.and.arrow.up"

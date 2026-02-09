@@ -64,17 +64,15 @@ struct VideoTranscribeView: View {
 
                 transcriptionSection
 
-                if orchestrator.transcriptionComplete {
-                    PrimaryButton(title: "Next", systemImage: "arrow.right.circle") {
-                        onNext()
-                    }
-                }
             }
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
         .onChange(of: pickerItem) { _, newValue in
             loadVideo(from: newValue)
+        }
+        .onChange(of: orchestrator.transcriptionComplete) { _, complete in
+            if complete { onNext() }
         }
         .onChange(of: keepScreenAwake) { _, newValue in
             UIApplication.shared.isIdleTimerDisabled = newValue

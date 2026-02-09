@@ -80,8 +80,7 @@ struct ContentView: View {
                         onExportComplete: { url in
                             outputURL = url
                             step = .result
-                        },
-                        onAbandon: { resetToSetup() }
+                        }
                     )
                 }
             case .result:
