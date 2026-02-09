@@ -60,6 +60,7 @@
 "Test on first 1 minute" = "Test on first 1 minute";
 "Transcribe" = "Transcribe";
 "Generate subtitles" = "Generate subtitles";
+"Transcription complete (%lld cues)" = "Transcription complete (%lld cues)";
 "Next" = "Next";
 "Could not load video. Try another clip." = "Could not load video. Try another clip.";
 "Start over?" = "Start over?";
@@ -113,6 +114,7 @@
 "Middle" = "Middle";
 "Bottom" = "Bottom";
 "Copy subtitles" = "Copy subtitles";
+"Keep the screen awake for fastest processing." = "Keep the screen awake for fastest processing.";
 "Continue to export" = "Continue to export";
 "Abandon and restart" = "Abandon and restart";
 "Abandon this job?" = "Abandon this job?";

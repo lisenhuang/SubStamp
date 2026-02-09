@@ -41,8 +41,10 @@
 "Download required assets" = "필요한 리소스 다운로드";
 "Continue" = "계속";
 
-/* VideoPickerView - Step 2 */
+/* VideoTranscribeView - Step 2 */
 "Back" = "뒤로";
+"Video & Transcribe" = "동영상 및 전사";
+"Select a video, then transcribe the audio." = "동영상을 선택한 후 오디오를 전사합니다.";
 "Pick a video" = "동영상 선택";
 "Choose a clip and confirm it has audio." = "클립을 선택하고 오디오가 포함되어 있는지 확인하세요.";
 "Choose video" = "동영상 선택";
@@ -56,8 +58,14 @@
 "No" = "없음";
 "Long video detected. Consider running a 1-minute test first." = "긴 동영상이 감지되었습니다. 먼저 1분 테스트를 실행해 보세요.";
 "Test on first 1 minute" = "처음 1분 테스트";
+"Transcribe" = "전사";
 "Generate subtitles" = "자막 생성";
+"Transcription complete (%lld cues)" = "전사 완료 (%lld개의 자막)";
+"Next" = "다음";
 "Could not load video. Try another clip." = "동영상을 불러올 수 없습니다. 다른 클립을 시도해 주세요.";
+"Start over?" = "처음부터 다시 시작하시겠습니까?";
+"Start over" = "처음부터 다시 시작";
+"All progress will be lost and you'll start fresh." = "모든 진행 상황이 손실되고 처음부터 시작됩니다.";
 
 /* ProcessingView - Step 3 */
 "Processing" = "처리 중";
@@ -85,7 +93,15 @@
 "Stop and go back" = "중지하고 돌아가기";
 "Background" = "백그라운드";
 
-/* SubtitleReviewView */
+/* PreviewExportView - Step 3 */
+"Preview & Export" = "미리보기 및 내보내기";
+"Edit subtitles, translate, and export." = "자막을 편집하고 번역한 후 내보냅니다.";
+"You can review and edit the transcription below before translating. This is optional." = "번역하기 전에 아래 전사를 검토하고 편집할 수 있습니다. 이는 선택 사항입니다.";
+"Original transcription was edited. You can re-translate or export directly." = "원본 전사가 편집되었습니다. 다시 번역하거나 직접 내보낼 수 있습니다.";
+"Translate" = "번역";
+"Translating subtitles." = "자막 번역 중.";
+"Export Video" = "동영상 내보내기";
+"Done" = "완료";
 "Subtitle style" = "자막 스타일";
 "Font size" = "글자 크기";
 "Position" = "위치";
@@ -97,6 +113,7 @@
 "Middle" = "중앙";
 "Bottom" = "하단";
 "Copy subtitles" = "자막 복사";
+"Keep the screen awake for fastest processing." = "가장 빠른 처리를 위해 화면을 켜두세요.";
 "Continue to export" = "내보내기 계속";
 "Abandon and restart" = "포기하고 다시 시작";
 "Abandon this job?" = "이 작업을 포기하시겠습니까?";
@@ -108,6 +125,7 @@
 /* ResultView - Step 4 */
 "Result" = "결과";
 "Your subtitled video is ready." = "자막이 포함된 동영상이 준비되었습니다.";
+"Back to edit" = "편집으로 돌아가기";
 "Export details" = "내보내기 정보";
 "Preset" = "프리셋";
 "Saving..." = "저장 중...";
@@ -126,6 +144,11 @@
 /* SubtitleCueRow */
 "Primary subtitle" = "주 자막";
 "Secondary subtitle" = "보조 자막";
+"Original Transcription" = "원본 전사";
+"Original transcription" = "원본 전사";
+"(will not burn into video)" = "(동영상에 삽입되지 않음)";
+"Translating..." = "번역 중...";
+"Retranslate" = "다시 번역";
 "Translation error" = "번역 오류";
 "Preview" = "미리보기";
 "Split" = "분할";

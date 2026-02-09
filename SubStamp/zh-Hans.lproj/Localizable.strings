@@ -41,8 +41,10 @@
 "Download required assets" = "下载所需资源";
 "Continue" = "继续";
 
-/* VideoPickerView - Step 2 */
+/* VideoTranscribeView - Step 2 */
 "Back" = "返回";
+"Video & Transcribe" = "视频与转录";
+"Select a video, then transcribe the audio." = "选择视频，然后转录音频。";
 "Pick a video" = "选择视频";
 "Choose a clip and confirm it has audio." = "选择一段视频并确认包含音频。";
 "Choose video" = "选择视频";
@@ -56,8 +58,14 @@
 "No" = "无";
 "Long video detected. Consider running a 1-minute test first." = "检测到长视频。建议先进行 1 分钟测试。";
 "Test on first 1 minute" = "测试前 1 分钟";
+"Transcribe" = "转录";
 "Generate subtitles" = "生成字幕";
+"Transcription complete (%lld cues)" = "转录完成（%lld 条字幕）";
+"Next" = "下一步";
 "Could not load video. Try another clip." = "无法加载视频，请尝试其他片段。";
+"Start over?" = "重新开始？";
+"Start over" = "重新开始";
+"All progress will be lost and you'll start fresh." = "所有进度将丢失，将从头开始。";
 
 /* ProcessingView - Step 3 */
 "Processing" = "处理中";
@@ -85,7 +93,15 @@
 "Stop and go back" = "停止并返回";
 "Background" = "后台运行";
 
-/* SubtitleReviewView */
+/* PreviewExportView - Step 3 */
+"Preview & Export" = "预览与导出";
+"Edit subtitles, translate, and export." = "编辑字幕、翻译并导出。";
+"You can review and edit the transcription below before translating. This is optional." = "翻译前可以查看和编辑下方的转录内容。此步骤为可选。";
+"Original transcription was edited. You can re-translate or export directly." = "原始转录已被编辑。可以重新翻译或直接导出。";
+"Translate" = "翻译";
+"Translating subtitles." = "正在翻译字幕。";
+"Export Video" = "导出视频";
+"Done" = "完成";
 "Subtitle style" = "字幕样式";
 "Font size" = "字体大小";
 "Position" = "位置";
@@ -97,6 +113,7 @@
 "Middle" = "居中";
 "Bottom" = "底部";
 "Copy subtitles" = "复制字幕";
+"Keep the screen awake for fastest processing." = "保持屏幕常亮可加快处理速度。";
 "Continue to export" = "继续导出";
 "Abandon and restart" = "放弃并重新开始";
 "Abandon this job?" = "放弃此任务？";
@@ -108,6 +125,7 @@
 /* ResultView - Step 4 */
 "Result" = "结果";
 "Your subtitled video is ready." = "带字幕的视频已就绪。";
+"Back to edit" = "返回编辑";
 "Export details" = "导出详情";
 "Preset" = "预设";
 "Saving..." = "保存中...";
@@ -126,6 +144,11 @@
 /* SubtitleCueRow */
 "Primary subtitle" = "主字幕";
 "Secondary subtitle" = "副字幕";
+"Original Transcription" = "原始转录";
+"Original transcription" = "原始转录";
+"(will not burn into video)" = "（不会嵌入视频）";
+"Translating..." = "翻译中...";
+"Retranslate" = "重新翻译";
 "Translation error" = "翻译错误";
 "Preview" = "预览";
 "Split" = "拆分";

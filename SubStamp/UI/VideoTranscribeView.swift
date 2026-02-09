@@ -196,7 +196,7 @@ struct VideoTranscribeView: View {
             HStack(spacing: AppSpacing.s) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(AppColors.success)
-                Text("Transcription complete (\(orchestrator.cues.count) cues)")
+                Text(String(format: String(localized: "Transcription complete (%lld cues)", bundle: .forLocale(locale)), orchestrator.cues.count))
                     .font(AppTypography.bodyEmphasis)
             }
             .padding()

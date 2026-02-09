@@ -41,8 +41,10 @@
 "Download required assets" = "必要なリソースをダウンロード";
 "Continue" = "続行";
 
-/* VideoPickerView - Step 2 */
+/* VideoTranscribeView - Step 2 */
 "Back" = "戻る";
+"Video & Transcribe" = "動画と文字起こし";
+"Select a video, then transcribe the audio." = "動画を選択し、音声を文字起こしします。";
 "Pick a video" = "動画を選択";
 "Choose a clip and confirm it has audio." = "クリップを選択し、音声が含まれていることを確認してください。";
 "Choose video" = "動画を選択";
@@ -56,8 +58,14 @@
 "No" = "なし";
 "Long video detected. Consider running a 1-minute test first." = "長い動画が検出されました。まず1分間のテストを実行することをお勧めします。";
 "Test on first 1 minute" = "最初の1分でテスト";
+"Transcribe" = "文字起こし";
 "Generate subtitles" = "字幕を生成";
+"Transcription complete (%lld cues)" = "文字起こし完了（%lld個の字幕）";
+"Next" = "次へ";
 "Could not load video. Try another clip." = "動画を読み込めませんでした。別のクリップをお試しください。";
+"Start over?" = "最初からやり直しますか？";
+"Start over" = "最初からやり直す";
+"All progress will be lost and you'll start fresh." = "すべての進行状況が失われ、最初から開始されます。";
 
 /* ProcessingView - Step 3 */
 "Processing" = "処理中";
@@ -85,7 +93,15 @@
 "Stop and go back" = "停止して戻る";
 "Background" = "バックグラウンド";
 
-/* SubtitleReviewView */
+/* PreviewExportView - Step 3 */
+"Preview & Export" = "プレビューとエクスポート";
+"Edit subtitles, translate, and export." = "字幕を編集し、翻訳してエクスポートします。";
+"You can review and edit the transcription below before translating. This is optional." = "翻訳前に以下の文字起こしを確認・編集できます。これはオプションです。";
+"Original transcription was edited. You can re-translate or export directly." = "元の文字起こしが編集されました。再翻訳するか、直接エクスポートできます。";
+"Translate" = "翻訳";
+"Translating subtitles." = "字幕を翻訳中。";
+"Export Video" = "動画をエクスポート";
+"Done" = "完了";
 "Subtitle style" = "字幕スタイル";
 "Font size" = "フォントサイズ";
 "Position" = "位置";
@@ -97,6 +113,7 @@
 "Middle" = "中央";
 "Bottom" = "下";
 "Copy subtitles" = "字幕をコピー";
+"Keep the screen awake for fastest processing." = "最速で処理するには画面を点灯したままにしてください。";
 "Continue to export" = "エクスポートを続行";
 "Abandon and restart" = "破棄してやり直す";
 "Abandon this job?" = "このジョブを破棄しますか？";
@@ -108,6 +125,7 @@
 /* ResultView - Step 4 */
 "Result" = "結果";
 "Your subtitled video is ready." = "字幕付き動画の準備ができました。";
+"Back to edit" = "編集に戻る";
 "Export details" = "エクスポート詳細";
 "Preset" = "プリセット";
 "Saving..." = "保存中...";
@@ -126,6 +144,11 @@
 /* SubtitleCueRow */
 "Primary subtitle" = "主字幕";
 "Secondary subtitle" = "副字幕";
+"Original Transcription" = "元の文字起こし";
+"Original transcription" = "元の文字起こし";
+"(will not burn into video)" = "（動画に焼き込まれません）";
+"Translating..." = "翻訳中...";
+"Retranslate" = "再翻訳";
 "Translation error" = "翻訳エラー";
 "Preview" = "プレビュー";
 "Split" = "分割";
