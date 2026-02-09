@@ -100,10 +100,11 @@ struct PreviewExportView: View {
         return true
     }
 
-    /// Whether the Translate button should be visible
+    /// Whether the Translate button should be visible (only before first translation)
     private var showTranslateButton: Bool {
         guard needsTranslation, !orchestrator.isRunning else { return false }
-        return !orchestrator.translationComplete || translationsAreStale
+        // After translation completes, only show per-cue retranslate buttons (not the global button)
+        return !orchestrator.translationComplete
     }
 
     /// Whether we have a valid previous export (came back from Step 4 with no changes)
@@ -498,10 +499,8 @@ struct PreviewExportView: View {
         let cueID = cue.id
         retranslatingCueIDs.insert(cueID)
 
-        // Use TranslationService directly for single-cue translation
         Task { @MainActor in
             do {
-                let translationService = TranslationService()
                 var sourceCue = SubtitleCue(
                     id: cue.id,
                     start: cue.start,
@@ -511,33 +510,63 @@ struct PreviewExportView: View {
                     hasTranslationError: false
                 )
 
-                // Pivot step: translate to English first if needed
-                if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
-                    if let pivotSession = session1 {
-                        let pivotResult = try await translationService.translate(cues: [sourceCue], session: pivotSession) { _, _ in }
-                        if let pivotText = pivotResult.first?.secondaryText, !pivotText.isEmpty {
-                            sourceCue.primaryText = pivotText
+                let sourceLocale = Locale(identifier: job.transcriptionLocale)
+
+                // Use Apple Intelligence if selected, otherwise use Translation Framework
+                if #available(iOS 26.0, *), job.translationProvider == .appleIntelligence {
+                    // Apple Intelligence with built-in fallback to Translation Framework
+                    let aiService = AppleIntelligenceTranslationService()
+
+                    // Translate subtitle 1 if needed
+                    if job.language1Locale != job.transcriptionLocale {
+                        let target1 = Locale.Language(identifier: job.language1Locale)
+                        let result = try await aiService.translate(cues: [sourceCue], source: sourceLocale, target: target1) { _, _ in }
+                        if let translated = result.first?.secondaryText, !translated.isEmpty {
+                            orchestrator.cues[index].primaryText = translated
                         }
                     }
-                }
 
-                // Translate for subtitle 1 if needed
-                if job.language1Locale != job.transcriptionLocale, let session2 = session2 {
-                    let result = try await translationService.translate(cues: [sourceCue], session: session2) { _, _ in }
-                    if let translated = result.first?.secondaryText, !translated.isEmpty {
-                        orchestrator.cues[index].primaryText = translated
+                    // Translate subtitle 2 if needed
+                    if job.subtitleMode == .bilingual,
+                       let targetLocale = job.translationTargetLocale,
+                       targetLocale != job.transcriptionLocale {
+                        let target2 = Locale.Language(identifier: targetLocale)
+                        let result = try await aiService.translate(cues: [sourceCue], source: sourceLocale, target: target2) { _, _ in }
+                        if let translated = result.first?.secondaryText, !translated.isEmpty {
+                            orchestrator.cues[index].secondaryText = translated
+                        }
                     }
-                }
+                } else {
+                    // Use Translation Framework with pivot support
+                    let translationService = TranslationService()
 
-                // Translate for subtitle 2 if needed
-                if job.subtitleMode == .bilingual,
-                   let targetLocale = job.translationTargetLocale,
-                   targetLocale != job.transcriptionLocale,
-                   let session3 = session3 {
-                    // For subtitle 2, use the same source (either original or pivot English)
-                    let result = try await translationService.translate(cues: [sourceCue], session: session3) { _, _ in }
-                    if let translated = result.first?.secondaryText, !translated.isEmpty {
-                        orchestrator.cues[index].secondaryText = translated
+                    // Pivot step: translate to English first if needed
+                    if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
+                        if let pivotSession = session1 {
+                            let pivotResult = try await translationService.translate(cues: [sourceCue], session: pivotSession) { _, _ in }
+                            if let pivotText = pivotResult.first?.secondaryText, !pivotText.isEmpty {
+                                sourceCue.primaryText = pivotText
+                            }
+                        }
+                    }
+
+                    // Translate for subtitle 1 if needed
+                    if job.language1Locale != job.transcriptionLocale, let session2 = session2 {
+                        let result = try await translationService.translate(cues: [sourceCue], session: session2) { _, _ in }
+                        if let translated = result.first?.secondaryText, !translated.isEmpty {
+                            orchestrator.cues[index].primaryText = translated
+                        }
+                    }
+
+                    // Translate for subtitle 2 if needed
+                    if job.subtitleMode == .bilingual,
+                       let targetLocale = job.translationTargetLocale,
+                       targetLocale != job.transcriptionLocale,
+                       let session3 = session3 {
+                        let result = try await translationService.translate(cues: [sourceCue], session: session3) { _, _ in }
+                        if let translated = result.first?.secondaryText, !translated.isEmpty {
+                            orchestrator.cues[index].secondaryText = translated
+                        }
                     }
                 }
 
