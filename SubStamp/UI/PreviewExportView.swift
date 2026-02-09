@@ -91,7 +91,7 @@ struct PreviewExportView: View {
     private var canExport: Bool {
         guard !orchestrator.isRunning else { return false }
         if needsTranslation {
-            return orchestrator.translationComplete && !translationsAreStale
+            return orchestrator.translationComplete
         }
         return true
     }
@@ -109,45 +109,58 @@ struct PreviewExportView: View {
                     .frame(height: 220)
                     .background(Color.black)
 
-                ScrollView {
-                    VStack(spacing: AppSpacing.l) {
-                        HStack {
-                            Button { showBackDialog = true } label: {
-                                Label("Back", systemImage: "chevron.left")
-                                    .font(AppTypography.bodyEmphasis)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        VStack(spacing: AppSpacing.l) {
+                            HStack {
+                                Button { showBackDialog = true } label: {
+                                    Label("Back", systemImage: "chevron.left")
+                                        .font(AppTypography.bodyEmphasis)
+                                        .foregroundStyle(AppColors.secondaryText)
+                                }
+                                Spacer()
+                            }
+
+                            WizardHeaderView(
+                                step: 3,
+                                total: 4,
+                                title: "Preview & Export",
+                                subtitle: "Edit subtitles, translate, and export."
+                            )
+
+                            styleCard
+
+                            // Hint for editing before translation
+                            if needsTranslation && !orchestrator.translationComplete {
+                                Text("You can review and edit the transcription below before translating. This is optional.")
+                                    .font(AppTypography.caption)
                                     .foregroundStyle(AppColors.secondaryText)
                             }
-                            Spacer()
+
+                            cueList
+
+                            // Export section (render/export progress or Export button)
+                            exportSection
+
+                            // Translation progress + translate button (at bottom)
+                            translationProgressSection
+                            translateButtonSection
+
+                            // Scroll anchor
+                            Color.clear.frame(height: 1).id("bottomAnchor")
                         }
-
-                        WizardHeaderView(
-                            step: 3,
-                            total: 4,
-                            title: "Preview & Export",
-                            subtitle: "Edit subtitles, translate, and export."
-                        )
-
-                        // Translation progress (shown inline when translating)
-                        translationProgressSection
-
-                        styleCard
-
-                        // Hint for editing before translation
-                        if needsTranslation && !orchestrator.translationComplete {
-                            Text("You can review and edit the transcription below before translating. This is optional.")
-                                .font(AppTypography.caption)
-                                .foregroundStyle(AppColors.secondaryText)
-                        }
-
-                        cueList
-
-                        // Export section (only when translation is done)
-                        exportSection
-
-                        // Translate / re-translate button (at bottom)
-                        translateButtonSection
+                        .padding(AppSpacing.l)
                     }
-                    .padding(AppSpacing.l)
+                    .onChange(of: orchestrator.stageStates[.translating]) { _, newValue in
+                        if newValue == .active {
+                            withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                        }
+                    }
+                    .onChange(of: orchestrator.stageStates[.rendering]) { _, newValue in
+                        if newValue == .active {
+                            withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                        }
+                    }
                 }
             }
             .ignoresSafeArea(.all, edges: .top)

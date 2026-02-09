@@ -222,7 +222,17 @@ final class PipelineOrchestrator: ObservableObject {
                 return source
             }
 
-            cues = try await performTranslations(job: job, sourceCues: sourceCues)
+            // Capture original transcription before translation overwrites cues
+            let originalByID = Dictionary(uniqueKeysWithValues: cues.map { ($0.id, $0.originalTranscription ?? $0.primaryText) })
+
+            let translatedCues = try await performTranslations(job: job, sourceCues: sourceCues)
+
+            // Restore originalTranscription on translated cues (performTranslations doesn't carry it)
+            cues = translatedCues.map { cue in
+                var updated = cue
+                updated.originalTranscription = originalByID[cue.id] ?? cue.primaryText
+                return updated
+            }
 
             try Task.checkCancellation()
 
