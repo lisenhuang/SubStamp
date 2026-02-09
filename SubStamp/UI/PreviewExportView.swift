@@ -30,8 +30,11 @@ struct PreviewExportView: View {
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
     @State private var translationsAreStale = false
+    @State private var staleCueIDs: Set<UUID> = []  // Per-cue stale tracking
+    @State private var retranslatingCueIDs: Set<UUID> = []  // Currently retranslating
     // Track whether cues changed since last export (for "Next" vs "Export" button)
     @State private var cuesChangedSinceExport = false
+    @State private var scrollTrigger: Int = 0  // Increment to trigger scroll
 
     @Environment(\.locale) private var locale
 
@@ -173,6 +176,11 @@ struct PreviewExportView: View {
                             }
                         }
                     }
+                    .onChange(of: scrollTrigger) { _, _ in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation { scrollProxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                        }
+                    }
                 }
             }
             .ignoresSafeArea(.all, edges: .top)
@@ -202,6 +210,11 @@ struct PreviewExportView: View {
         }
         .onChange(of: orchestrator.outputURL) { _, newValue in
             if let url = newValue { onExportComplete(url) }
+        }
+        .onChange(of: orchestrator.translationComplete) { _, complete in
+            if complete {
+                scrollTrigger += 1
+            }
         }
         .onChange(of: keepScreenAwake) { _, newValue in
             UIApplication.shared.isIdleTimerDisabled = newValue
@@ -341,8 +354,11 @@ struct PreviewExportView: View {
                     showWillNotBurnNote: showWillNotBurnNote,
                     subtitle1Label: subtitle1Label,
                     subtitle2Label: subtitle2Label,
-                    onOriginalEdited: { markTranslationsStale() },
-                    onSubtitleEdited: { cuesChangedSinceExport = true }
+                    onOriginalEdited: { markCueStale(cueID: orchestrator.cues[index].id) },
+                    onSubtitleEdited: { cuesChangedSinceExport = true },
+                    showRetranslateButton: staleCueIDs.contains(orchestrator.cues[index].id),
+                    isRetranslating: retranslatingCueIDs.contains(orchestrator.cues[index].id),
+                    onRetranslate: { retranslateCue(at: index) }
                 )
                 .focused($isTextFieldFocused)
             }
@@ -471,20 +487,99 @@ struct PreviewExportView: View {
             ($0.id, $0.originalTranscription ?? $0.primaryText)
         })
         translationsAreStale = false
+        staleCueIDs.removeAll()
+    }
+
+    private func retranslateCue(at index: Int) {
+        guard orchestrator.cues.indices.contains(index) else { return }
+        guard let job else { return }
+
+        let cue = orchestrator.cues[index]
+        let cueID = cue.id
+        retranslatingCueIDs.insert(cueID)
+
+        // Use TranslationService directly for single-cue translation
+        Task { @MainActor in
+            do {
+                let translationService = TranslationService()
+                var sourceCue = SubtitleCue(
+                    id: cue.id,
+                    start: cue.start,
+                    end: cue.end,
+                    primaryText: cue.originalTranscription ?? cue.primaryText,
+                    secondaryText: nil,
+                    hasTranslationError: false
+                )
+
+                // Pivot step: translate to English first if needed
+                if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
+                    if let pivotSession = session1 {
+                        let pivotResult = try await translationService.translate(cues: [sourceCue], session: pivotSession) { _, _ in }
+                        if let pivotText = pivotResult.first?.secondaryText, !pivotText.isEmpty {
+                            sourceCue.primaryText = pivotText
+                        }
+                    }
+                }
+
+                // Translate for subtitle 1 if needed
+                if job.language1Locale != job.transcriptionLocale, let session2 = session2 {
+                    let result = try await translationService.translate(cues: [sourceCue], session: session2) { _, _ in }
+                    if let translated = result.first?.secondaryText, !translated.isEmpty {
+                        orchestrator.cues[index].primaryText = translated
+                    }
+                }
+
+                // Translate for subtitle 2 if needed
+                if job.subtitleMode == .bilingual,
+                   let targetLocale = job.translationTargetLocale,
+                   targetLocale != job.transcriptionLocale,
+                   let session3 = session3 {
+                    // For subtitle 2, use the same source (either original or pivot English)
+                    let result = try await translationService.translate(cues: [sourceCue], session: session3) { _, _ in }
+                    if let translated = result.first?.secondaryText, !translated.isEmpty {
+                        orchestrator.cues[index].secondaryText = translated
+                    }
+                }
+
+                // Update snapshot and remove from stale set
+                translationSnapshot[cueID] = orchestrator.cues[index].originalTranscription ?? orchestrator.cues[index].primaryText
+                staleCueIDs.remove(cueID)
+                translationsAreStale = !staleCueIDs.isEmpty
+                cuesChangedSinceExport = true
+            } catch {
+                print("Retranslation failed for cue \(index): \(error)")
+                orchestrator.cues[index].hasTranslationError = true
+            }
+
+            retranslatingCueIDs.remove(cueID)
+        }
+    }
+
+    private func markCueStale(cueID: UUID) {
+        cuesChangedSinceExport = true
+        guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
+
+        // Find the cue and check if it changed
+        guard let cue = orchestrator.cues.first(where: { $0.id == cueID }) else { return }
+        let current = cue.originalTranscription ?? cue.primaryText
+        if let snapshotted = translationSnapshot[cueID], snapshotted != current {
+            staleCueIDs.insert(cueID)
+            translationsAreStale = true
+        }
     }
 
     private func markTranslationsStale() {
         cuesChangedSinceExport = true
         guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
-        // Check if any original transcription differs from snapshot
+        // Check all cues and rebuild stale set
+        staleCueIDs.removeAll()
         for cue in orchestrator.cues {
             let current = cue.originalTranscription ?? cue.primaryText
             if let snapshotted = translationSnapshot[cue.id], snapshotted != current {
-                translationsAreStale = true
-                return
+                staleCueIDs.insert(cue.id)
             }
         }
-        translationsAreStale = false
+        translationsAreStale = !staleCueIDs.isEmpty
     }
 
     // MARK: - Cue editing

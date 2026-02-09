@@ -19,6 +19,9 @@ struct SubtitleCueRow: View {
     var subtitle2Label: String = "Subtitle 2"
     var onOriginalEdited: (() -> Void)?
     var onSubtitleEdited: (() -> Void)?
+    var showRetranslateButton: Bool = false
+    var isRetranslating: Bool = false
+    var onRetranslate: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -108,6 +111,22 @@ struct SubtitleCueRow: View {
                 ), axis: .vertical)
                 .font(AppTypography.body)
                 .textFieldStyle(.roundedBorder)
+
+                // Retranslate button (shown when original was edited after translation)
+                if showRetranslateButton {
+                    Button {
+                        onRetranslate?()
+                    } label: {
+                        HStack(spacing: AppSpacing.xs) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text(isRetranslating ? "Translating..." : "Retranslate")
+                        }
+                        .font(AppTypography.caption)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isRetranslating)
+                }
             }
 
             // Subtitle 1 translation (only if sub1 is a translated language)
