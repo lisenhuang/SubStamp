@@ -25,7 +25,6 @@ struct PreviewExportView: View {
     @State private var isPlayingPreview = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var showCopyConfirmation = false
-    @State private var showBackDialog = false
     @State private var keepScreenAwake = false
 
     // Stale translation detection
@@ -120,7 +119,7 @@ struct PreviewExportView: View {
                     ScrollView {
                         VStack(spacing: AppSpacing.l) {
                             HStack {
-                                Button { showBackDialog = true } label: {
+                                Button { onBack() } label: {
                                     Label("Back", systemImage: "chevron.left")
                                         .font(AppTypography.bodyEmphasis)
                                         .foregroundStyle(AppColors.secondaryText)
@@ -212,15 +211,6 @@ struct PreviewExportView: View {
         .translationTask(config3) { session in
             session3 = session
             orchestrator.updateTranslationSessions(s1: session1, s2: session2, s3: session3)
-        }
-        .confirmationDialog(
-            Text(String(localized: "Go back?", bundle: .forLocale(locale))),
-            isPresented: $showBackDialog
-        ) {
-            Button(String(localized: "Go back", bundle: .forLocale(locale)), role: .destructive) {
-                onBack()
-            }
-            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
         }
         .alert(Text(String(localized: "Copied", bundle: .forLocale(locale))), isPresented: $showCopyConfirmation) {
             Button(String(localized: "OK", bundle: .forLocale(locale)), role: .cancel) {}
@@ -345,7 +335,8 @@ struct PreviewExportView: View {
                     showWillNotBurnNote: showWillNotBurnNote,
                     subtitle1Label: subtitle1Label,
                     subtitle2Label: subtitle2Label,
-                    onOriginalEdited: { markTranslationsStale() }
+                    onOriginalEdited: { markTranslationsStale() },
+                    onSubtitleEdited: { cuesChangedSinceExport = true }
                 )
                 .focused($isTextFieldFocused)
             }

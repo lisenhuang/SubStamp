@@ -67,7 +67,7 @@ struct ContentView: View {
                     subtitle2Mode: subtitle2Mode,
                     translationProvider: translationProvider,
                     fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
-                    onBack: { step = .setup },
+                    onBack: { resetToSetup() },
                     onNext: { step = .previewAndExport }
                 )
             case .previewAndExport:

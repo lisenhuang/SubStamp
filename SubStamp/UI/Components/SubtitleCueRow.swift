@@ -18,6 +18,7 @@ struct SubtitleCueRow: View {
     var subtitle1Label: String = "Subtitle 1"
     var subtitle2Label: String = "Subtitle 2"
     var onOriginalEdited: (() -> Void)?
+    var onSubtitleEdited: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -115,9 +116,15 @@ struct SubtitleCueRow: View {
                     Text(subtitle1Label)
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
-                    TextField(subtitle1Label, text: $cue.primaryText, axis: .vertical)
-                        .font(AppTypography.body)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(subtitle1Label, text: Binding(
+                        get: { cue.primaryText },
+                        set: { newValue in
+                            cue.primaryText = newValue
+                            onSubtitleEdited?()
+                        }
+                    ), axis: .vertical)
+                    .font(AppTypography.body)
+                    .textFieldStyle(.roundedBorder)
                 }
             }
 
@@ -129,7 +136,10 @@ struct SubtitleCueRow: View {
                         .foregroundStyle(AppColors.secondaryText)
                     TextField(subtitle2Label, text: Binding(
                         get: { cue.secondaryText ?? "" },
-                        set: { cue.secondaryText = $0 }
+                        set: { newValue in
+                            cue.secondaryText = newValue
+                            onSubtitleEdited?()
+                        }
                     ), axis: .vertical)
                     .font(AppTypography.body)
                     .textFieldStyle(.roundedBorder)

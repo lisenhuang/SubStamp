@@ -26,6 +26,7 @@ struct VideoTranscribeView: View {
     @State private var isLoadingVideo = false
     @State private var videoError: String?
     @State private var keepScreenAwake = false
+    @State private var showBackToSetupConfirmation = false
 
     @Environment(\.locale) private var locale
 
@@ -95,6 +96,19 @@ struct VideoTranscribeView: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
         }
+        .confirmationDialog(
+            Text(String(localized: "Start over?", bundle: .forLocale(locale))),
+            isPresented: $showBackToSetupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Start over", bundle: .forLocale(locale)), role: .destructive) {
+                orchestrator.cancel()
+                onBack()
+            }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
+        } message: {
+            Text(String(localized: "All progress will be lost and you'll start fresh.", bundle: .forLocale(locale)))
+        }
     }
 
     // MARK: - Back button
@@ -102,8 +116,7 @@ struct VideoTranscribeView: View {
     private var backButton: some View {
         HStack {
             Button {
-                orchestrator.cancel()
-                onBack()
+                showBackToSetupConfirmation = true
             } label: {
                 Label("Back", systemImage: "chevron.left")
                     .font(AppTypography.bodyEmphasis)
