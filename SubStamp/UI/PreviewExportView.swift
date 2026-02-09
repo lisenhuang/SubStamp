@@ -61,13 +61,13 @@ struct PreviewExportView: View {
     }
 
     private var showSubtitle1Translation: Bool {
-        !sub1IsTranscript
+        !sub1IsTranscript && orchestrator.translationComplete
     }
 
     private var showSubtitle2Translation: Bool {
         guard let job else { return false }
         if job.subtitleMode == .single { return false }
-        return !sub2IsTranscript
+        return !sub2IsTranscript && orchestrator.translationComplete
     }
 
     private var showWillNotBurnNote: Bool {
@@ -85,11 +85,6 @@ struct PreviewExportView: View {
         let id = job.translationTargetLocale ?? ""
         let name = Locale.current.localizedString(forIdentifier: id) ?? id
         return "Subtitle 2 (\(name))"
-    }
-
-    /// Whether cue list and style card should be visible
-    private var showCueEditor: Bool {
-        !needsTranslation || orchestrator.translationComplete
     }
 
     /// Whether the Export button should be visible
@@ -135,11 +130,16 @@ struct PreviewExportView: View {
                         // Translation progress (shown inline when translating)
                         translationProgressSection
 
-                        // Cue list + style (shown only after translation, or when no translation needed)
-                        if showCueEditor {
-                            styleCard
-                            cueList
+                        styleCard
+
+                        // Hint for editing before translation
+                        if needsTranslation && !orchestrator.translationComplete {
+                            Text("You can review and edit the transcription below before translating. This is optional.")
+                                .font(AppTypography.caption)
+                                .foregroundStyle(AppColors.secondaryText)
                         }
+
+                        cueList
 
                         // Export section (only when translation is done)
                         exportSection
