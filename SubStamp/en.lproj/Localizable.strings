@@ -41,8 +41,10 @@
 "Download required assets" = "Download required assets";
 "Continue" = "Continue";
 
-/* VideoPickerView - Step 2 */
+/* VideoTranscribeView - Step 2 */
 "Back" = "Back";
+"Video & Transcribe" = "Video & Transcribe";
+"Select a video, then transcribe the audio." = "Select a video, then transcribe the audio.";
 "Pick a video" = "Pick a video";
 "Choose a clip and confirm it has audio." = "Choose a clip and confirm it has audio.";
 "Choose video" = "Choose video";
@@ -56,8 +58,13 @@
 "No" = "No";
 "Long video detected. Consider running a 1-minute test first." = "Long video detected. Consider running a 1-minute test first.";
 "Test on first 1 minute" = "Test on first 1 minute";
+"Transcribe" = "Transcribe";
 "Generate subtitles" = "Generate subtitles";
+"Next" = "Next";
 "Could not load video. Try another clip." = "Could not load video. Try another clip.";
+"Start over?" = "Start over?";
+"Start over" = "Start over";
+"All progress will be lost and you'll start fresh." = "All progress will be lost and you'll start fresh.";
 
 /* ProcessingView - Step 3 */
 "Processing" = "Processing";
@@ -86,7 +93,15 @@
 "Stop and go back" = "Stop and go back";
 "Background" = "Background";
 
-/* SubtitleReviewView */
+/* PreviewExportView - Step 3 */
+"Preview & Export" = "Preview & Export";
+"Edit subtitles, translate, and export." = "Edit subtitles, translate, and export.";
+"You can review and edit the transcription below before translating. This is optional." = "You can review and edit the transcription below before translating. This is optional.";
+"Original transcription was edited. You can re-translate or export directly." = "Original transcription was edited. You can re-translate or export directly.";
+"Translate" = "Translate";
+"Translating subtitles." = "Translating subtitles.";
+"Export Video" = "Export Video";
+"Done" = "Done";
 "Subtitle style" = "Subtitle style";
 "Font size" = "Font size";
 "Position" = "Position";
@@ -109,6 +124,7 @@
 /* ResultView - Step 4 */
 "Result" = "Result";
 "Your subtitled video is ready." = "Your subtitled video is ready.";
+"Back to edit" = "Back to edit";
 "Export details" = "Export details";
 "Preset" = "Preset";
 "Saving..." = "Saving...";
@@ -127,6 +143,11 @@
 /* SubtitleCueRow */
 "Primary subtitle" = "Primary subtitle";
 "Secondary subtitle" = "Secondary subtitle";
+"Original Transcription" = "Original Transcription";
+"Original transcription" = "Original transcription";
+"(will not burn into video)" = "(will not burn into video)";
+"Translating..." = "Translating...";
+"Retranslate" = "Retranslate";
 "Translation error" = "Translation error";
 "Preview" = "Preview";
 "Split" = "Split";

@@ -142,7 +142,7 @@ struct PreviewExportView: View {
 
                             // Hint for editing before translation
                             if needsTranslation && !orchestrator.translationComplete {
-                                Text("You can review and edit the transcription below before translating. This is optional.")
+                                Text(String(localized: "You can review and edit the transcription below before translating. This is optional.", bundle: .forLocale(locale)))
                                     .font(AppTypography.caption)
                                     .foregroundStyle(AppColors.secondaryText)
                             }
@@ -191,7 +191,7 @@ struct PreviewExportView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
-                    Button("Done") { isTextFieldFocused = false }
+                    Button(String(localized: "Done", bundle: .forLocale(locale))) { isTextFieldFocused = false }
                 }
             }
         }
@@ -269,7 +269,7 @@ struct PreviewExportView: View {
         } else if showTranslateButton {
             VStack(spacing: AppSpacing.s) {
                 if translationsAreStale {
-                    Text("Original transcription was edited. You can re-translate or export directly.")
+                    Text(String(localized: "Original transcription was edited. You can re-translate or export directly.", bundle: .forLocale(locale)))
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.warning)
                 }
@@ -300,28 +300,28 @@ struct PreviewExportView: View {
         )
 
         return VStack(alignment: .leading, spacing: AppSpacing.s) {
-            Text("Subtitle style")
+            Text(String(localized: "Subtitle style", bundle: .forLocale(locale)))
                 .font(AppTypography.bodyEmphasis)
-            Picker("Font size", selection: styleBinding.fontSize) {
-                Label("Small", systemImage: "textformat.size.smaller").tag(SubtitleFontSize.small)
-                Label("Medium", systemImage: "textformat.size").tag(SubtitleFontSize.medium)
-                Label("Large", systemImage: "textformat.size.larger").tag(SubtitleFontSize.large)
+            Picker(String(localized: "Font size", bundle: .forLocale(locale)), selection: styleBinding.fontSize) {
+                Label(String(localized: "Small", bundle: .forLocale(locale)), systemImage: "textformat.size.smaller").tag(SubtitleFontSize.small)
+                Label(String(localized: "Medium", bundle: .forLocale(locale)), systemImage: "textformat.size").tag(SubtitleFontSize.medium)
+                Label(String(localized: "Large", bundle: .forLocale(locale)), systemImage: "textformat.size.larger").tag(SubtitleFontSize.large)
             }
             .pickerStyle(.segmented)
             Toggle(isOn: styleBinding.usesShadow) {
-                Label("Text shadow", systemImage: "square.3.layers.3d.down.right")
+                Label(String(localized: "Text shadow", bundle: .forLocale(locale)), systemImage: "square.3.layers.3d.down.right")
             }
-            Picker("Position", selection: styleBinding.position) {
-                Label("Top", systemImage: "align.vertical.top").tag(SubtitlePosition.top)
-                Label("Middle", systemImage: "align.vertical.center").tag(SubtitlePosition.middle)
-                Label("Bottom", systemImage: "align.vertical.bottom").tag(SubtitlePosition.bottom)
+            Picker(String(localized: "Position", bundle: .forLocale(locale)), selection: styleBinding.position) {
+                Label(String(localized: "Top", bundle: .forLocale(locale)), systemImage: "align.vertical.top").tag(SubtitlePosition.top)
+                Label(String(localized: "Middle", bundle: .forLocale(locale)), systemImage: "align.vertical.center").tag(SubtitlePosition.middle)
+                Label(String(localized: "Bottom", bundle: .forLocale(locale)), systemImage: "align.vertical.bottom").tag(SubtitlePosition.bottom)
             }
             .pickerStyle(.segmented)
             Button {
                 copyCuesToClipboard()
                 showCopyConfirmation = true
             } label: {
-                Label("Copy subtitles", systemImage: "doc.on.doc")
+                Label(String(localized: "Copy subtitles", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -393,11 +393,11 @@ struct PreviewExportView: View {
                 )
 
                 VStack(alignment: .leading, spacing: AppSpacing.s) {
-                    Text("Tips").font(AppTypography.bodyEmphasis)
-                    Text("Keep the screen awake for fastest processing.")
+                    Text(String(localized: "Tips", bundle: .forLocale(locale))).font(AppTypography.bodyEmphasis)
+                    Text(String(localized: "Keep the screen awake for fastest processing.", bundle: .forLocale(locale)))
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
-                    Toggle("Keep screen awake", isOn: $keepScreenAwake)
+                    Toggle(String(localized: "Keep screen awake", bundle: .forLocale(locale)), isOn: $keepScreenAwake)
                         .font(AppTypography.caption)
                 }
                 .padding()

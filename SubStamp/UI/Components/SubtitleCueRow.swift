@@ -23,6 +23,8 @@ struct SubtitleCueRow: View {
     var isRetranslating: Bool = false
     var onRetranslate: (() -> Void)?
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             headerRow
@@ -68,11 +70,11 @@ struct SubtitleCueRow: View {
 
     private var legacyInputs: some View {
         Group {
-            TextField("Primary subtitle", text: $cue.primaryText, axis: .vertical)
+            TextField(String(localized: "Primary subtitle", bundle: .forLocale(locale)), text: $cue.primaryText, axis: .vertical)
                 .font(AppTypography.body)
                 .textFieldStyle(.roundedBorder)
             if showSecondary && cue.secondaryText != nil {
-                TextField("Secondary subtitle", text: Binding(
+                TextField(String(localized: "Secondary subtitle", bundle: .forLocale(locale)), text: Binding(
                     get: { cue.secondaryText ?? "" },
                     set: { cue.secondaryText = $0 }
                 ), axis: .vertical)
@@ -89,16 +91,16 @@ struct SubtitleCueRow: View {
             // Original transcription (always shown in enhanced mode)
             VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 HStack(spacing: AppSpacing.xs) {
-                    Text("Original Transcription")
+                    Text(String(localized: "Original Transcription", bundle: .forLocale(locale)))
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
                     if showWillNotBurnNote {
-                        Text("(will not burn into video)")
+                        Text(String(localized: "(will not burn into video)", bundle: .forLocale(locale)))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText.opacity(0.6))
                     }
                 }
-                TextField("Original transcription", text: Binding(
+                TextField(String(localized: "Original transcription", bundle: .forLocale(locale)), text: Binding(
                     get: { cue.originalTranscription ?? cue.primaryText },
                     set: { newValue in
                         cue.originalTranscription = newValue
@@ -119,7 +121,7 @@ struct SubtitleCueRow: View {
                     } label: {
                         HStack(spacing: AppSpacing.xs) {
                             Image(systemName: "arrow.triangle.2.circlepath")
-                            Text(isRetranslating ? "Translating..." : "Retranslate")
+                            Text(isRetranslating ? String(localized: "Translating...", bundle: .forLocale(locale)) : String(localized: "Retranslate", bundle: .forLocale(locale)))
                         }
                         .font(AppTypography.caption)
                         .frame(maxWidth: .infinity)
@@ -171,12 +173,12 @@ struct SubtitleCueRow: View {
 
     private var actionButtons: some View {
         HStack(spacing: AppSpacing.s) {
-            Button("Preview") { onPreview?() }
+            Button(String(localized: "Preview", bundle: .forLocale(locale))) { onPreview?() }
             Spacer()
             Button("-0.1s") { onShiftBack?() }
             Button("+0.1s") { onShiftForward?() }
-            Button("Split") { onSplit?() }
-            Button("Merge") { onMergeNext?() }
+            Button(String(localized: "Split", bundle: .forLocale(locale))) { onSplit?() }
+            Button(String(localized: "Merge", bundle: .forLocale(locale))) { onMergeNext?() }
         }
         .font(AppTypography.caption)
     }

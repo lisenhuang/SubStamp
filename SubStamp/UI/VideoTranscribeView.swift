@@ -132,7 +132,7 @@ struct VideoTranscribeView: View {
         PhotosPicker(selection: $pickerItem, matching: .videos) {
             HStack(spacing: AppSpacing.s) {
                 Image(systemName: "photo.on.rectangle")
-                Text("Choose video")
+                Text(String(localized: "Choose video", bundle: .forLocale(locale)))
                     .font(AppTypography.bodyEmphasis)
             }
             .frame(maxWidth: .infinity)
