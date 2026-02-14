@@ -141,15 +141,17 @@ final class TranscriptionService {
         
         AppLog.append("[RESULTS] Starting to iterate transcriber.results...")
         var resultCount = 0
+        let resultLogInterval = 50
         do {
             for try await result in transcriber.results {
                 resultCount += 1
                 let rawText = String(result.text.characters)
                 let cleaned = SubtitleTextCleaner.clean(rawText)
-                AppLog.append("[RESULT #\(resultCount)] Raw: '\(rawText.prefix(50))...' at \(result.range.start.seconds)s-\(result.range.end.seconds)s")
-                guard !cleaned.isEmpty else { 
-                    AppLog.append("[RESULT #\(resultCount)] Skipped (empty after cleaning)")
-                    continue 
+                if resultCount <= 5 || resultCount.isMultiple(of: resultLogInterval) {
+                    AppLog.append("[RESULT #\(resultCount)] Raw: '\(rawText.prefix(50))...' at \(result.range.start.seconds)s-\(result.range.end.seconds)s")
+                }
+                guard !cleaned.isEmpty else {
+                    continue
                 }
                 let timeRange = result.range
                 let start = timeRange.start

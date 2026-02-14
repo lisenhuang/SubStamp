@@ -3,7 +3,6 @@ import Translation
 
 final class TranslationService {
     private struct CueChunk {
-        let id: String
         let cueIDs: [UUID]
         let sourceText: String
     }
@@ -21,19 +20,21 @@ final class TranslationService {
 
         var completedCueIDs = Set<UUID>()
 
-        do {
-            let chunks = makeChunks(from: cues)
-            let chunkByID = Dictionary(uniqueKeysWithValues: chunks.map { ($0.id, $0) })
-            let requests = chunks.map { chunk in
-                TranslationSession.Request(sourceText: chunk.sourceText, clientIdentifier: chunk.id)
-            }
+        var indexByCueID: [UUID: Int] = [:]
+        for index in output.indices where indexByCueID[output[index].id] == nil {
+            indexByCueID[output[index].id] = index
+        }
+        let chunks = makeChunks(from: cues)
 
-            let stream = session.translate(batch: requests)
-            for try await response in stream {
-                guard let chunkID = response.clientIdentifier, let chunk = chunkByID[chunkID] else { continue }
+        // Process chunk-by-chunk instead of submitting one giant batch.
+        // This avoids memory spikes and framework instability on large jobs (1000+ cues).
+        for chunk in chunks {
+            try Task.checkCancellation()
+            do {
+                let response = try await session.translate(chunk.sourceText)
                 let extracted = extractChunkTranslations(translatedText: response.targetText, cueIDs: chunk.cueIDs)
                 for cueID in chunk.cueIDs {
-                    guard let index = output.firstIndex(where: { $0.id == cueID }) else { continue }
+                    guard let index = indexByCueID[cueID], output.indices.contains(index) else { continue }
                     if let translated = extracted[cueID] {
                         output[index].secondaryText = SubtitleTextCleaner.clean(translated)
                         output[index].hasTranslationError = false
@@ -41,9 +42,10 @@ final class TranslationService {
                     }
                 }
                 progressHandler(completedCueIDs.count, cues.count)
+            } catch {
+                // Fall back to per-cue translation below for any missing cues in this chunk.
+                continue
             }
-        } catch {
-            // We'll fall back to per-cue translation below for any missing cues.
         }
 
         // Fallback for cues that weren't filled by chunk translation (e.g., marker parsing failed).
@@ -99,7 +101,7 @@ final class TranslationService {
             return "\(start)\n\(cue.primaryText)\n\(end)"
         }.joined(separator: "\n")
 
-        return CueChunk(id: UUID().uuidString, cueIDs: cueIDs, sourceText: sourceText)
+        return CueChunk(cueIDs: cueIDs, sourceText: sourceText)
     }
 
     private func markerStart(for cueID: UUID) -> String {

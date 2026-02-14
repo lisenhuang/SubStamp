@@ -25,7 +25,6 @@ struct PreviewExportView: View {
     @State private var isPlayingPreview = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var showCopyConfirmation = false
-    @State private var keepScreenAwake = false
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -206,7 +205,6 @@ struct PreviewExportView: View {
         .onDisappear {
             player?.pause()
             player = nil
-            UIApplication.shared.isIdleTimerDisabled = false
             session1 = nil; session2 = nil; session3 = nil
         }
         .onChange(of: orchestrator.outputURL) { _, newValue in
@@ -216,9 +214,6 @@ struct PreviewExportView: View {
             if complete {
                 scrollTrigger += 1
             }
-        }
-        .onChange(of: keepScreenAwake) { _, newValue in
-            UIApplication.shared.isIdleTimerDisabled = newValue
         }
         .translationTask(config1) { session in
             session1 = session
@@ -339,29 +334,31 @@ struct PreviewExportView: View {
     // MARK: - Cue list
 
     private var cueList: some View {
-        VStack(spacing: AppSpacing.s) {
+        LazyVStack(spacing: AppSpacing.s) {
             ForEach(Array(orchestrator.cues.indices), id: \.self) { index in
-                SubtitleCueRow(
-                    index: index,
-                    cue: $orchestrator.cues[index],
-                    onSplit: { splitCue(at: index) },
-                    onMergeNext: { mergeCue(at: index) },
-                    onShiftBack: { shiftCue(at: index, by: -0.1) },
-                    onShiftForward: { shiftCue(at: index, by: 0.1) },
-                    onPreview: { previewCue(orchestrator.cues[index]) },
-                    showOriginalTranscription: true,
-                    showSubtitle1Translation: showSubtitle1Translation,
-                    showSubtitle2Translation: showSubtitle2Translation,
-                    showWillNotBurnNote: showWillNotBurnNote,
-                    subtitle1Label: subtitle1Label,
-                    subtitle2Label: subtitle2Label,
-                    onOriginalEdited: { markCueStale(cueID: orchestrator.cues[index].id) },
-                    onSubtitleEdited: { cuesChangedSinceExport = true },
-                    showRetranslateButton: staleCueIDs.contains(orchestrator.cues[index].id),
-                    isRetranslating: retranslatingCueIDs.contains(orchestrator.cues[index].id),
-                    onRetranslate: { retranslateCue(at: index) }
-                )
-                .focused($isTextFieldFocused)
+                if orchestrator.cues.indices.contains(index) {
+                    SubtitleCueRow(
+                        index: index,
+                        cue: $orchestrator.cues[index],
+                        onSplit: { splitCue(at: index) },
+                        onMergeNext: { mergeCue(at: index) },
+                        onShiftBack: { shiftCue(at: index, by: -0.1) },
+                        onShiftForward: { shiftCue(at: index, by: 0.1) },
+                        onPreview: { previewCue(orchestrator.cues[index]) },
+                        showOriginalTranscription: true,
+                        showSubtitle1Translation: showSubtitle1Translation,
+                        showSubtitle2Translation: showSubtitle2Translation,
+                        showWillNotBurnNote: showWillNotBurnNote,
+                        subtitle1Label: subtitle1Label,
+                        subtitle2Label: subtitle2Label,
+                        onOriginalEdited: { markCueStale(cueID: orchestrator.cues[index].id) },
+                        onSubtitleEdited: { cuesChangedSinceExport = true },
+                        showRetranslateButton: staleCueIDs.contains(orchestrator.cues[index].id),
+                        isRetranslating: retranslatingCueIDs.contains(orchestrator.cues[index].id),
+                        onRetranslate: { retranslateCue(at: index) }
+                    )
+                    .focused($isTextFieldFocused)
+                }
             }
         }
         .padding()
@@ -394,11 +391,9 @@ struct PreviewExportView: View {
 
                 VStack(alignment: .leading, spacing: AppSpacing.s) {
                     Text(String(localized: "Tips", bundle: .forLocale(locale))).font(AppTypography.bodyEmphasis)
-                    Text(String(localized: "Keep the screen awake for fastest processing.", bundle: .forLocale(locale)))
+                    Text(String(localized: "The screen stays awake automatically during translation and export.", bundle: .forLocale(locale)))
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
-                    Toggle(String(localized: "Keep screen awake", bundle: .forLocale(locale)), isOn: $keepScreenAwake)
-                        .font(AppTypography.caption)
                 }
                 .padding()
                 .background(AppColors.cardBackground)

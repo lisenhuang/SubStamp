@@ -25,7 +25,6 @@ struct VideoTranscribeView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var isLoadingVideo = false
     @State private var videoError: String?
-    @State private var keepScreenAwake = false
     @State private var showBackToSetupConfirmation = false
 
     @Environment(\.locale) private var locale
@@ -89,12 +88,6 @@ struct VideoTranscribeView: View {
         }
         .onChange(of: orchestrator.transcriptionComplete) { _, complete in
             if complete { onNext() }
-        }
-        .onChange(of: keepScreenAwake) { _, newValue in
-            UIApplication.shared.isIdleTimerDisabled = newValue
-        }
-        .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
         }
         .confirmationDialog(
             Text(String(localized: "Start over?", bundle: .forLocale(locale))),
@@ -219,11 +212,9 @@ struct VideoTranscribeView: View {
 
                 VStack(alignment: .leading, spacing: AppSpacing.s) {
                     Text("Tips").font(AppTypography.bodyEmphasis)
-                    Text("iOS may stop work in the background. Keep the screen awake for fastest processing.")
+                    Text("iOS may stop work in the background. The screen stays awake automatically during transcription.")
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
-                    Toggle("Keep screen awake", isOn: $keepScreenAwake)
-                        .font(AppTypography.caption)
                 }
                 .padding()
                 .background(AppColors.cardBackground)

@@ -5,13 +5,18 @@ import Translation
 
 @MainActor
 final class PipelineOrchestrator: ObservableObject {
-    private let transcriptionService = TranscriptionService()
+    private static let transcriptionProgressNotification = Notification.Name("PipelineOrchestrator.transcriptionProgress")
+    private static let transcriptionProgressValueKey = "value"
+    private static let transcriptionProgressJobIDKey = "jobID"
+
     private let translationService = TranslationService()
     private let appleIntelligenceTranslationService = AppleIntelligenceTranslationService()
     private let appleIntelligenceTranscriptionRepairService = AppleIntelligenceTranscriptionRepairService()
     private let subtitleRenderer = SubtitleRenderer()
     private let exportService = ExportService()
     private let jobStore = JobStore()
+    private let minProgressUpdateInterval: TimeInterval = 0.12
+    private let minProgressDelta: Double = 0.01
 
     @Published var stageStates: [ProcessingStage: PipelineStageState] = [:]
     @Published var stageProgress: [ProcessingStage: Double] = [:]
@@ -28,6 +33,8 @@ final class PipelineOrchestrator: ObservableObject {
     private var frameworkSession1: TranslationSession?
     private var frameworkSession2: TranslationSession?
     private var frameworkSession3: TranslationSession?
+    private var lastProgressUpdateTime: [ProcessingStage: TimeInterval] = [:]
+    private var lastProgressValue: [ProcessingStage: Double] = [:]
 
     init() {
         resetStages()
@@ -55,6 +62,8 @@ final class PipelineOrchestrator: ObservableObject {
         isRunning = false
         transcriptionComplete = false
         translationComplete = false
+        lastProgressUpdateTime.removeAll()
+        lastProgressValue.removeAll()
     }
 
     func updateTranslationSessions(s1: TranslationSession?, s2: TranslationSession?, s3: TranslationSession?) {
@@ -137,13 +146,36 @@ final class PipelineOrchestrator: ObservableObject {
             let range = timeRange(for: job, asset: asset)
             let shouldFixTranscription = job.translationProvider == .appleIntelligence && job.fixTranscriptionWithAppleIntelligence
             let transcriptionWeight = shouldFixTranscription ? 0.8 : 1.0
-            let transcriptionResult = try await transcriptionService.transcribe(
-                asset: asset,
-                locale: Locale(identifier: job.transcriptionLocale),
-                timeRange: range
-            ) { [weak self] progress, count in
-                self?.stageProgress[.transcribing] = progress * transcriptionWeight
+            let observer = NotificationCenter.default.addObserver(
+                forName: Self.transcriptionProgressNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                guard let self else { return }
+                guard let value = note.userInfo?[Self.transcriptionProgressValueKey] as? Double else { return }
+                guard let jobID = note.userInfo?[Self.transcriptionProgressJobIDKey] as? UUID, jobID == job.id else { return }
+                self.updateStageProgress(.transcribing, value: value)
             }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            let transcriptionResult = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
+                let service = TranscriptionService()
+                let detachedAsset = AVAsset(url: videoURL)
+                return try await service.transcribe(
+                    asset: detachedAsset,
+                    locale: Locale(identifier: localeID),
+                    timeRange: range
+                ) { progress, _ in
+                    NotificationCenter.default.post(
+                        name: Self.transcriptionProgressNotification,
+                        object: nil,
+                        userInfo: [
+                            Self.transcriptionProgressValueKey: progress * transcriptionWeight,
+                            Self.transcriptionProgressJobIDKey: jobID
+                        ]
+                    )
+                }
+            }.value
 
             try Task.checkCancellation()
 
@@ -161,7 +193,7 @@ final class PipelineOrchestrator: ObservableObject {
                         locale: Locale(identifier: job.transcriptionLocale)
                     ) { [weak self] completed, total in
                         let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                        self?.stageProgress[.transcribing] = transcriptionWeight + frac * (1.0 - transcriptionWeight)
+                        self?.updateStageProgress(.transcribing, value: transcriptionWeight + frac * (1.0 - transcriptionWeight))
                     }
                     try jobStore.saveCues(cues, id: job.id, type: .transcribed)
 #if DEBUG
@@ -279,17 +311,17 @@ final class PipelineOrchestrator: ObservableObject {
             if job.subtitle1Mode == .pivot {
                 guard let sessionA = frameworkSession1, let sessionB = frameworkSession2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -40)) }
                 let mid = try await translationService.translate(cues: sourceCues, session: sessionA) { [weak self] c, t in
-                    self?.stageProgress[.translating] = t == 0 ? 0 : (Double(c)/Double(t)) * 0.25
+                    self?.updateStageProgress(.translating, value: t == 0 ? 0 : (Double(c)/Double(t)) * 0.25)
                 }
                 let english = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
                 let finalRes = try await translationService.translate(cues: english, session: sessionB) { [weak self] c, t in
-                    self?.stageProgress[.translating] = t == 0 ? 0.25 : 0.25 + (Double(c)/Double(t)) * 0.25
+                    self?.updateStageProgress(.translating, value: t == 0 ? 0.25 : 0.25 + (Double(c)/Double(t)) * 0.25)
                 }
                 primaryCues = mapTranslationOutputToPrimary(finalRes, fallbackToSourceTextOnFailure: true)
             } else {
                 guard let session = frameworkSession2 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -41)) }
                 let res = try await translationService.translate(cues: sourceCues, session: session) { [weak self] c, t in
-                    self?.stageProgress[.translating] = t == 0 ? 0 : (Double(c)/Double(t)) * 0.5
+                    self?.updateStageProgress(.translating, value: t == 0 ? 0 : (Double(c)/Double(t)) * 0.5)
                 }
                 primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true)
             }
@@ -301,17 +333,17 @@ final class PipelineOrchestrator: ObservableObject {
             if job.subtitle2Mode == .pivot {
                 guard let sessionA = frameworkSession1, let sessionC = frameworkSession3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -42)) }
                 let mid = try await translationService.translate(cues: sourceCues, session: sessionA) { [weak self] c, t in
-                    self?.stageProgress[.translating] = t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.25
+                    self?.updateStageProgress(.translating, value: t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.25)
                 }
                 let english = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
                 let finalRes = try await translationService.translate(cues: english, session: sessionC) { [weak self] c, t in
-                    self?.stageProgress[.translating] = t == 0 ? 0.75 : 0.75 + (Double(c)/Double(t)) * 0.25
+                    self?.updateStageProgress(.translating, value: t == 0 ? 0.75 : 0.75 + (Double(c)/Double(t)) * 0.25)
                 }
                 secondaryCues = mapTranslationOutputToPrimary(finalRes, fallbackToSourceTextOnFailure: false)
             } else {
                 guard let session = frameworkSession3 else { throw SubStampError.translationError(underlying: NSError(domain: "SubStamp", code: -43)) }
                 let res = try await translationService.translate(cues: sourceCues, session: session) { [weak self] c, t in
-                    self?.stageProgress[.translating] = t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.5
+                    self?.updateStageProgress(.translating, value: t == 0 ? 0.5 : 0.5 + (Double(c)/Double(t)) * 0.5)
                 }
                 secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false)
             }
@@ -525,7 +557,7 @@ final class PipelineOrchestrator: ObservableObject {
                 targets: translationTargets
             ) { [weak self] completed, total in
                 let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                self?.stageProgress[.translating] = frac
+                self?.updateStageProgress(.translating, value: frac)
             }
         }
 
@@ -597,7 +629,7 @@ final class PipelineOrchestrator: ObservableObject {
                 preset: job.exportPreset
             ) { [weak self] progress in
                 Task { @MainActor in
-                    self?.stageProgress[.exporting] = progress
+                    self?.updateStageProgress(.exporting, value: progress)
                 }
             }
 
@@ -627,6 +659,20 @@ final class PipelineOrchestrator: ObservableObject {
         guard job.isTestClip else { return nil }
         let maxDuration = min(job.testClipDuration, asset.duration.seconds)
         return CMTimeRange(start: .zero, duration: CMTime(seconds: maxDuration, preferredTimescale: 600))
+    }
+
+    private func updateStageProgress(_ stage: ProcessingStage, value: Double, force: Bool = false) {
+        let clamped = min(max(value, 0), 1)
+        let now = Date().timeIntervalSinceReferenceDate
+        let lastValue = lastProgressValue[stage] ?? -1
+        let lastTime = lastProgressUpdateTime[stage] ?? 0
+        let delta = abs(clamped - lastValue)
+        let elapsed = now - lastTime
+        let shouldPublish = force || lastValue < 0 || delta >= minProgressDelta || elapsed >= minProgressUpdateInterval
+        guard shouldPublish else { return }
+        stageProgress[stage] = clamped
+        lastProgressValue[stage] = clamped
+        lastProgressUpdateTime[stage] = now
     }
 
     private func markFailed() {

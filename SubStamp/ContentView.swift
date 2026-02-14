@@ -1,5 +1,6 @@
 import SwiftUI
 import Translation
+import UIKit
 
 struct ContentView: View {
     enum WizardStep {
@@ -33,6 +34,16 @@ struct ContentView: View {
     private let jobStore = JobStore()
 
     @Environment(\.locale) private var locale
+
+    private var shouldKeepScreenAwake: Bool {
+        guard orchestrator.isRunning else { return false }
+        switch orchestrator.currentStage {
+        case .transcribing, .translating, .rendering, .exporting:
+            return true
+        default:
+            return false
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -112,6 +123,18 @@ struct ContentView: View {
                 showResumeAlert = true
             }
         }
+        .onChange(of: orchestrator.isRunning) { _, _ in
+            updateIdleTimerPolicy()
+        }
+        .onChange(of: orchestrator.currentStage) { _, _ in
+            updateIdleTimerPolicy()
+        }
+        .onAppear {
+            updateIdleTimerPolicy()
+        }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
     }
 
     private func loadSetupSelections() {
@@ -185,5 +208,9 @@ struct ContentView: View {
             // No cues saved yet → go to video & transcribe
             step = .videoAndTranscribe
         }
+    }
+
+    private func updateIdleTimerPolicy() {
+        UIApplication.shared.isIdleTimerDisabled = shouldKeepScreenAwake
     }
 }
