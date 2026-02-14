@@ -5,9 +5,9 @@ import Translation
 
 @MainActor
 final class PipelineOrchestrator: ObservableObject {
-    private static let transcriptionProgressNotification = Notification.Name("PipelineOrchestrator.transcriptionProgress")
-    private static let transcriptionProgressValueKey = "value"
-    private static let transcriptionProgressJobIDKey = "jobID"
+    nonisolated private static let transcriptionProgressNotification = Notification.Name("PipelineOrchestrator.transcriptionProgress")
+    nonisolated private static let transcriptionProgressValueKey = "value"
+    nonisolated private static let transcriptionProgressJobIDKey = "jobID"
 
     private let translationService = TranslationService()
     private let appleIntelligenceTranslationService = AppleIntelligenceTranslationService()
@@ -592,44 +592,135 @@ final class PipelineOrchestrator: ObservableObject {
     }
 
     private func runRenderExport(job: JobModel) async {
+        var segmentURLs: [URL] = []
+        var activeSegmentIndex: Int?
+        var activeSegmentRange: CMTimeRange?
+        defer {
+            for url in segmentURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+
         do {
             try Task.checkCancellation()
 
             let asset = AVAsset(url: job.videoURL)
+            let range = timeRange(for: job, asset: asset)
             currentStage = .rendering
             stageStates[.rendering] = .active
+            stageProgress[.rendering] = 0
+            stageStates[.exporting] = .pending
+            stageProgress[.exporting] = 0
             var updatedJob = job
             updatedJob.stage = .rendering
             updatedJob.updatedAt = Date()
             try jobStore.save(job: updatedJob)
-            let range = timeRange(for: job, asset: asset)
-            
-            let renderResult = try await subtitleRenderer.createComposition(
-                asset: asset,
-                cues: cues,
-                mode: job.subtitleMode,
-                style: job.subtitleStyle,
-                layout: job.subtitleLayout,
-                timeRange: range
-            )
 
-            try Task.checkCancellation()
+            let effectiveRange = range ?? CMTimeRange(start: .zero, duration: asset.duration)
+            let shouldSegment = shouldUseSegmentedExport(range: effectiveRange, cueCount: cues.count)
+            let exportedURL: URL
 
-            stageStates[.rendering] = .done
-            stageProgress[.rendering] = 1
+            if shouldSegment {
+#if DEBUG
+                AppLog.append("[EXPORT] segmented mode enabled duration=\(effectiveRange.duration.seconds)s cues=\(cues.count)")
+#endif
+                currentStage = .exporting
+                stageStates[.exporting] = .active
+                updatedJob.stage = .exporting
+                updatedJob.updatedAt = Date()
+                try jobStore.save(job: updatedJob)
 
-            currentStage = .exporting
-            stageStates[.exporting] = .active
-            updatedJob.stage = .exporting
-            updatedJob.updatedAt = Date()
-            try jobStore.save(job: updatedJob)
-            let exportedURL = try await exportService.export(
-                composition: renderResult.composition,
-                videoComposition: renderResult.videoComposition,
-                preset: job.exportPreset
-            ) { [weak self] progress in
-                Task { @MainActor in
-                    self?.updateStageProgress(.exporting, value: progress)
+                let segmentDuration: Double = 300
+                let segmentCount = max(1, Int(ceil(effectiveRange.duration.seconds / segmentDuration)))
+                segmentURLs.reserveCapacity(segmentCount)
+
+                for segmentIndex in 0..<segmentCount {
+                    try Task.checkCancellation()
+
+                    let segmentRange = makeSegmentRange(
+                        baseRange: effectiveRange,
+                        segmentIndex: segmentIndex,
+                        segmentDuration: segmentDuration
+                    )
+                    activeSegmentIndex = segmentIndex
+                    activeSegmentRange = segmentRange
+                    let segmentCues = cues(in: segmentRange, from: cues)
+
+#if DEBUG
+                    AppLog.append("[EXPORT] segment \(segmentIndex + 1)/\(segmentCount) range=\(segmentRange.start.seconds)-\(segmentRange.end.seconds) cues=\(segmentCues.count)")
+#endif
+
+                    updateStageProgress(.rendering, value: Double(segmentIndex) / Double(segmentCount))
+
+                    let renderResult = try await subtitleRenderer.createComposition(
+                        asset: asset,
+                        cues: segmentCues,
+                        mode: job.subtitleMode,
+                        style: job.subtitleStyle,
+                        layout: job.subtitleLayout,
+                        timeRange: segmentRange
+                    )
+
+                    updateStageProgress(.rendering, value: Double(segmentIndex + 1) / Double(segmentCount))
+
+                    let segmentURL = try await exportService.export(
+                        composition: renderResult.composition,
+                        videoComposition: renderResult.videoComposition,
+                        preset: job.exportPreset
+                    ) { [weak self] progress in
+                        let completedSegments = Double(segmentIndex)
+                        let totalSegments = Double(segmentCount)
+                        let segmentProgress = (completedSegments + progress) / totalSegments
+                        let mapped = segmentProgress * 0.85
+                        Task { @MainActor in
+                            self?.updateStageProgress(.exporting, value: mapped)
+                        }
+                    }
+                    segmentURLs.append(segmentURL)
+                }
+                activeSegmentIndex = nil
+                activeSegmentRange = nil
+
+                stageStates[.rendering] = .done
+                updateStageProgress(.rendering, value: 1, force: true)
+
+                exportedURL = try await exportService.concatenate(
+                    segmentURLs: segmentURLs,
+                    preference: job.exportPreset
+                ) { [weak self] progress in
+                    let mapped = 0.85 + progress * 0.15
+                    Task { @MainActor in
+                        self?.updateStageProgress(.exporting, value: mapped)
+                    }
+                }
+            } else {
+                let renderResult = try await subtitleRenderer.createComposition(
+                    asset: asset,
+                    cues: cues,
+                    mode: job.subtitleMode,
+                    style: job.subtitleStyle,
+                    layout: job.subtitleLayout,
+                    timeRange: range
+                )
+
+                try Task.checkCancellation()
+
+                stageStates[.rendering] = .done
+                stageProgress[.rendering] = 1
+
+                currentStage = .exporting
+                stageStates[.exporting] = .active
+                updatedJob.stage = .exporting
+                updatedJob.updatedAt = Date()
+                try jobStore.save(job: updatedJob)
+                exportedURL = try await exportService.export(
+                    composition: renderResult.composition,
+                    videoComposition: renderResult.videoComposition,
+                    preset: job.exportPreset
+                ) { [weak self] progress in
+                    Task { @MainActor in
+                        self?.updateStageProgress(.exporting, value: progress)
+                    }
                 }
             }
 
@@ -650,8 +741,54 @@ final class PipelineOrchestrator: ObservableObject {
             return
         } catch {
             guard !Task.isCancelled else { isRunning = false; return }
+#if DEBUG
+            if let activeSegmentIndex, let activeSegmentRange {
+                AppLog.append("[EXPORT] failed segment=\(activeSegmentIndex + 1) range=\(activeSegmentRange.start.seconds)-\(activeSegmentRange.end.seconds) error=\(error.localizedDescription)")
+            } else {
+                AppLog.append("[EXPORT] failed error=\(error.localizedDescription)")
+            }
+#endif
             self.error = (error as? SubStampError) ?? .exportFailed(underlying: error)
             markFailed()
+        }
+    }
+
+    private func shouldUseSegmentedExport(range: CMTimeRange, cueCount: Int) -> Bool {
+        let duration = max(0, range.duration.seconds)
+        return duration > 15 * 60 || cueCount >= 700
+    }
+
+    private func makeSegmentRange(
+        baseRange: CMTimeRange,
+        segmentIndex: Int,
+        segmentDuration: Double
+    ) -> CMTimeRange {
+        let startSeconds = baseRange.start.seconds + (Double(segmentIndex) * segmentDuration)
+        let baseEnd = baseRange.start.seconds + baseRange.duration.seconds
+        let durationSeconds = min(segmentDuration, max(0, baseEnd - startSeconds))
+        return CMTimeRange(
+            start: CMTime(seconds: startSeconds, preferredTimescale: 600),
+            duration: CMTime(seconds: durationSeconds, preferredTimescale: 600)
+        )
+    }
+
+    private func cues(in segmentRange: CMTimeRange, from cues: [SubtitleCue]) -> [SubtitleCue] {
+        let segmentStart = segmentRange.start.seconds
+        let segmentEnd = segmentStart + segmentRange.duration.seconds
+
+        return cues.compactMap { cue in
+            let cueStart = cue.start.seconds
+            let cueEnd = cue.end.seconds
+            guard cueEnd > segmentStart, cueStart < segmentEnd else { return nil }
+
+            let adjustedStart = max(cueStart, segmentStart) - segmentStart
+            let adjustedEnd = min(cueEnd, segmentEnd) - segmentStart
+            guard adjustedEnd > adjustedStart + 0.01 else { return nil }
+
+            var adjusted = cue
+            adjusted.start = CMTime(seconds: adjustedStart, preferredTimescale: 600)
+            adjusted.end = CMTime(seconds: adjustedEnd, preferredTimescale: 600)
+            return adjusted
         }
     }
 

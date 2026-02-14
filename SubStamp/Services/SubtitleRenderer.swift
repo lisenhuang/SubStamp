@@ -25,9 +25,11 @@ final class SubtitleRenderer {
             withMediaType: .video,
             preferredTrackID: kCMPersistentTrackID_Invalid
         )
-        let range = timeRange ?? CMTimeRange(start: .zero, duration: asset.duration)
+        let sourceRange = timeRange ?? CMTimeRange(start: .zero, duration: asset.duration)
+        // Composition timeline always starts at zero even when reading a source subrange.
+        let timelineRange = CMTimeRange(start: .zero, duration: sourceRange.duration)
         try videoCompositionTrack?.insertTimeRange(
-            range,
+            sourceRange,
             of: videoTrack,
             at: .zero
         )
@@ -38,7 +40,7 @@ final class SubtitleRenderer {
                 preferredTrackID: kCMPersistentTrackID_Invalid
             )
             try audioCompositionTrack?.insertTimeRange(
-                range,
+                sourceRange,
                 of: audioTrack,
                 at: .zero
             )
@@ -50,11 +52,18 @@ final class SubtitleRenderer {
         let preferredTransform = videoTrack.preferredTransform
         let naturalSize = videoTrack.naturalSize
         let transformedSize = naturalSize.applying(preferredTransform)
-        let renderSize = CGSize(width: abs(transformedSize.width), height: abs(transformedSize.height))
+        let transformedWidth = abs(transformedSize.width)
+        let transformedHeight = abs(transformedSize.height)
+        // Guard against invalid/non-integral dimensions from transforms.
+        let fallbackWidth = abs(naturalSize.width)
+        let fallbackHeight = abs(naturalSize.height)
+        let safeWidth = max(1, round(transformedWidth > 0 ? transformedWidth : fallbackWidth))
+        let safeHeight = max(1, round(transformedHeight > 0 ? transformedHeight : fallbackHeight))
+        let renderSize = CGSize(width: safeWidth, height: safeHeight)
         videoComposition.renderSize = renderSize
 
         let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = range
+        instruction.timeRange = timelineRange
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoCompositionTrack!)
         let fixedTransform = normalizeTransform(preferredTransform, renderSize: renderSize)
         layerInstruction.setTransform(fixedTransform, at: .zero)
@@ -73,7 +82,7 @@ final class SubtitleRenderer {
             style: style,
             layout: layout,
             renderSize: renderSize,
-            duration: range.duration
+            duration: timelineRange.duration
         )
         overlayLayers.forEach { parentLayer.addSublayer($0) }
 
