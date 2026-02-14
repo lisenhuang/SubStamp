@@ -98,6 +98,7 @@ struct ContentView: View {
                 if let outputURL, let job = activeJob {
                     ResultView(
                         outputURL: outputURL,
+                        sourceVideoURL: job.videoURL,
                         exportPreset: job.exportPreset,
                         onBackToEdit: { step = .previewAndExport },
                         onStartOver: { resetToSetup() }

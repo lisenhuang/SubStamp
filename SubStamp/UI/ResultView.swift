@@ -1,19 +1,35 @@
+import Combine
+import CryptoKit
 import Photos
+import Security
+import StoreKit
 import SwiftUI
+import UIKit
 
 struct ResultView: View {
     let outputURL: URL
+    let sourceVideoURL: URL
     let exportPreset: ExportPreset
     var onBackToEdit: (() -> Void)?
     var onStartOver: () -> Void
+
+    @StateObject private var purchaseManager = PurchaseManager()
 
     @State private var metadata: VideoMetadata?
     @State private var saveStatus: String?
     @State private var isSaving = false
     @State private var hasSavedToPhotos = false
     @State private var showStartOverConfirmation = false
+    @State private var quotaSnapshot = SaveShareQuotaStore.Snapshot.initial
+    @State private var shareShouldConsumeQuota = false
+    @State private var showShareSheet = false
+    @State private var showPaywall = false
 
     @Environment(\.locale) private var locale
+
+    private var videoFingerprint: String {
+        SaveShareQuotaStore.fingerprint(for: sourceVideoURL)
+    }
 
     var body: some View {
         ScrollView {
@@ -82,25 +98,30 @@ struct ResultView: View {
                         .foregroundStyle(AppColors.secondaryText)
                 }
 
+                if !purchaseManager.hasPremiumAccess {
+                    Text("Free saves/shares remaining: \(quotaSnapshot.remainingCount)/\(quotaSnapshot.limit)")
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.secondaryText)
+                } else {
+                    Text("Premium unlocked: unlimited saves and sharing.")
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.secondaryText)
+                }
+
                 PrimaryButton(
                     title: isSaving ? "Saving..." : "Save to Photos",
                     systemImage: "square.and.arrow.down",
                     isEnabled: !isSaving
                 ) {
-                    saveToPhotos()
+                    Task { await beginSaveFlow() }
                 }
 
-                ShareLink(item: outputURL) {
-                    HStack(spacing: AppSpacing.s) {
-                        Image(systemName: "square.and.arrow.up")
-                        Text("Share")
-                            .font(AppTypography.bodyEmphasis)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, AppSpacing.m)
-                    .foregroundStyle(Color.white)
-                    .background(AppColors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+                PrimaryButton(
+                    title: "Share",
+                    systemImage: "square.and.arrow.up",
+                    isEnabled: !isSaving
+                ) {
+                    Task { await beginShareFlow() }
                 }
 
                 PrimaryButton(title: "Start another", systemImage: "arrow.counterclockwise") {
@@ -120,41 +141,131 @@ struct ResultView: View {
         } message: {
             Text(String(localized: "You haven't saved this video to Photos yet. Continue anyway?", bundle: .forLocale(locale)))
         }
+        .sheet(isPresented: $showShareSheet) {
+            ActivityShareSheet(activityItems: [outputURL]) { completed in
+                onShareFinished(completed: completed)
+            }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PurchasePaywallView(
+                purchaseManager: purchaseManager,
+                usedCount: quotaSnapshot.usedCount,
+                freeLimit: quotaSnapshot.limit
+            ) {
+                Task { await refreshQuotaSnapshot() }
+            }
+        }
         .task {
             metadata = await VideoMetadata.load(from: outputURL)
+            await purchaseManager.prepareIfNeeded()
+            await refreshQuotaSnapshot()
+        }
+        .onChange(of: purchaseManager.hasPremiumAccess) { _, _ in
+            Task { await refreshQuotaSnapshot() }
         }
     }
 
-    private func saveToPhotos() {
+    @MainActor
+    private func beginSaveFlow() async {
+        let decision = await SaveShareQuotaStore.shared.evaluateAccess(
+            for: videoFingerprint,
+            isPaid: purchaseManager.hasPremiumAccess
+        )
+        quotaSnapshot = decision.snapshot
+
+        guard decision.isAllowed else {
+            saveStatus = "Free save/share limit reached. Please unlock premium to continue."
+            showPaywall = true
+            return
+        }
+
+        saveToPhotos(recordQuotaOnSuccess: decision.shouldConsumeQuota, isPaidAtActionTime: decision.isPaid)
+    }
+
+    @MainActor
+    private func beginShareFlow() async {
+        let decision = await SaveShareQuotaStore.shared.evaluateAccess(
+            for: videoFingerprint,
+            isPaid: purchaseManager.hasPremiumAccess
+        )
+        quotaSnapshot = decision.snapshot
+
+        guard decision.isAllowed else {
+            saveStatus = "Free save/share limit reached. Please unlock premium to continue."
+            showPaywall = true
+            return
+        }
+
+        shareShouldConsumeQuota = decision.shouldConsumeQuota
+        showShareSheet = true
+    }
+
+    @MainActor
+    private func onShareFinished(completed: Bool) {
+        let shouldConsumeQuota = shareShouldConsumeQuota
+        shareShouldConsumeQuota = false
+        guard completed else { return }
+        saveStatus = "Shared successfully."
+
+        Task {
+            if shouldConsumeQuota {
+                let updated = await SaveShareQuotaStore.shared.recordSuccess(for: videoFingerprint)
+                await MainActor.run {
+                    quotaSnapshot = updated
+                }
+            } else {
+                await refreshQuotaSnapshot()
+            }
+        }
+    }
+
+    private func saveToPhotos(recordQuotaOnSuccess: Bool, isPaidAtActionTime: Bool) {
         print("[SAVE] saveToPhotos() called")
         print("[SAVE] outputURL: \(outputURL)")
         print("[SAVE] File exists: \(FileManager.default.fileExists(atPath: outputURL.path))")
-        
+
+        let fingerprint = videoFingerprint
         isSaving = true
         saveStatus = String(localized: "Saving to Photos...", bundle: .forLocale(locale))
-        
+
         // Use a plain Task (not @MainActor) to avoid the Swift 6 libdispatch crash
-        Task.detached { [outputURL] in
+        Task.detached { [outputURL, recordQuotaOnSuccess, isPaidAtActionTime, fingerprint] in
             print("[SAVE] Detached task started")
-            
+
             do {
                 try await PhotoSaver.saveVideoToPhotos(fileURL: outputURL)
                 print("[SAVE] Save completed successfully")
-                
+
+                let latestQuota: SaveShareQuotaStore.Snapshot
+                if recordQuotaOnSuccess {
+                    latestQuota = await SaveShareQuotaStore.shared.recordSuccess(for: fingerprint)
+                } else {
+                    latestQuota = await SaveShareQuotaStore.shared.snapshot(for: fingerprint, isPaid: isPaidAtActionTime)
+                }
+
                 await MainActor.run {
                     self.isSaving = false
                     self.saveStatus = String(localized: "Saved to Photos!", bundle: .forLocale(self.locale))
                     self.hasSavedToPhotos = true
+                    self.quotaSnapshot = latestQuota
                 }
             } catch {
                 print("[SAVE] Save failed: \(error)")
-                
+
                 await MainActor.run {
                     self.isSaving = false
                     self.saveStatus = String(localized: "Failed:", bundle: .forLocale(self.locale)) + " \(error.localizedDescription)"
                 }
             }
         }
+    }
+
+    @MainActor
+    private func refreshQuotaSnapshot() async {
+        quotaSnapshot = await SaveShareQuotaStore.shared.snapshot(
+            for: videoFingerprint,
+            isPaid: purchaseManager.hasPremiumAccess
+        )
     }
 }
 
@@ -210,5 +321,391 @@ final class PhotoSaver: Sendable {
         }
         
         print("[PhotoSaver] Save operation completed")
+    }
+}
+
+@MainActor
+final class PurchaseManager: ObservableObject {
+    static let weeklyProductID = "com.huanglisen.SubStamp.pro.weekly.v2"
+    static let lifetimeProductID = "com.huanglisen.SubStamp.pro.lifetime"
+    static let supportedProductIDs: Set<String> = [weeklyProductID, lifetimeProductID]
+
+    @Published private(set) var products: [Product] = []
+    @Published private(set) var hasPremiumAccess = false
+    @Published private(set) var isLoadingProducts = false
+    @Published private(set) var isProcessingPurchase = false
+    @Published var errorMessage: String?
+
+    func prepareIfNeeded() async {
+        await refreshEntitlements()
+        if products.isEmpty {
+            await loadProducts()
+        }
+    }
+
+    func product(for id: String) -> Product? {
+        products.first { $0.id == id }
+    }
+
+    func loadProducts() async {
+        guard !isLoadingProducts else { return }
+        isLoadingProducts = true
+        defer { isLoadingProducts = false }
+
+        do {
+            let loaded = try await Product.products(for: Array(Self.supportedProductIDs))
+            let order = [Self.weeklyProductID, Self.lifetimeProductID]
+            products = loaded.sorted { lhs, rhs in
+                let left = order.firstIndex(of: lhs.id) ?? Int.max
+                let right = order.firstIndex(of: rhs.id) ?? Int.max
+                return left < right
+            }
+        } catch {
+            errorMessage = "Unable to load purchase options. \(error.localizedDescription)"
+        }
+    }
+
+    func purchase(_ product: Product) async {
+        guard !isProcessingPurchase else { return }
+        isProcessingPurchase = true
+        errorMessage = nil
+        defer { isProcessingPurchase = false }
+
+        do {
+            let result = try await product.purchase()
+            switch result {
+            case let .success(verificationResult):
+                switch verificationResult {
+                case let .verified(transaction):
+                    await transaction.finish()
+                    await refreshEntitlements()
+                case .unverified:
+                    errorMessage = "Purchase could not be verified."
+                }
+            case .pending:
+                errorMessage = "Purchase is pending approval."
+            case .userCancelled:
+                break
+            @unknown default:
+                errorMessage = "Purchase did not complete."
+            }
+        } catch {
+            errorMessage = "Purchase failed. \(error.localizedDescription)"
+        }
+    }
+
+    func restorePurchases() async {
+        errorMessage = nil
+        do {
+            try await AppStore.sync()
+            await refreshEntitlements()
+        } catch {
+            errorMessage = "Restore failed. \(error.localizedDescription)"
+        }
+    }
+
+    func refreshEntitlements() async {
+        var unlocked = false
+        for await result in Transaction.currentEntitlements {
+            guard case let .verified(transaction) = result else { continue }
+            if Self.supportedProductIDs.contains(transaction.productID) {
+                unlocked = true
+            }
+        }
+        hasPremiumAccess = unlocked
+    }
+}
+
+actor SaveShareQuotaStore {
+    static let shared = SaveShareQuotaStore()
+    static let freeLimit = 10
+
+    struct Snapshot: Sendable {
+        let usedCount: Int
+        let remainingCount: Int
+        let limit: Int
+        let alreadyCountedForCurrentVideo: Bool
+
+        static let initial = Snapshot(
+            usedCount: 0,
+            remainingCount: SaveShareQuotaStore.freeLimit,
+            limit: SaveShareQuotaStore.freeLimit,
+            alreadyCountedForCurrentVideo: false
+        )
+    }
+
+    struct AccessDecision: Sendable {
+        let isAllowed: Bool
+        let shouldConsumeQuota: Bool
+        let isPaid: Bool
+        let snapshot: Snapshot
+    }
+
+    private struct PersistedQuota: Codable {
+        var usedCount: Int
+        var countedFingerprints: Set<String>
+
+        static let empty = PersistedQuota(usedCount: 0, countedFingerprints: [])
+    }
+
+    private let keychainService = Bundle.main.bundleIdentifier ?? "com.huanglisen.SubStamp"
+    private let keychainAccount = "save-share-quota.v1"
+
+    static func fingerprint(for outputURL: URL) -> String {
+        let standardizedPath = outputURL.standardizedFileURL.path
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? NSNumber)?
+            .int64Value ?? 0
+        let seed = "\(standardizedPath)|\(fileSize)"
+        let digest = SHA256.hash(data: Data(seed.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    func evaluateAccess(for fingerprint: String, isPaid: Bool) async -> AccessDecision {
+        let stored = loadPersistedQuota()
+        let alreadyCounted = stored.countedFingerprints.contains(fingerprint)
+        let remaining = max(0, Self.freeLimit - stored.usedCount)
+
+        let snapshot = Snapshot(
+            usedCount: stored.usedCount,
+            remainingCount: remaining,
+            limit: Self.freeLimit,
+            alreadyCountedForCurrentVideo: alreadyCounted
+        )
+
+        if isPaid {
+            return AccessDecision(
+                isAllowed: true,
+                shouldConsumeQuota: false,
+                isPaid: true,
+                snapshot: snapshot
+            )
+        }
+        if alreadyCounted {
+            return AccessDecision(
+                isAllowed: true,
+                shouldConsumeQuota: false,
+                isPaid: false,
+                snapshot: snapshot
+            )
+        }
+        if stored.usedCount < Self.freeLimit {
+            return AccessDecision(
+                isAllowed: true,
+                shouldConsumeQuota: true,
+                isPaid: false,
+                snapshot: snapshot
+            )
+        }
+        return AccessDecision(
+            isAllowed: false,
+            shouldConsumeQuota: false,
+            isPaid: false,
+            snapshot: snapshot
+        )
+    }
+
+    func snapshot(for fingerprint: String, isPaid: Bool) async -> Snapshot {
+        let stored = loadPersistedQuota()
+        let alreadyCounted = stored.countedFingerprints.contains(fingerprint)
+        let remaining = isPaid ? Self.freeLimit : max(0, Self.freeLimit - stored.usedCount)
+        return Snapshot(
+            usedCount: stored.usedCount,
+            remainingCount: remaining,
+            limit: Self.freeLimit,
+            alreadyCountedForCurrentVideo: alreadyCounted
+        )
+    }
+
+    func recordSuccess(for fingerprint: String) async -> Snapshot {
+        var stored = loadPersistedQuota()
+
+        if !stored.countedFingerprints.contains(fingerprint) {
+            stored.countedFingerprints.insert(fingerprint)
+            stored.usedCount += 1
+            savePersistedQuota(stored)
+        }
+
+        let remaining = max(0, Self.freeLimit - stored.usedCount)
+        return Snapshot(
+            usedCount: stored.usedCount,
+            remainingCount: remaining,
+            limit: Self.freeLimit,
+            alreadyCountedForCurrentVideo: true
+        )
+    }
+
+    private func loadPersistedQuota() -> PersistedQuota {
+        guard
+            let data = KeychainStore.readData(
+                service: keychainService,
+                account: keychainAccount
+            ),
+            let decoded = try? JSONDecoder().decode(PersistedQuota.self, from: data)
+        else {
+            return .empty
+        }
+        return decoded
+    }
+
+    private func savePersistedQuota(_ quota: PersistedQuota) {
+        guard let data = try? JSONEncoder().encode(quota) else { return }
+        KeychainStore.writeData(data, service: keychainService, account: keychainAccount)
+    }
+}
+
+private enum KeychainStore {
+    nonisolated static func readData(service: String, account: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { return nil }
+        return item as? Data
+    }
+
+    nonisolated static func writeData(_ data: Data, service: String, account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        let update: [String: Any] = [kSecValueData as String: data]
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+
+        if updateStatus == errSecItemNotFound {
+            var insert = query
+            insert[kSecValueData as String] = data
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            SecItemAdd(insert as CFDictionary, nil)
+        }
+    }
+}
+
+private struct ActivityShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    var completion: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        controller.completionWithItemsHandler = { _, completed, _, _ in
+            completion(completed)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct PurchasePaywallView: View {
+    @ObservedObject var purchaseManager: PurchaseManager
+    let usedCount: Int
+    let freeLimit: Int
+    var onUnlocked: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: AppSpacing.m) {
+                Text("Unlock Save & Share")
+                    .font(AppTypography.title)
+                Text("You've used \(min(usedCount, freeLimit))/\(freeLimit) free saves/shares. Continue saving and sharing by upgrading.")
+                    .font(AppTypography.body)
+                    .foregroundStyle(AppColors.secondaryText)
+
+                if purchaseManager.isLoadingProducts {
+                    ProgressView("Loading purchase options...")
+                } else {
+                    if let weekly = purchaseManager.product(for: PurchaseManager.weeklyProductID) {
+                        payButton(
+                            title: "Weekly Subscription",
+                            subtitle: weekly.displayPrice
+                        ) {
+                            Task { await purchaseManager.purchase(weekly) }
+                        }
+                    }
+
+                    if let lifetime = purchaseManager.product(for: PurchaseManager.lifetimeProductID) {
+                        payButton(
+                            title: "Lifetime Unlock",
+                            subtitle: lifetime.displayPrice
+                        ) {
+                            Task { await purchaseManager.purchase(lifetime) }
+                        }
+                    }
+                }
+
+                Button("Restore Purchases") {
+                    Task { await purchaseManager.restorePurchases() }
+                }
+                .font(AppTypography.bodyEmphasis)
+                .buttonStyle(.plain)
+
+                if let errorMessage = purchaseManager.errorMessage {
+                    Text(errorMessage)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.error)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(AppSpacing.l)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .task {
+            await purchaseManager.prepareIfNeeded()
+        }
+        .onChange(of: purchaseManager.hasPremiumAccess) { _, unlocked in
+            if unlocked {
+                onUnlocked()
+                dismiss()
+            }
+        }
+    }
+
+    private func payButton(title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(title)
+                        .font(AppTypography.bodyEmphasis)
+                    Text(subtitle)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.secondaryText)
+                }
+                Spacer()
+                if purchaseManager.isProcessingPurchase {
+                    ProgressView()
+                } else {
+                    Image(systemName: "lock.open")
+                        .font(AppTypography.bodyEmphasis)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(AppSpacing.m)
+            .background(AppColors.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                    .stroke(AppColors.cardBorder, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(purchaseManager.isProcessingPurchase)
     }
 }
