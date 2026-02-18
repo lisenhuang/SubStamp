@@ -332,15 +332,28 @@ final class PurchaseManager: ObservableObject {
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var hasPremiumAccess = false
+    @Published private(set) var hasCheckedEntitlements = false
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var isProcessingPurchase = false
     @Published var errorMessage: String?
 
+    private var transactionUpdatesTask: Task<Void, Never>?
+
+    deinit {
+        transactionUpdatesTask?.cancel()
+    }
+
     func prepareIfNeeded() async {
+        startObservingTransactionUpdatesIfNeeded()
         await refreshEntitlements()
         if products.isEmpty {
             await loadProducts()
         }
+    }
+
+    func prepareEntitlementsIfNeeded() async {
+        startObservingTransactionUpdatesIfNeeded()
+        await refreshEntitlements()
     }
 
     func product(for id: String) -> Product? {
@@ -413,12 +426,26 @@ final class PurchaseManager: ObservableObject {
             }
         }
         hasPremiumAccess = unlocked
+        hasCheckedEntitlements = true
+    }
+
+    private func startObservingTransactionUpdatesIfNeeded() {
+        guard transactionUpdatesTask == nil else { return }
+        let supportedIDs = Self.supportedProductIDs
+        transactionUpdatesTask = Task.detached(priority: .background) { [weak self] in
+            for await result in Transaction.updates {
+                guard let self else { return }
+                guard case let .verified(transaction) = result else { continue }
+                guard supportedIDs.contains(transaction.productID) else { continue }
+                await self.refreshEntitlements()
+            }
+        }
     }
 }
 
 actor SaveShareQuotaStore {
     static let shared = SaveShareQuotaStore()
-    static let freeLimit = 10
+    static let freeLimit = 3
 
     struct Snapshot: Sendable {
         let usedCount: Int
@@ -534,6 +561,10 @@ actor SaveShareQuotaStore {
         )
     }
 
+    func totalUsedCount() -> Int {
+        loadPersistedQuota().usedCount
+    }
+
     private func loadPersistedQuota() -> PersistedQuota {
         guard
             let data = KeychainStore.readData(
@@ -607,7 +638,7 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-private struct PurchasePaywallView: View {
+struct PurchasePaywallView: View {
     @ObservedObject var purchaseManager: PurchaseManager
     let usedCount: Int
     let freeLimit: Int
@@ -616,33 +647,38 @@ private struct PurchasePaywallView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        let weekly = purchaseManager.product(for: PurchaseManager.weeklyProductID)
+        let lifetime = purchaseManager.product(for: PurchaseManager.lifetimeProductID)
+
         NavigationStack {
             VStack(alignment: .leading, spacing: AppSpacing.m) {
-                Text("Unlock Save & Share")
+                Text("Unlock Pro")
                     .font(AppTypography.title)
                 Text("You've used \(min(usedCount, freeLimit))/\(freeLimit) free saves/shares. Continue saving and sharing by upgrading.")
                     .font(AppTypography.body)
                     .foregroundStyle(AppColors.secondaryText)
 
+                SubscriptionStoreView(productIDs: [PurchaseManager.weeklyProductID]) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Text("Weekly Subscription")
+                            .font(AppTypography.bodyEmphasis)
+                        Text("Unlimited exports, saving, and sharing. Cancel anytime.")
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .subscriptionStorePolicyDestination(url: AppLegal.termsOfUseURL, for: .termsOfService)
+                .subscriptionStorePolicyDestination(url: AppLegal.privacyPolicyURL, for: .privacyPolicy)
+
                 if purchaseManager.isLoadingProducts {
                     ProgressView("Loading purchase options...")
-                } else {
-                    if let weekly = purchaseManager.product(for: PurchaseManager.weeklyProductID) {
-                        payButton(
-                            title: "Weekly Subscription",
-                            subtitle: weekly.displayPrice
-                        ) {
-                            Task { await purchaseManager.purchase(weekly) }
-                        }
-                    }
-
-                    if let lifetime = purchaseManager.product(for: PurchaseManager.lifetimeProductID) {
-                        payButton(
-                            title: "Lifetime Unlock",
-                            subtitle: lifetime.displayPrice
-                        ) {
-                            Task { await purchaseManager.purchase(lifetime) }
-                        }
+                } else if let lifetime {
+                    payButton(
+                        title: "Lifetime Unlock",
+                        subtitle: lifetime.displayPrice
+                    ) {
+                        Task { await purchaseManager.purchase(lifetime) }
                     }
                 }
 
@@ -651,6 +687,33 @@ private struct PurchasePaywallView: View {
                 }
                 .font(AppTypography.bodyEmphasis)
                 .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: AppSpacing.s) {
+                    Divider()
+                    Text("Subscription details")
+                        .font(AppTypography.bodyEmphasis)
+
+                    if let weekly {
+                        Text("Weekly subscription (1 week): \(weekly.displayPrice) per week. Auto-renewable.")
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.secondaryText)
+                    } else {
+                        Text("Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load.")
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
+
+                    Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions.")
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.secondaryText)
+
+                    HStack {
+                        Link("Privacy Policy", destination: AppLegal.privacyPolicyURL)
+                        Spacer()
+                        Link("Terms of Use (EULA)", destination: AppLegal.termsOfUseURL)
+                    }
+                    .font(AppTypography.caption)
+                }
 
                 if let errorMessage = purchaseManager.errorMessage {
                     Text(errorMessage)
@@ -708,4 +771,9 @@ private struct PurchasePaywallView: View {
         .buttonStyle(.plain)
         .disabled(purchaseManager.isProcessingPurchase)
     }
+}
+
+private enum AppLegal {
+    static let termsOfUseURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+    static let privacyPolicyURL = URL(string: "https://lisenhuang.vercel.app/privacy-substamp.html")!
 }

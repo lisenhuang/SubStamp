@@ -4,20 +4,17 @@ import FoundationModels
 
 @available(iOS 26.0, *)
 final class AppleIntelligenceTranslationService {
-    @Generable
-    struct MultiTargetCueTranslationResponse {
+    struct MultiTargetCueTranslationResponse: Decodable {
         var original: String
         var targets: [TargetTranslations]
     }
 
-    @Generable
-    struct TargetTranslations {
+    struct TargetTranslations: Decodable {
         var target: String
         var cues: [CueTranslation]
     }
 
-    @Generable
-    struct CueTranslation {
+    struct CueTranslation: Decodable {
         var id: String
         var index: Int
         var text: String
@@ -459,8 +456,9 @@ final class AppleIntelligenceTranslationService {
             cueCount: cues.count
         )
 
-        let response = try await session.respond(to: prompt, generating: MultiTargetCueTranslationResponse.self)
-        return parseResponse(response.content, requestedTargetIDs: targetIDs, allowedCueIDs: Set(cues.map(\.id)))
+        let response = try await session.respond(to: prompt)
+        let decoded = try decodeModelJSON(MultiTargetCueTranslationResponse.self, from: response.content)
+        return parseResponse(decoded, requestedTargetIDs: targetIDs, allowedCueIDs: Set(cues.map(\.id)))
     }
 
     // MARK: - Prompt / Parsing
@@ -684,6 +682,29 @@ final class AppleIntelligenceTranslationService {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(value)
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    private func decodeModelJSON<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}") else {
+            throw SubStampError.translationError(underlying: NSError(
+                domain: "SubStamp",
+                code: -211,
+                userInfo: [NSLocalizedDescriptionKey: "Model response did not contain valid JSON."]
+            ))
+        }
+
+        let json = String(trimmed[start...end])
+        let data = Data(json.utf8)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw SubStampError.translationError(underlying: NSError(
+                domain: "SubStamp",
+                code: -212,
+                userInfo: [NSLocalizedDescriptionKey: "Unable to decode model JSON response: \(error.localizedDescription)"]
+            ))
+        }
     }
 
     private func mergeTranslations(_ a: [String: [UUID: String]], _ b: [String: [UUID: String]]) -> [String: [UUID: String]] {

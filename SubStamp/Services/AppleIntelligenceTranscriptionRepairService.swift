@@ -3,14 +3,12 @@ import FoundationModels
 
 @available(iOS 26.0, *)
 final class AppleIntelligenceTranscriptionRepairService {
-    @Generable
-    struct CueRepairResponse {
+    struct CueRepairResponse: Decodable {
         var original: String
         var cues: [CueRepair]
     }
 
-    @Generable
-    struct CueRepair {
+    struct CueRepair: Decodable {
         var id: String
         var index: Int
         var text: String
@@ -245,8 +243,9 @@ final class AppleIntelligenceTranscriptionRepairService {
             cueCount: cues.count
         )
 
-        let response = try await session.respond(to: prompt, generating: CueRepairResponse.self)
-        return parseResponse(response.content, allowedCueIDs: Set(cues.map(\.id)))
+        let response = try await session.respond(to: prompt)
+        let decoded = try decodeModelJSON(CueRepairResponse.self, from: response.content)
+        return parseResponse(decoded, allowedCueIDs: Set(cues.map(\.id)))
     }
 
     // MARK: - Prompt / Parsing
@@ -479,6 +478,29 @@ final class AppleIntelligenceTranscriptionRepairService {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(value)
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    private func decodeModelJSON<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}") else {
+            throw SubStampError.translationError(underlying: NSError(
+                domain: "SubStamp",
+                code: -241,
+                userInfo: [NSLocalizedDescriptionKey: "Model response did not contain valid JSON."]
+            ))
+        }
+
+        let json = String(trimmed[start...end])
+        let data = Data(json.utf8)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw SubStampError.translationError(underlying: NSError(
+                domain: "SubStamp",
+                code: -242,
+                userInfo: [NSLocalizedDescriptionKey: "Unable to decode model JSON response: \(error.localizedDescription)"]
+            ))
+        }
     }
 
     private func mergeRepairs(_ a: [UUID: String], _ b: [UUID: String]) -> [UUID: String] {

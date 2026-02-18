@@ -31,6 +31,9 @@ struct SetupView: View {
     @State private var deviceSupportsAppleIntelligence = false
     @State private var showAINotEnabledAlert = false
     @State private var safariURL: URL?
+    @StateObject private var purchaseManager = PurchaseManager()
+    @State private var showPaywall = false
+    @State private var paywallUsedCount = 0
     
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
@@ -40,7 +43,27 @@ struct SetupView: View {
             VStack(spacing: AppSpacing.l) {
                 HStack {
                     Spacer()
-                    SettingsMenuButton()
+                    if purchaseManager.hasCheckedEntitlements && !purchaseManager.hasPremiumAccess {
+                        Button {
+                            Task { @MainActor in
+                                paywallUsedCount = await SaveShareQuotaStore.shared.totalUsedCount()
+                                showPaywall = true
+                            }
+                        } label: {
+                            Label("Upgrade", systemImage: "crown.fill")
+                                .font(AppTypography.bodyEmphasis)
+                                .foregroundStyle(AppColors.accent)
+                                .padding(.horizontal, AppSpacing.m)
+                                .padding(.vertical, AppSpacing.s)
+                                .background(AppColors.cardBackground)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(AppColors.cardBorder, lineWidth: 1)
+                                )
+                        }
+                    }
+                    SettingsMenuButton(purchaseManager: purchaseManager)
                 }
 
                 WizardHeaderView(
@@ -64,7 +87,15 @@ struct SetupView: View {
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
+        .sheet(isPresented: $showPaywall) {
+            PurchasePaywallView(
+                purchaseManager: purchaseManager,
+                usedCount: paywallUsedCount,
+                freeLimit: SaveShareQuotaStore.freeLimit
+            ) {}
+        }
         .task {
+            await purchaseManager.prepareEntitlementsIfNeeded()
             logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
             speechAvailable = SpeechTranscriber.isAvailable
             
@@ -204,6 +235,7 @@ struct SetupView: View {
         }
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
+                Task { await purchaseManager.refreshEntitlements() }
                 appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
                 logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
                 if !appleIntelligenceAvailable {
