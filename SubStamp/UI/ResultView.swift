@@ -99,7 +99,7 @@ struct ResultView: View {
                 }
 
                 if !purchaseManager.hasPremiumAccess {
-                    Text("Free saves/shares remaining: \(quotaSnapshot.remainingCount)/\(quotaSnapshot.limit)")
+                    Text("Free users can save to Photos or share up to \(quotaSnapshot.limit) different videos. Each video counts once.")
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
                 } else {
@@ -654,7 +654,7 @@ struct PurchasePaywallView: View {
             VStack(alignment: .leading, spacing: AppSpacing.m) {
                 Text("Unlock Pro")
                     .font(AppTypography.title)
-                Text("You've used \(min(usedCount, freeLimit))/\(freeLimit) free saves/shares. Continue saving and sharing by upgrading.")
+                Text("Free users can save to Photos or share up to \(freeLimit) different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.")
                     .font(AppTypography.body)
                     .foregroundStyle(AppColors.secondaryText)
 
