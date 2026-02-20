@@ -472,9 +472,17 @@ final class TranscriptionService {
     }
 
     private func postProcess(cues: [SubtitleCue]) -> [SubtitleCue] {
+        // Keep cues readable, but avoid showing future text early.
+        // In particular, do not merge across real pauses, otherwise the later cue's text
+        // will appear during silence (sometimes seconds early).
         let minDuration: Double = 0.8
+        let mergeGapThreshold: Double = 0.25
+        let overlapPadding: Double = 0.02
         let maxCharsPerLine = 42
         let maxLines = 2
+
+        // Ensure stable ordering before we do any timing-based operations.
+        let cues = cues.sorted { $0.start.seconds < $1.start.seconds }
 
         // 1) Clean text and merge very short cues to avoid rapid flashes.
         var merged: [SubtitleCue] = []
@@ -486,14 +494,28 @@ final class TranscriptionService {
             if cue.durationSeconds < minDuration, index + 1 < cues.count {
                 var next = cues[index + 1]
                 next.primaryText = SubtitleTextCleaner.clean(next.primaryText)
-                let mergedText = SubtitleTextCleaner.clean([cue.primaryText, next.primaryText].joined(separator: " "))
-                merged.append(SubtitleCue(id: cue.id, start: cue.start, end: next.end, primaryText: mergedText))
-                index += 2
-                continue
+                let gap = max(0, next.start.seconds - cue.end.seconds)
+
+                // Only merge if the cues are essentially continuous in time.
+                // Otherwise we'd show the next cue's text early during a pause.
+                if gap <= mergeGapThreshold {
+                    let mergedText = SubtitleTextCleaner.clean([cue.primaryText, next.primaryText].joined(separator: " "))
+                    merged.append(SubtitleCue(id: cue.id, start: cue.start, end: next.end, primaryText: mergedText))
+                    index += 2
+                    continue
+                }
             }
 
             if cue.durationSeconds < minDuration {
-                cue.end = CMTime(seconds: cue.start.seconds + minDuration, preferredTimescale: 600)
+                var targetEndSeconds = cue.start.seconds + minDuration
+                if index + 1 < cues.count {
+                    let nextStartSeconds = cues[index + 1].start.seconds
+                    // Never extend into the next cue's start.
+                    targetEndSeconds = min(targetEndSeconds, max(cue.start.seconds, nextStartSeconds - overlapPadding))
+                }
+                if targetEndSeconds > cue.end.seconds {
+                    cue.end = CMTime(seconds: targetEndSeconds, preferredTimescale: 600)
+                }
             }
 
             merged.append(cue)
