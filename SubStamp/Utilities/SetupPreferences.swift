@@ -31,7 +31,8 @@ enum SetupPreferences {
 
     static func loadFixTranscriptionWithAppleIntelligence() -> Bool {
         if UserDefaults.standard.object(forKey: fixTranscriptionWithAppleIntelligenceKey) == nil {
-            return true
+            // Default OFF: only enable if the user explicitly opts in.
+            return false
         }
         return UserDefaults.standard.bool(forKey: fixTranscriptionWithAppleIntelligenceKey)
     }
