@@ -29,6 +29,7 @@ struct PreviewExportView: View {
     @State private var cueIndexByID: [UUID: Int] = [:]
     @State private var activeCueID: UUID?
     @State private var timeObserverToken: Any?
+    @State private var isVideoFullScreen = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var showCopyConfirmation = false
 
@@ -126,7 +127,7 @@ struct PreviewExportView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ZStack {
+                ZStack(alignment: .bottomTrailing) {
                     VideoPlayer(player: player)
 
                     if let cue = currentOverlayCue {
@@ -135,6 +136,21 @@ struct PreviewExportView: View {
                             secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
                             style: job?.subtitleStyle ?? SubtitleStyle()
                         )
+                    }
+
+                    if player != nil {
+                        Button {
+                            isVideoFullScreen = true
+                        } label: {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(.white)
+                                .padding(AppSpacing.s)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }
+                        .padding(AppSpacing.m)
+                        .accessibilityLabel(Text("Full screen"))
                     }
                 }
                 .frame(height: 220)
@@ -215,6 +231,38 @@ struct PreviewExportView: View {
                     Button(String(localized: "Done", bundle: .forLocale(locale))) { isTextFieldFocused = false }
                 }
             }
+        }
+        .fullScreenCover(isPresented: $isVideoFullScreen) {
+            ZStack(alignment: .topLeading) {
+                ZStack {
+                    if let player {
+                        VideoPlayer(player: player)
+                            .ignoresSafeArea()
+                    } else {
+                        Color.black.ignoresSafeArea()
+                    }
+
+                    if let cue = currentOverlayCue {
+                        VideoSubtitleOverlayView(
+                            primaryText: cue.primaryText,
+                            secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
+                            style: job?.subtitleStyle ?? SubtitleStyle()
+                        )
+                    }
+                }
+
+                Button {
+                    isVideoFullScreen = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(.white)
+                        .padding()
+                        .shadow(radius: 4)
+                }
+                .accessibilityLabel(Text("Close"))
+            }
+            .background(Color.black)
         }
         .onAppear {
             player = AVPlayer(url: videoURL)
