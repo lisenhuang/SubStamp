@@ -23,6 +23,12 @@ struct PreviewExportView: View {
 
     @State private var player: AVPlayer?
     @State private var isPlayingPreview = false
+    @State private var playbackTimeSeconds: Double = 0
+    @State private var cueTimingIndex: [CueTiming] = []
+    @State private var cueStartSeconds: [Double] = []
+    @State private var cueIndexByID: [UUID: Int] = [:]
+    @State private var activeCueID: UUID?
+    @State private var timeObserverToken: Any?
     @FocusState private var isTextFieldFocused: Bool
     @State private var showCopyConfirmation = false
 
@@ -40,6 +46,12 @@ struct PreviewExportView: View {
     private let jobStore = JobStore()
 
     private var job: JobModel? { activeJob }
+
+    private struct CueTiming: Sendable {
+        let id: UUID
+        let startSeconds: Double
+        let endSeconds: Double
+    }
 
     // MARK: - Computed flags for cue row display
 
@@ -114,9 +126,19 @@ struct PreviewExportView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                VideoPlayer(player: player)
-                    .frame(height: 220)
-                    .background(Color.black)
+                ZStack {
+                    VideoPlayer(player: player)
+
+                    if let cue = currentOverlayCue {
+                        VideoSubtitleOverlayView(
+                            primaryText: cue.primaryText,
+                            secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
+                            style: job?.subtitleStyle ?? SubtitleStyle()
+                        )
+                    }
+                }
+                .frame(height: 220)
+                .background(Color.black)
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
@@ -196,6 +218,11 @@ struct PreviewExportView: View {
         }
         .onAppear {
             player = AVPlayer(url: videoURL)
+            if let player {
+                installTimeObserver(for: player)
+            }
+            rebuildCueTimingIndex()
+            updateActiveCue(at: playbackTimeSeconds)
             prepareTranslationConfigs()
             // Re-snapshot translations if returning with completed translation (e.g. from Step 4)
             if orchestrator.translationComplete {
@@ -203,9 +230,14 @@ struct PreviewExportView: View {
             }
         }
         .onDisappear {
+            removeTimeObserver()
             player?.pause()
             player = nil
             session1 = nil; session2 = nil; session3 = nil
+        }
+        .onChange(of: orchestrator.cues.count) { _, _ in
+            rebuildCueTimingIndex()
+            updateActiveCue(at: playbackTimeSeconds)
         }
         .onChange(of: orchestrator.outputURL) { _, newValue in
             if let url = newValue { onExportComplete(url) }
@@ -232,6 +264,17 @@ struct PreviewExportView: View {
         } message: {
             Text(String(localized: "Copied as SRT to your clipboard.", bundle: .forLocale(locale)))
         }
+    }
+
+    private var currentOverlayCue: SubtitleCue? {
+        guard let activeCueID else { return nil }
+        if let index = cueIndexByID[activeCueID], orchestrator.cues.indices.contains(index) {
+            let cue = orchestrator.cues[index]
+            if cue.id == activeCueID {
+                return cue
+            }
+        }
+        return orchestrator.cues.first { $0.id == activeCueID }
     }
 
     // MARK: - Translation progress (inline, shown when translating)
@@ -637,6 +680,8 @@ struct PreviewExportView: View {
         orchestrator.cues.insert(newCue, at: index + 1)
         cuesChangedSinceExport = true
         if orchestrator.translationComplete { translationsAreStale = true }
+        rebuildCueTimingIndex()
+        updateActiveCue(at: playbackTimeSeconds)
     }
 
     private func mergeCue(at index: Int) {
@@ -664,16 +709,23 @@ struct PreviewExportView: View {
         orchestrator.cues.remove(at: index + 1)
         cuesChangedSinceExport = true
         if orchestrator.translationComplete { translationsAreStale = true }
+        rebuildCueTimingIndex()
+        updateActiveCue(at: playbackTimeSeconds)
     }
 
     private func shiftCue(at index: Int, by seconds: Double) {
         guard orchestrator.cues.indices.contains(index) else { return }
         orchestrator.cues[index].shift(by: seconds)
+        cuesChangedSinceExport = true
+        rebuildCueTimingIndex()
+        updateActiveCue(at: playbackTimeSeconds)
     }
 
     private func previewCue(_ cue: SubtitleCue) {
         guard let player else { return }
         player.seek(to: cue.start, toleranceBefore: .zero, toleranceAfter: .zero)
+        playbackTimeSeconds = cue.start.seconds
+        activeCueID = cue.id
         player.play()
         isPlayingPreview = true
         let durationSeconds = max(0.2, cue.end.seconds - cue.start.seconds)
@@ -684,6 +736,68 @@ struct PreviewExportView: View {
                 isPlayingPreview = false
             }
         }
+    }
+
+    private func rebuildCueTimingIndex() {
+        cueIndexByID = Dictionary(uniqueKeysWithValues: orchestrator.cues.enumerated().map { ($0.element.id, $0.offset) })
+        cueTimingIndex = orchestrator.cues
+            .map { CueTiming(id: $0.id, startSeconds: $0.start.seconds, endSeconds: $0.end.seconds) }
+            .filter { $0.endSeconds > $0.startSeconds }
+            .sorted { $0.startSeconds < $1.startSeconds }
+        cueStartSeconds = cueTimingIndex.map(\.startSeconds)
+    }
+
+    private func updateActiveCue(at seconds: Double) {
+        guard !cueTimingIndex.isEmpty else {
+            activeCueID = nil
+            return
+        }
+
+        let idx = findLastCueIndex(startingBeforeOrAt: seconds)
+        guard let idx else {
+            activeCueID = nil
+            return
+        }
+
+        let cue = cueTimingIndex[idx]
+        if seconds >= cue.startSeconds, seconds <= cue.endSeconds {
+            activeCueID = cue.id
+        } else {
+            activeCueID = nil
+        }
+    }
+
+    private func findLastCueIndex(startingBeforeOrAt seconds: Double) -> Int? {
+        var low = 0
+        var high = cueStartSeconds.count - 1
+        var result: Int?
+
+        while low <= high {
+            let mid = (low + high) / 2
+            if cueStartSeconds[mid] <= seconds {
+                result = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        return result
+    }
+
+    private func installTimeObserver(for player: AVPlayer) {
+        removeTimeObserver()
+        let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            playbackTimeSeconds = time.seconds
+            updateActiveCue(at: time.seconds)
+        }
+    }
+
+    private func removeTimeObserver() {
+        guard let token = timeObserverToken else { return }
+        player?.removeTimeObserver(token)
+        timeObserverToken = nil
     }
 
     private func copyCuesToClipboard() {
