@@ -15,8 +15,7 @@ final class AppleIntelligenceTranslationService {
     }
 
     struct CueTranslation: Decodable {
-        var id: String
-        var index: Int
+        var k: Int
         var text: String
     }
 
@@ -27,8 +26,8 @@ final class AppleIntelligenceTranslationService {
     }
 
     private struct CueInput: Encodable {
-        let id: String
-        let index: Int
+        /// Stable within a chunk (0..<chunk.count). Use this key for alignment instead of UUIDs.
+        let k: Int
         let text: String
     }
 
@@ -143,7 +142,7 @@ final class AppleIntelligenceTranslationService {
         let session = LanguageModelSession(model: model) {
             """
             You are a professional subtitle translator.
-            Translate naturally and faithfully, using context across all cues provided (treat them as one transcript to understand the 语境).
+            Translate naturally and faithfully. You may use surrounding cues for context (语境), but each cue MUST stay aligned to its own input text.
             Keep each cue concise for on-screen subtitles.
             Do not add, remove, merge, split, or reorder cues.
             Do not add commentary or explanations.
@@ -161,6 +160,14 @@ final class AppleIntelligenceTranslationService {
         for (chunkIndex, chunk) in chunks.enumerated() {
             try Task.checkCancellation()
 
+            let context = buildAdjacentContext(
+                allCues: cues,
+                chunk: chunk,
+                indexByID: indexByID,
+                maxBefore: 2,
+                maxAfter: 2,
+                maxChars: 420
+            )
             let chunkResult = await translateChunkWithFallback(
                 chunk,
                 original: sourceBCP47,
@@ -169,6 +176,8 @@ final class AppleIntelligenceTranslationService {
                 targetHints: targetHints,
                 chunkIndex: chunkIndex,
                 chunkCount: chunks.count,
+                contextBefore: context.before,
+                contextAfter: context.after,
                 indexByID: indexByID,
                 session: session
             )
@@ -333,6 +342,8 @@ final class AppleIntelligenceTranslationService {
         targetHints: String,
         chunkIndex: Int,
         chunkCount: Int,
+        contextBefore: [String],
+        contextAfter: [String],
         indexByID: [UUID: Int],
         session: LanguageModelSession
     ) async -> ChunkTranslationResult {
@@ -344,6 +355,8 @@ final class AppleIntelligenceTranslationService {
                 targetIDs: targetIDs,
                 targetHints: targetHints,
                 contextLabel: "chunk \(chunkIndex + 1)/\(chunkCount)",
+                contextBefore: contextBefore,
+                contextAfter: contextAfter,
                 indexByID: indexByID,
                 session: session
             )
@@ -383,6 +396,8 @@ final class AppleIntelligenceTranslationService {
         targetIDs: [String],
         targetHints: String,
         contextLabel: String,
+        contextBefore: [String],
+        contextAfter: [String],
         indexByID: [UUID: Int],
         session: LanguageModelSession
     ) async throws -> [String: [UUID: String]] {
@@ -393,6 +408,8 @@ final class AppleIntelligenceTranslationService {
             targetIDs: targetIDs,
             targetHints: targetHints,
             contextLabel: contextLabel,
+            contextBefore: contextBefore,
+            contextAfter: contextAfter,
             isRepair: false,
             indexByID: indexByID,
             session: session
@@ -408,6 +425,8 @@ final class AppleIntelligenceTranslationService {
                     targetIDs: targetIDs,
                     targetHints: targetHints,
                     contextLabel: "\(contextLabel) repair",
+                    contextBefore: contextBefore,
+                    contextAfter: contextAfter,
                     isRepair: true,
                     indexByID: indexByID,
                     session: session
@@ -430,16 +449,19 @@ final class AppleIntelligenceTranslationService {
         targetIDs: [String],
         targetHints: String,
         contextLabel: String,
+        contextBefore: [String],
+        contextAfter: [String],
         isRepair: Bool,
         indexByID: [UUID: Int],
         session: LanguageModelSession
     ) async throws -> [String: [UUID: String]] {
+        // Map a compact per-chunk key to cue IDs (prevents misalignment caused by UUID copying mistakes).
+        let keyToCueID: [Int: UUID] = Dictionary(uniqueKeysWithValues: cues.enumerated().map { ($0.offset, $0.element.id) })
         let request = TranslationChunkRequest(
             original: original,
             cues: cues.enumerated().map { localIndex, cue in
                 CueInput(
-                    id: cue.id.uuidString,
-                    index: indexByID[cue.id] ?? localIndex,
+                    k: localIndex,
                     text: cue.primaryText
                 )
             },
@@ -453,12 +475,14 @@ final class AppleIntelligenceTranslationService {
             sourceLabel: sourceLabel,
             targetIDs: targetIDs,
             targetHints: targetHints,
-            cueCount: cues.count
+            cueCount: cues.count,
+            contextBefore: contextBefore,
+            contextAfter: contextAfter
         )
 
         let response = try await session.respond(to: prompt)
         let decoded = try decodeModelJSON(MultiTargetCueTranslationResponse.self, from: response.content)
-        return parseResponse(decoded, requestedTargetIDs: targetIDs, allowedCueIDs: Set(cues.map(\.id)))
+        return parseResponse(decoded, requestedTargetIDs: targetIDs, keyToCueID: keyToCueID)
     }
 
     // MARK: - Prompt / Parsing
@@ -470,11 +494,16 @@ final class AppleIntelligenceTranslationService {
         sourceLabel: String,
         targetIDs: [String],
         targetHints: String,
-        cueCount: Int
+        cueCount: Int,
+        contextBefore: [String],
+        contextAfter: [String]
     ) -> String {
         let header = isRepair
             ? "Some cue translations were missing or invalid. Translate them again."
             : "Translate all cues."
+
+        let beforeBlock = formatContextBlock(label: "Context before (reference only)", lines: contextBefore)
+        let afterBlock = formatContextBlock(label: "Context after (reference only)", lines: contextAfter)
 
         return """
         \(header)
@@ -483,12 +512,15 @@ final class AppleIntelligenceTranslationService {
         Targets: \(targetIDs.joined(separator: ", "))
 
         \(targetHints)
+        \(beforeBlock)
+        \(afterBlock)
 
         Rules:
-        - Treat all cues as a single transcript to understand context (语境).
+        - Use context for natural phrasing, but translate each cue text ONLY. Do not move content between cues.
         - Do NOT add, remove, merge, split, or reorder cues.
         - For every target, return exactly \(cueCount) cue entries.
-        - Keep each cue aligned by both id and index.
+        - Keep each cue aligned by its key `k` (0..\(max(0, cueCount - 1))).
+        - Copy each `k` from INPUT_JSON exactly. Do not invent new keys.
         - Preserve line breaks.
         - If an input cue text is empty, return an empty string for that cue.
         - Output ONLY JSON. Do not wrap in markdown. Do not add commentary.
@@ -500,7 +532,7 @@ final class AppleIntelligenceTranslationService {
             {
               "target": "…",
               "cues": [
-                { "id": "…", "index": 0, "text": "…" }
+                { "k": 0, "text": "…" }
               ]
             }
           ]
@@ -514,7 +546,7 @@ final class AppleIntelligenceTranslationService {
     private func parseResponse(
         _ response: MultiTargetCueTranslationResponse,
         requestedTargetIDs: [String],
-        allowedCueIDs: Set<UUID>
+        keyToCueID: [Int: UUID]
     ) -> [String: [UUID: String]] {
         let requestedByNormalized = Dictionary(
             uniqueKeysWithValues: requestedTargetIDs.map { (normalizeIdentifier($0), $0) }
@@ -527,8 +559,8 @@ final class AppleIntelligenceTranslationService {
 
             var map = output[canonicalTarget] ?? [:]
             for cue in targetEntry.cues {
-                guard let id = UUID(uuidString: cue.id), allowedCueIDs.contains(id) else { continue }
-                map[id] = cue.text
+                guard let cueID = keyToCueID[cue.k] else { continue }
+                map[cueID] = cue.text
             }
             output[canonicalTarget] = map
         }
@@ -541,6 +573,79 @@ final class AppleIntelligenceTranslationService {
 #endif
 
         return output
+    }
+
+    // MARK: - Context helpers
+
+    private func buildAdjacentContext(
+        allCues: [SubtitleCue],
+        chunk: [SubtitleCue],
+        indexByID: [UUID: Int],
+        maxBefore: Int,
+        maxAfter: Int,
+        maxChars: Int
+    ) -> (before: [String], after: [String]) {
+        guard let first = chunk.first, let last = chunk.last else { return ([], []) }
+        let startIndex = indexByID[first.id] ?? 0
+        let endIndex = indexByID[last.id] ?? startIndex
+
+        var before: [String] = []
+        var after: [String] = []
+
+        if startIndex > 0, maxBefore > 0 {
+            let beforeStart = max(0, startIndex - maxBefore)
+            for i in beforeStart..<startIndex {
+                let text = allCues[i].primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { before.append(text) }
+            }
+        }
+        if endIndex + 1 < allCues.count, maxAfter > 0 {
+            let afterEnd = min(allCues.count, endIndex + 1 + maxAfter)
+            for i in (endIndex + 1)..<afterEnd {
+                let text = allCues[i].primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { after.append(text) }
+            }
+        }
+
+        // Bound total context size.
+        func trimToBudget(_ lines: [String], budget: Int) -> [String] {
+            guard budget > 0 else { return [] }
+            var out: [String] = []
+            var used = 0
+            for line in lines {
+                if used >= budget { break }
+                let remaining = budget - used
+                if line.count <= remaining {
+                    out.append(line)
+                    used += line.count
+                } else if remaining >= 16 {
+                    out.append(String(line.prefix(remaining)))
+                    used += remaining
+                    break
+                } else {
+                    break
+                }
+            }
+            return out
+        }
+
+        let half = max(0, maxChars / 2)
+        before = trimToBudget(before, budget: half)
+        after = trimToBudget(after, budget: maxChars - before.reduce(0, { $0 + $1.count }))
+        return (before, after)
+    }
+
+    private func formatContextBlock(label: String, lines: [String]) -> String {
+        let trimmed = lines
+            .map { $0.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !trimmed.isEmpty else { return "" }
+        let bullets = trimmed.map { "- \($0)" }.joined(separator: "\n")
+        return """
+
+        \(label):
+        \(bullets)
+        """
     }
 
     // MARK: - Validation / Repair
