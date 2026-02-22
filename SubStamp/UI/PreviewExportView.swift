@@ -31,7 +31,9 @@ struct PreviewExportView: View {
     @State private var timeObserverToken: Any?
     @State private var isVideoFullScreen = false
     @FocusState private var isTextFieldFocused: Bool
-    @State private var showCopyConfirmation = false
+    @State private var clipboardAlert: ClipboardAlert?
+    @State private var manualTranslationTrack: ManualTranslationTrack = .subtitle2
+    @State private var lastManualPromptContext: ManualPromptContext?
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -52,6 +54,35 @@ struct PreviewExportView: View {
         let id: UUID
         let startSeconds: Double
         let endSeconds: Double
+    }
+
+    private struct ClipboardAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
+    private enum ManualTranslationTrack: String, CaseIterable, Identifiable {
+        case subtitle1
+        case subtitle2
+
+        var id: String { rawValue }
+    }
+
+    private struct ManualPromptContext: Equatable {
+        let track: ManualTranslationTrack
+        let target: String
+        let cueNumbers: Set<Int>  // 1-based cue numbers (index + 1)
+    }
+
+    private struct ManualTranslationPayload: Codable {
+        struct Cue: Codable {
+            let n: Int
+            let text: String
+        }
+
+        let target: String
+        let cues: [Cue]
     }
 
     // MARK: - Computed flags for cue row display
@@ -101,6 +132,24 @@ struct PreviewExportView: View {
         let id = job.translationTargetLocale ?? ""
         let name = Locale.current.localizedString(forIdentifier: id) ?? id
         return "Subtitle 2 (\(name))"
+    }
+
+    private var manualTranslationTracks: [ManualTranslationTrack] {
+        guard let job else { return [] }
+        var tracks: [ManualTranslationTrack] = []
+        if job.language1Locale != job.transcriptionLocale {
+            tracks.append(.subtitle1)
+        }
+        if job.subtitleMode == .bilingual,
+           let t2 = job.translationTargetLocale,
+           t2 != job.transcriptionLocale {
+            tracks.append(.subtitle2)
+        }
+        return tracks
+    }
+
+    private var shouldShowManualTranslationTools: Bool {
+        !manualTranslationTracks.isEmpty && !orchestrator.isRunning
     }
 
     /// Whether the Export button should be visible
@@ -272,6 +321,9 @@ struct PreviewExportView: View {
             rebuildCueTimingIndex()
             updateActiveCue(at: playbackTimeSeconds)
             prepareTranslationConfigs()
+            if let first = manualTranslationTracks.first {
+                manualTranslationTrack = first
+            }
             // Re-snapshot translations if returning with completed translation (e.g. from Step 4)
             if orchestrator.translationComplete {
                 snapshotTranslations()
@@ -307,10 +359,12 @@ struct PreviewExportView: View {
             session3 = session
             orchestrator.updateTranslationSessions(s1: session1, s2: session2, s3: session3)
         }
-        .alert(Text(String(localized: "Copied", bundle: .forLocale(locale))), isPresented: $showCopyConfirmation) {
-            Button(String(localized: "OK", bundle: .forLocale(locale)), role: .cancel) {}
-        } message: {
-            Text(String(localized: "Copied as SRT to your clipboard.", bundle: .forLocale(locale)))
+        .alert(item: $clipboardAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text(String(localized: "OK", bundle: .forLocale(locale))))
+            )
         }
     }
 
@@ -403,14 +457,48 @@ struct PreviewExportView: View {
                 Label(String(localized: "Bottom", bundle: .forLocale(locale)), systemImage: "align.vertical.bottom").tag(SubtitlePosition.bottom)
             }
             .pickerStyle(.segmented)
-            Button {
-                copyCuesToClipboard()
-                showCopyConfirmation = true
-            } label: {
-                Label(String(localized: "Copy subtitles", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
-                    .frame(maxWidth: .infinity)
+
+            if shouldShowManualTranslationTools {
+                Divider()
+                    .padding(.vertical, AppSpacing.xs)
+
+                VStack(alignment: .leading, spacing: AppSpacing.s) {
+                    Text(String(localized: "Manual translation", bundle: .forLocale(locale)))
+                        .font(AppTypography.bodyEmphasis)
+
+                    if manualTranslationTracks.count > 1 {
+                        Picker(String(localized: "Target subtitle", bundle: .forLocale(locale)), selection: $manualTranslationTrack) {
+                            ForEach(manualTranslationTracks) { track in
+                                Text(manualTrackDisplayName(track))
+                                    .tag(track)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    HStack(spacing: AppSpacing.s) {
+                        Button {
+                            copyManualTranslationPromptToClipboard()
+                        } label: {
+                            Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            pasteManualTranslationFromClipboard()
+                        } label: {
+                            Label(String(localized: "Paste subtitle", bundle: .forLocale(locale)), systemImage: "clipboard")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Text(String(localized: "Copy a prompt, translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.", bundle: .forLocale(locale)))
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.secondaryText)
+                }
             }
-            .buttonStyle(.bordered)
         }
         .font(AppTypography.caption)
         .padding()
@@ -848,17 +936,358 @@ struct PreviewExportView: View {
         timeObserverToken = nil
     }
 
-    private func copyCuesToClipboard() {
-        let srt = orchestrator.cues.enumerated().map { index, cue in
-            let start = TimeFormatting.srtTimestamp(cue.start)
-            let end = TimeFormatting.srtTimestamp(cue.end)
-            var lines: [String] = ["\(index + 1)", "\(start) --> \(end)", cue.primaryText]
-            if let secondary = cue.secondaryText, !secondary.isEmpty {
-                lines.append(secondary)
-            }
-            return lines.joined(separator: "\n")
+    // MARK: - Manual translation (copy prompt / paste result)
+
+    private func manualTrackDisplayName(_ track: ManualTranslationTrack) -> String {
+        switch track {
+        case .subtitle1:
+            return subtitle1Label
+        case .subtitle2:
+            return subtitle2Label
         }
-        .joined(separator: "\n\n")
-        UIPasteboard.general.string = srt
+    }
+
+    private func copyManualTranslationPromptToClipboard() {
+        guard let job else { return }
+
+        guard manualTranslationTracks.contains(manualTranslationTrack) else {
+            if let first = manualTranslationTracks.first {
+                manualTranslationTrack = first
+            }
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                message: String(localized: "This subtitle track doesn't need translation for the current setup.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let targetID = manualTargetLocaleID(for: job, track: manualTranslationTrack)
+        guard !targetID.isEmpty else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let selection = makeManualTranslationSelection(track: manualTranslationTrack, maxCues: 28, maxCharacters: 1400)
+        guard !selection.inputs.isEmpty else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Nothing to translate", bundle: .forLocale(locale)),
+                message: String(localized: "All selected subtitles already have translations.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let payload = ManualTranslationPayload(
+            target: targetID,
+            cues: selection.inputs.map { ManualTranslationPayload.Cue(n: $0.n, text: $0.text) }
+        )
+
+        let payloadJSON: String
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+            let data = try encoder.encode(payload)
+            payloadJSON = String(data: data, encoding: .utf8) ?? "{}"
+        } catch {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Failed", bundle: .forLocale(locale)),
+                message: String(localized: "Could not generate prompt JSON.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let targetName = Locale.current.localizedString(forIdentifier: targetID) ?? targetID
+        let beforeBlock = formatContextBlock(label: "Context before (reference only)", lines: selection.contextBefore)
+        let afterBlock = formatContextBlock(label: "Context after (reference only)", lines: selection.contextAfter)
+
+        let prompt = """
+        You are a professional subtitle translator.
+        Translate each cue into \(targetName) (\(targetID)).
+        Use context for natural phrasing, but translate each cue text ONLY. Do not move content between cues.
+
+        Rules:
+        - Do NOT add, remove, merge, split, or reorder cues.
+        - Keep each cue aligned by its cue number `n`.
+        - Output ONLY valid JSON (no markdown, no commentary).
+        - For empty cue text, output an empty string.
+        - Preserve line breaks using \\n when needed.
+
+        Output JSON schema (must match exactly):
+        {
+          "target": "\(targetID)",
+          "cues": [
+            { "n": 1, "text": "..." }
+          ]
+        }
+
+        \(beforeBlock)\(afterBlock)
+
+        INPUT_JSON:
+        \(payloadJSON)
+        """
+
+        UIPasteboard.general.string = prompt
+
+        lastManualPromptContext = ManualPromptContext(
+            track: manualTranslationTrack,
+            target: normalizeLocaleIdentifier(targetID),
+            cueNumbers: Set(selection.inputs.map(\.n))
+        )
+
+        clipboardAlert = ClipboardAlert(
+            title: String(localized: "Copied", bundle: .forLocale(locale)),
+            message: String(localized: "Copied prompt to your clipboard.", bundle: .forLocale(locale))
+        )
+    }
+
+    private func pasteManualTranslationFromClipboard() {
+        guard let job else { return }
+        guard let raw = UIPasteboard.general.string, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                message: String(localized: "Clipboard is empty.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        guard manualTranslationTracks.contains(manualTranslationTrack) else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                message: String(localized: "This subtitle track doesn't need translation for the current setup.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let expectedTarget = normalizeLocaleIdentifier(manualTargetLocaleID(for: job, track: manualTranslationTrack))
+        if expectedTarget.isEmpty {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let decoded: ManualTranslationPayload
+        do {
+            decoded = try decodeJSON(ManualTranslationPayload.self, from: raw)
+        } catch {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                message: String(localized: "The pasted text is not valid JSON in the expected format.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let pastedTarget = normalizeLocaleIdentifier(decoded.target)
+        guard pastedTarget == expectedTarget else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                message: String(localized: "The pasted subtitles target a different language than your current selection.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        let cueNumbers = decoded.cues.map(\.n)
+        let uniqueNumbers = Set(cueNumbers)
+        guard uniqueNumbers.count == cueNumbers.count else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                message: String(localized: "Duplicate cue numbers were found in the pasted JSON.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        if let last = lastManualPromptContext {
+            guard last.track == manualTranslationTrack else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                    message: String(localized: "The last copied prompt was for a different subtitle track. Please copy a new prompt for the current track.", bundle: .forLocale(locale))
+                )
+                return
+            }
+            guard last.target == expectedTarget else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                    message: String(localized: "The last copied prompt was for a different target language. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                )
+                return
+            }
+
+            let pastedSet = Set(decoded.cues.map(\.n))
+            guard pastedSet == last.cueNumbers else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                    message: String(localized: "The pasted result doesn't match the last copied prompt. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                )
+                return
+            }
+        }
+
+        var applied = 0
+        for cue in decoded.cues {
+            let index = cue.n - 1
+            guard orchestrator.cues.indices.contains(index) else { continue }
+
+            let cleaned = SubtitleTextCleaner.clean(cue.text)
+            switch manualTranslationTrack {
+            case .subtitle1:
+                orchestrator.cues[index].primaryText = cleaned
+                orchestrator.cues[index].hasTranslationError = false
+            case .subtitle2:
+                orchestrator.cues[index].secondaryText = cleaned
+                orchestrator.cues[index].hasTranslationError = false
+            }
+            applied += 1
+        }
+
+        guard applied > 0 else {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                message: String(localized: "No subtitles were applied. Check that cue numbers are within range.", bundle: .forLocale(locale))
+            )
+            return
+        }
+
+        orchestrator.translationComplete = true
+        cuesChangedSinceExport = true
+        snapshotTranslations()
+
+        if let job = activeJob {
+            try? jobStore.saveCues(orchestrator.cues, id: job.id, type: .translated)
+        }
+
+        clipboardAlert = ClipboardAlert(
+            title: String(localized: "Imported", bundle: .forLocale(locale)),
+            message: String(format: String(localized: "Imported %d subtitles.", bundle: .forLocale(locale)), applied)
+        )
+    }
+
+    private func manualTargetLocaleID(for job: JobModel, track: ManualTranslationTrack) -> String {
+        switch track {
+        case .subtitle1:
+            return job.language1Locale
+        case .subtitle2:
+            return job.translationTargetLocale ?? ""
+        }
+    }
+
+    private func normalizeLocaleIdentifier(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func decodeJSON<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}") else {
+            throw NSError(domain: "SubStamp", code: -1)
+        }
+        let json = String(trimmed[start...end])
+        let data = Data(json.utf8)
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private struct ManualSelection {
+        struct Input {
+            let n: Int
+            let text: String
+        }
+
+        let inputs: [Input]
+        let contextBefore: [String]
+        let contextAfter: [String]
+    }
+
+    private func makeManualTranslationSelection(
+        track: ManualTranslationTrack,
+        maxCues: Int,
+        maxCharacters: Int
+    ) -> ManualSelection {
+        let needsTranslation: (SubtitleCue) -> Bool = { cue in
+            let source = (cue.originalTranscription ?? cue.primaryText).trimmingCharacters(in: .whitespacesAndNewlines)
+            if source.isEmpty { return false }
+            switch track {
+            case .subtitle1:
+                let current = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                return normalizeForLooseComparison(current) == normalizeForLooseComparison(source)
+            case .subtitle2:
+                let current = (cue.secondaryText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return current.isEmpty
+            }
+        }
+
+        guard let startIndex = orchestrator.cues.firstIndex(where: needsTranslation) else {
+            return ManualSelection(inputs: [], contextBefore: [], contextAfter: [])
+        }
+
+        var inputs: [ManualSelection.Input] = []
+        inputs.reserveCapacity(min(maxCues, 24))
+
+        var usedChars = 0
+        for idx in startIndex..<orchestrator.cues.count {
+            if inputs.count >= maxCues { break }
+            let cue = orchestrator.cues[idx]
+            guard needsTranslation(cue) else { continue }
+            let text = (cue.originalTranscription ?? cue.primaryText).trimmingCharacters(in: .whitespacesAndNewlines)
+            let estimated = text.count + 32
+            if !inputs.isEmpty, (usedChars + estimated) > maxCharacters { break }
+            inputs.append(.init(n: idx + 1, text: text))
+            usedChars += estimated
+        }
+
+        // Surrounding context for natural phrasing.
+        let firstIndex = (inputs.first?.n ?? 1) - 1
+        let lastIndex = (inputs.last?.n ?? firstIndex + 1) - 1
+
+        let contextBefore = buildContextLines(
+            startIndex: max(0, firstIndex - 3),
+            endIndex: firstIndex,
+            maxLines: 3
+        )
+        let contextAfter = buildContextLines(
+            startIndex: min(orchestrator.cues.count, lastIndex + 1),
+            endIndex: min(orchestrator.cues.count, lastIndex + 1 + 3),
+            maxLines: 3
+        )
+
+        return ManualSelection(inputs: inputs, contextBefore: contextBefore, contextAfter: contextAfter)
+    }
+
+    private func buildContextLines(startIndex: Int, endIndex: Int, maxLines: Int) -> [String] {
+        guard startIndex < endIndex else { return [] }
+        var lines: [String] = []
+        for i in startIndex..<endIndex {
+            if lines.count >= maxLines { break }
+            let text = (orchestrator.cues[i].originalTranscription ?? orchestrator.cues[i].primaryText)
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { lines.append(text) }
+        }
+        return lines
+    }
+
+    private func formatContextBlock(label: String, lines: [String]) -> String {
+        let trimmed = lines
+            .map { $0.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !trimmed.isEmpty else { return "" }
+        let bullets = trimmed.map { "- \($0)" }.joined(separator: "\n")
+        return """
+
+        \(label):
+        \(bullets)
+        """
+    }
+
+    private func normalizeForLooseComparison(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }
