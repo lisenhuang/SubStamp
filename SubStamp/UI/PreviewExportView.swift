@@ -1011,6 +1011,8 @@ struct PreviewExportView: View {
         - Do NOT add, remove, merge, split, or reorder cues.
         - Keep each cue aligned by its cue number `n`.
         - Output ONLY valid JSON (no markdown, no commentary).
+        - Use standard JSON double quotes (") only. Do not use smart quotes (“ ”).
+        - Copy the `target` value EXACTLY as provided in INPUT_JSON.
         - For empty cue text, output an empty string.
         - Preserve line breaks using \\n when needed.
 
@@ -1073,9 +1075,16 @@ struct PreviewExportView: View {
         do {
             decoded = try decodeJSON(ManualTranslationPayload.self, from: raw)
         } catch {
+            let hasSmartQuotes = raw.contains("“")
+                || raw.contains("”")
+                || raw.contains("‘")
+                || raw.contains("’")
+                || raw.contains("＂")
             clipboardAlert = ClipboardAlert(
                 title: String(localized: "Paste failed", bundle: .forLocale(locale)),
-                message: String(localized: "The pasted text is not valid JSON in the expected format.", bundle: .forLocale(locale))
+                message: hasSmartQuotes
+                    ? String(localized: "The pasted text isn't valid JSON. Tip: use standard quotes (\") instead of smart quotes (“ ”).", bundle: .forLocale(locale))
+                    : String(localized: "The pasted text isn't valid JSON. Paste only the JSON result (no markdown or extra text).", bundle: .forLocale(locale))
             )
             return
         }
@@ -1186,8 +1195,145 @@ struct PreviewExportView: View {
             throw NSError(domain: "SubStamp", code: -1)
         }
         let json = String(trimmed[start...end])
-        let data = Data(json.utf8)
-        return try JSONDecoder().decode(T.self, from: data)
+
+        do {
+            return try JSONDecoder().decode(T.self, from: Data(json.utf8))
+        } catch {
+            // Common failure: AI output uses smart quotes or fullwidth punctuation, which isn't valid JSON.
+            let normalized = normalizeLikelyJSON(json)
+            guard normalized != json else { throw error }
+            return try JSONDecoder().decode(T.self, from: Data(normalized.utf8))
+        }
+    }
+
+    private func normalizeLikelyJSON(_ text: String) -> String {
+        // Fast path.
+        if !text.contains("“"),
+           !text.contains("”"),
+           !text.contains("‘"),
+           !text.contains("’"),
+           !text.contains("＂"),
+           !text.contains("："),
+           !text.contains("，"),
+           !text.contains("｛"),
+           !text.contains("｝"),
+           !text.contains("［"),
+           !text.contains("］") {
+            return text
+        }
+
+        let scalars = Array(text.unicodeScalars)
+        var out = String()
+        out.unicodeScalars.reserveCapacity(scalars.count)
+
+        func isWhitespace(_ scalar: UnicodeScalar) -> Bool {
+            CharacterSet.whitespacesAndNewlines.contains(scalar)
+        }
+
+        func prevNonWhitespaceScalar(before index: Int) -> UnicodeScalar? {
+            var i = index
+            while i >= 0 {
+                let s = scalars[i]
+                if !isWhitespace(s) { return s }
+                i -= 1
+            }
+            return nil
+        }
+
+        func nextNonWhitespaceScalar(after index: Int) -> UnicodeScalar? {
+            var i = index
+            while i < scalars.count {
+                let s = scalars[i]
+                if !isWhitespace(s) { return s }
+                i += 1
+            }
+            return nil
+        }
+
+        func isSmartQuote(_ scalar: UnicodeScalar) -> Bool {
+            switch scalar.value {
+            case 0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0xFF02:
+                return true
+            case 0x2018, 0x2019, 0x201A, 0xFF07:
+                return true
+            default:
+                return false
+            }
+        }
+
+        let openingContext: Set<UInt32> = [
+            0x007B, // {
+            0x005B, // [
+            0x003A, // :
+            0x002C, // ,
+            0xFF5B, // ｛
+            0xFF3B, // ［
+            0xFF1A, // ：
+            0xFF0C  // ，
+        ]
+        let closingContext: Set<UInt32> = [
+            0x003A, // :
+            0x002C, // ,
+            0x007D, // }
+            0x005D, // ]
+            0xFF1A, // ：
+            0xFF0C, // ，
+            0xFF5D, // ｝
+            0xFF3D  // ］
+        ]
+
+        var inString = false
+        var backslashRun = 0
+
+        for i in 0..<scalars.count {
+            let s = scalars[i]
+            var r = s
+
+            if isSmartQuote(s) {
+                let prev = prevNonWhitespaceScalar(before: i - 1)
+                let next = nextNonWhitespaceScalar(after: i + 1)
+                let prevIsContext = prev.map { openingContext.contains($0.value) } ?? true
+                let nextIsContext = next.map { closingContext.contains($0.value) } ?? true
+                if prevIsContext || nextIsContext {
+                    r = UnicodeScalar(0x22)! // "
+                }
+            }
+
+            if !inString {
+                // Normalize common fullwidth punctuation used in AI outputs.
+                switch r.value {
+                case 0xFF5B: // ｛
+                    r = UnicodeScalar(0x7B)! // {
+                case 0xFF5D: // ｝
+                    r = UnicodeScalar(0x7D)! // }
+                case 0xFF3B: // ［
+                    r = UnicodeScalar(0x5B)! // [
+                case 0xFF3D: // ］
+                    r = UnicodeScalar(0x5D)! // ]
+                case 0xFF1A: // ：
+                    r = UnicodeScalar(0x3A)! // :
+                case 0xFF0C: // ，
+                    r = UnicodeScalar(0x2C)! // ,
+                default:
+                    break
+                }
+            }
+
+            let willToggleString = (r.value == 0x22) && (backslashRun % 2 == 0)
+            out.unicodeScalars.append(r)
+
+            if willToggleString {
+                inString.toggle()
+            }
+
+            if r.value == 0x5C { // backslash
+                backslashRun += 1
+            } else {
+                backslashRun = 0
+            }
+        }
+
+        return out
     }
 
     private struct ManualSelection {
