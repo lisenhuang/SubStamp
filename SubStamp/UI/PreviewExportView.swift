@@ -34,6 +34,7 @@ struct PreviewExportView: View {
     @State private var clipboardAlert: ClipboardAlert?
     @State private var manualTranslationTrack: ManualTranslationTrack = .subtitle2
     @State private var lastManualPromptContext: ManualPromptContext?
+    @State private var isManualToolsExpanded: Bool = false
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -475,41 +476,44 @@ struct PreviewExportView: View {
                 Divider()
                     .padding(.vertical, AppSpacing.xs)
 
-                VStack(alignment: .leading, spacing: AppSpacing.s) {
+                DisclosureGroup(isExpanded: $isManualToolsExpanded) {
+                    VStack(alignment: .leading, spacing: AppSpacing.s) {
+                        if manualTranslationTracks.count > 1 {
+                            Picker(String(localized: "Target subtitle", bundle: .forLocale(locale)), selection: $manualTranslationTrack) {
+                                ForEach(manualTranslationTracks) { track in
+                                    Text(manualTrackDisplayName(track))
+                                        .tag(track)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+
+                        HStack(spacing: AppSpacing.s) {
+                            Button {
+                                copyManualTranslationPromptToClipboard()
+                            } label: {
+                                Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                pasteManualTranslationFromClipboard()
+                            } label: {
+                                Label(String(localized: "Paste subtitle", bundle: .forLocale(locale)), systemImage: "clipboard")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Text(String(localized: "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.", bundle: .forLocale(locale)))
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
+                    .padding(.top, AppSpacing.xs)
+                } label: {
                     Text(String(localized: "Manual fix & translate", bundle: .forLocale(locale)))
                         .font(AppTypography.bodyEmphasis)
-
-                    if manualTranslationTracks.count > 1 {
-                        Picker(String(localized: "Target subtitle", bundle: .forLocale(locale)), selection: $manualTranslationTrack) {
-                            ForEach(manualTranslationTracks) { track in
-                                Text(manualTrackDisplayName(track))
-                                    .tag(track)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-
-                    HStack(spacing: AppSpacing.s) {
-                        Button {
-                            copyManualTranslationPromptToClipboard()
-                        } label: {
-                            Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button {
-                            pasteManualTranslationFromClipboard()
-                        } label: {
-                            Label(String(localized: "Paste subtitle", bundle: .forLocale(locale)), systemImage: "clipboard")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    Text(String(localized: "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.", bundle: .forLocale(locale)))
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.secondaryText)
                 }
             }
         }
