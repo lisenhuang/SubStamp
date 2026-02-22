@@ -970,11 +970,18 @@ struct PreviewExportView: View {
             return
         }
 
-        let selection = makeManualTranslationSelection(track: manualTranslationTrack, maxCues: 28, maxCharacters: 1400)
+        // For manual translation, include the full (possibly edited) transcription so external AIs can use global context.
+        // If the AI can't output everything in one response, it can return subsets and the user can paste multiple times.
+        let selection = makeManualTranslationSelection(
+            track: manualTranslationTrack,
+            maxCues: orchestrator.cues.count,
+            maxCharacters: 2_000_000,
+            includeAlreadyTranslated: true
+        )
         guard !selection.inputs.isEmpty else {
             clipboardAlert = ClipboardAlert(
                 title: String(localized: "Nothing to translate", bundle: .forLocale(locale)),
-                message: String(localized: "All selected subtitles already have translations.", bundle: .forLocale(locale))
+                message: String(localized: "No subtitles found to translate.", bundle: .forLocale(locale))
             )
             return
         }
@@ -987,7 +994,8 @@ struct PreviewExportView: View {
         let payloadJSON: String
         do {
             let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+            // Keep JSON compact to reduce prompt size for long transcripts.
+            encoder.outputFormatting = [.sortedKeys]
             let data = try encoder.encode(payload)
             payloadJSON = String(data: data, encoding: .utf8) ?? "{}"
         } catch {
@@ -1013,6 +1021,7 @@ struct PreviewExportView: View {
         - Output ONLY valid JSON (no markdown, no commentary).
         - Use standard JSON double quotes (") only. Do not use smart quotes (“ ”).
         - Copy the `target` value EXACTLY as provided in INPUT_JSON.
+        - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
         - For empty cue text, output an empty string.
         - Preserve line breaks using \\n when needed.
 
@@ -1125,10 +1134,10 @@ struct PreviewExportView: View {
             }
 
             let pastedSet = Set(decoded.cues.map(\.n))
-            guard pastedSet == last.cueNumbers else {
+            guard last.cueNumbers.isSuperset(of: pastedSet) else {
                 clipboardAlert = ClipboardAlert(
                     title: String(localized: "Paste failed", bundle: .forLocale(locale)),
-                    message: String(localized: "The pasted result doesn't match the last copied prompt. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                    message: String(localized: "Some cue numbers in the pasted JSON don't match the last copied prompt. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
                 )
                 return
             }
@@ -1350,11 +1359,13 @@ struct PreviewExportView: View {
     private func makeManualTranslationSelection(
         track: ManualTranslationTrack,
         maxCues: Int,
-        maxCharacters: Int
+        maxCharacters: Int,
+        includeAlreadyTranslated: Bool
     ) -> ManualSelection {
         let needsTranslation: (SubtitleCue) -> Bool = { cue in
             let source = (cue.originalTranscription ?? cue.primaryText).trimmingCharacters(in: .whitespacesAndNewlines)
             if source.isEmpty { return false }
+            if includeAlreadyTranslated { return true }
             switch track {
             case .subtitle1:
                 let current = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1365,8 +1376,14 @@ struct PreviewExportView: View {
             }
         }
 
-        guard let startIndex = orchestrator.cues.firstIndex(where: needsTranslation) else {
-            return ManualSelection(inputs: [], contextBefore: [], contextAfter: [])
+        let startIndex: Int
+        if includeAlreadyTranslated {
+            startIndex = 0
+        } else {
+            guard let found = orchestrator.cues.firstIndex(where: needsTranslation) else {
+                return ManualSelection(inputs: [], contextBefore: [], contextAfter: [])
+            }
+            startIndex = found
         }
 
         var inputs: [ManualSelection.Input] = []
