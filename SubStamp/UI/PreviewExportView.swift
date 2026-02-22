@@ -224,8 +224,6 @@ struct PreviewExportView: View {
                                 subtitle: "Edit subtitles, translate, and export."
                             )
 
-                            styleCard
-
                             // Hint for editing before translation
                             if needsTranslation && !orchestrator.translationComplete {
                                 Text(String(localized: "You can review and edit the transcription below before translating. This is optional.", bundle: .forLocale(locale)))
@@ -238,6 +236,8 @@ struct PreviewExportView: View {
                             // Translation progress + translate button
                             translationProgressSection
                             translateButtonSection
+
+                            styleCard
 
                             // Export / render progress / Next button
                             exportSection
