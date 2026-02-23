@@ -32,6 +32,8 @@ struct PreviewExportView: View {
     @State private var isVideoFullScreen = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var clipboardAlert: ClipboardAlert?
+    @State private var didCopyManualPrompt = false
+    @State private var copyManualPromptFeedbackNonce = 0
     @State private var manualTranslationTrack: ManualTranslationTrack = .subtitle2
     @State private var lastManualPromptContext: ManualPromptContext?
     @State private var isManualToolsExpanded: Bool = false
@@ -488,17 +490,23 @@ struct PreviewExportView: View {
                             .pickerStyle(.segmented)
                         }
 
-                        HStack(spacing: AppSpacing.s) {
-                            Button {
-                                copyManualTranslationPromptToClipboard()
-                            } label: {
-                                Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
-                                    .frame(maxWidth: .infinity)
+                    HStack(spacing: AppSpacing.s) {
+                        Button {
+                            copyManualTranslationPromptToClipboard()
+                        } label: {
+                            Group {
+                                if didCopyManualPrompt {
+                                    Text("✅ Copied")
+                                } else {
+                                    Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
+                                }
                             }
-                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
 
-                            Button {
-                                pasteManualTranslationFromClipboard()
+                        Button {
+                            pasteManualTranslationFromClipboard()
                             } label: {
                                 Label(String(localized: "Paste subtitle", bundle: .forLocale(locale)), systemImage: "clipboard")
                                     .frame(maxWidth: .infinity)
@@ -1080,10 +1088,20 @@ struct PreviewExportView: View {
             cueNumbers: Set(selection.inputs.map(\.n))
         )
 
-        clipboardAlert = ClipboardAlert(
-            title: String(localized: "Copied", bundle: .forLocale(locale)),
-            message: String(localized: "Copied prompt to your clipboard.", bundle: .forLocale(locale))
-        )
+        showCopiedManualPromptFeedback()
+    }
+
+    private func showCopiedManualPromptFeedback() {
+        // Swap the button label for a short time instead of showing an alert.
+        copyManualPromptFeedbackNonce += 1
+        let nonce = copyManualPromptFeedbackNonce
+        didCopyManualPrompt = true
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard copyManualPromptFeedbackNonce == nonce else { return }
+            didCopyManualPrompt = false
+        }
     }
 
     private func pasteManualTranslationFromClipboard() {
