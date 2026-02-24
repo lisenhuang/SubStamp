@@ -164,6 +164,11 @@ struct PreviewExportView: View {
         return tracks
     }
 
+    private var shouldShowManualFixTools: Bool {
+        guard job != nil else { return false }
+        return !orchestrator.isRunning && !orchestrator.cues.isEmpty
+    }
+
     private var shouldShowManualTranslationTools: Bool {
         !manualTranslationTracks.isEmpty && !orchestrator.isRunning
     }
@@ -489,11 +494,11 @@ struct PreviewExportView: View {
 
     @ViewBuilder
     private var manualFixTranslateCard: some View {
-        if shouldShowManualTranslationTools {
+        if shouldShowManualFixTools && (!needsTranslation || !manualTranslationTracks.isEmpty) {
             VStack(alignment: .leading, spacing: AppSpacing.s) {
                 DisclosureGroup(isExpanded: $isManualToolsExpanded) {
                     VStack(alignment: .leading, spacing: AppSpacing.s) {
-                        if manualTranslationTracks.count > 1 {
+                        if needsTranslation, manualTranslationTracks.count > 1 {
                             Picker(String(localized: "Target subtitle", bundle: .forLocale(locale)), selection: $manualTranslationTrack) {
                                 ForEach(manualTranslationTracks) { track in
                                     Text(manualTrackDisplayName(track))
@@ -527,13 +532,19 @@ struct PreviewExportView: View {
                             .buttonStyle(.bordered)
                         }
 
-                        Text(String(localized: "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.", bundle: .forLocale(locale)))
+                        Text(needsTranslation
+                             ? String(localized: "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.", bundle: .forLocale(locale))
+                             : String(localized: "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it.", bundle: .forLocale(locale))
+                        )
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
                     }
                     .padding(.top, AppSpacing.xs)
                 } label: {
-                    Text(String(localized: "Manual fix & translate", bundle: .forLocale(locale)))
+                    Text(needsTranslation
+                         ? String(localized: "Manual fix & translate", bundle: .forLocale(locale))
+                         : String(localized: "Manual fix", bundle: .forLocale(locale))
+                    )
                         .font(AppTypography.bodyEmphasis)
                 }
             }
@@ -988,24 +999,17 @@ struct PreviewExportView: View {
     private func copyManualTranslationPromptToClipboard() {
         guard let job else { return }
 
-        guard manualTranslationTracks.contains(manualTranslationTrack) else {
-            if let first = manualTranslationTracks.first {
-                manualTranslationTrack = first
+        if needsTranslation {
+            guard manualTranslationTracks.contains(manualTranslationTrack) else {
+                if let first = manualTranslationTracks.first {
+                    manualTranslationTrack = first
+                }
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                    message: String(localized: "This subtitle track doesn't need translation for the current setup.", bundle: .forLocale(locale))
+                )
+                return
             }
-            clipboardAlert = ClipboardAlert(
-                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
-                message: String(localized: "This subtitle track doesn't need translation for the current setup.", bundle: .forLocale(locale))
-            )
-            return
-        }
-
-        let targetID = manualTargetLocaleID(for: job, track: manualTranslationTrack)
-        guard !targetID.isEmpty else {
-            clipboardAlert = ClipboardAlert(
-                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
-                message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
-            )
-            return
         }
 
         let sourceID = job.transcriptionLocale
@@ -1015,6 +1019,21 @@ struct PreviewExportView: View {
                 message: String(localized: "No source language is set for transcription.", bundle: .forLocale(locale))
             )
             return
+        }
+
+        let targetID: String
+        if needsTranslation {
+            targetID = manualTargetLocaleID(for: job, track: manualTranslationTrack)
+            guard !targetID.isEmpty else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                    message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
+                )
+                return
+            }
+        } else {
+            // Fix-only mode: keep target == source so the output stays compatible with the same JSON parser.
+            targetID = sourceID
         }
 
         // For manual translation, include the full (possibly edited) transcription so external AIs can use global context.
@@ -1081,6 +1100,7 @@ struct PreviewExportView: View {
         - Preserve line breaks using \\n when needed.
         - In OUTPUT_JSON, `fixed` must be in the SOURCE language and `text` must be in the TARGET language.
         - Only include `fixed` for cues that actually need a correction. If a cue needs no correction, omit `fixed` for that cue.
+        - If the target language is the same as the source language, DO NOT translate. Only output the cues that you actually fixed.
 
         Output JSON schema (keys must match exactly):
         {
@@ -1132,22 +1152,30 @@ struct PreviewExportView: View {
         }
 
         let wasTranslationComplete = orchestrator.translationComplete
-        guard manualTranslationTracks.contains(manualTranslationTrack) else {
-            clipboardAlert = ClipboardAlert(
-                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
-                message: String(localized: "This subtitle track doesn't need translation for the current setup.", bundle: .forLocale(locale))
-            )
-            return
+        if needsTranslation {
+            guard manualTranslationTracks.contains(manualTranslationTrack) else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                    message: String(localized: "This subtitle track doesn't need translation for the current setup.", bundle: .forLocale(locale))
+                )
+                return
+            }
         }
 
         let expectedSource = normalizeLocaleIdentifier(job.transcriptionLocale)
-        let expectedTarget = normalizeLocaleIdentifier(manualTargetLocaleID(for: job, track: manualTranslationTrack))
-        if expectedTarget.isEmpty {
-            clipboardAlert = ClipboardAlert(
-                title: String(localized: "Unavailable", bundle: .forLocale(locale)),
-                message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
-            )
-            return
+        let expectedTarget: String
+        if needsTranslation {
+            expectedTarget = normalizeLocaleIdentifier(manualTargetLocaleID(for: job, track: manualTranslationTrack))
+            if expectedTarget.isEmpty {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                    message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
+                )
+                return
+            }
+        } else {
+            // Fix-only mode expects target == source in the pasted JSON.
+            expectedTarget = expectedSource
         }
 
         let decoded: ManualFixTranslateOutput
@@ -1247,15 +1275,17 @@ struct PreviewExportView: View {
 
             if let translated = cue.text {
                 let cleaned = SubtitleTextCleaner.clean(translated)
-                switch manualTranslationTrack {
-                case .subtitle1:
-                    orchestrator.cues[index].primaryText = cleaned
-                    orchestrator.cues[index].hasTranslationError = false
-                case .subtitle2:
-                    orchestrator.cues[index].secondaryText = cleaned
-                    orchestrator.cues[index].hasTranslationError = false
+                if needsTranslation {
+                    switch manualTranslationTrack {
+                    case .subtitle1:
+                        orchestrator.cues[index].primaryText = cleaned
+                        orchestrator.cues[index].hasTranslationError = false
+                    case .subtitle2:
+                        orchestrator.cues[index].secondaryText = cleaned
+                        orchestrator.cues[index].hasTranslationError = false
+                    }
+                    appliedTranslation += 1
                 }
-                appliedTranslation += 1
             }
         }
 
