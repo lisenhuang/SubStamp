@@ -249,13 +249,11 @@ struct PreviewExportView: View {
 
                             cueList
 
-                            // Subtitle style should be adjustable before the user translates.
-                            styleCard
-
                             // Translation progress + translate button
                             translationProgressSection
                             translateButtonSection
 
+                            styleCard
                             manualFixTranslateCard
 
                             // Export / render progress / Next button
