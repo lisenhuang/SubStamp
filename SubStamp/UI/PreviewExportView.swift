@@ -249,11 +249,14 @@ struct PreviewExportView: View {
 
                             cueList
 
+                            // Subtitle style should be adjustable before the user translates.
+                            styleCard
+
                             // Translation progress + translate button
                             translationProgressSection
                             translateButtonSection
 
-                            styleCard
+                            manualFixTranslateCard
 
                             // Export / render progress / Next button
                             exportSection
@@ -473,11 +476,23 @@ struct PreviewExportView: View {
                 Label(String(localized: "Bottom", bundle: .forLocale(locale)), systemImage: "align.vertical.bottom").tag(SubtitlePosition.bottom)
             }
             .pickerStyle(.segmented)
+        }
+        .font(AppTypography.caption)
+        .padding()
+        .background(AppColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+    }
 
-            if shouldShowManualTranslationTools {
-                Divider()
-                    .padding(.vertical, AppSpacing.xs)
+    // MARK: - Manual fix & translate card
 
+    @ViewBuilder
+    private var manualFixTranslateCard: some View {
+        if shouldShowManualTranslationTools {
+            VStack(alignment: .leading, spacing: AppSpacing.s) {
                 DisclosureGroup(isExpanded: $isManualToolsExpanded) {
                     VStack(alignment: .leading, spacing: AppSpacing.s) {
                         if manualTranslationTracks.count > 1 {
@@ -490,23 +505,23 @@ struct PreviewExportView: View {
                             .pickerStyle(.segmented)
                         }
 
-                    HStack(spacing: AppSpacing.s) {
-                        Button {
-                            copyManualTranslationPromptToClipboard()
-                        } label: {
-                            Group {
-                                if didCopyManualPrompt {
-                                    Text("✅ Copied")
-                                } else {
-                                    Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
+                        HStack(spacing: AppSpacing.s) {
+                            Button {
+                                copyManualTranslationPromptToClipboard()
+                            } label: {
+                                Group {
+                                    if didCopyManualPrompt {
+                                        Text("✅ Copied")
+                                    } else {
+                                        Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
+                                    }
                                 }
+                                .frame(maxWidth: .infinity)
                             }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
+                            .buttonStyle(.bordered)
 
-                        Button {
-                            pasteManualTranslationFromClipboard()
+                            Button {
+                                pasteManualTranslationFromClipboard()
                             } label: {
                                 Label(String(localized: "Paste subtitle", bundle: .forLocale(locale)), systemImage: "clipboard")
                                     .frame(maxWidth: .infinity)
@@ -524,15 +539,15 @@ struct PreviewExportView: View {
                         .font(AppTypography.bodyEmphasis)
                 }
             }
+            .font(AppTypography.caption)
+            .padding()
+            .background(AppColors.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                    .stroke(AppColors.cardBorder, lineWidth: 1)
+            )
         }
-        .font(AppTypography.caption)
-        .padding()
-        .background(AppColors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                .stroke(AppColors.cardBorder, lineWidth: 1)
-        )
     }
 
     // MARK: - Cue list
@@ -1049,28 +1064,32 @@ struct PreviewExportView: View {
         let prompt = """
         You are a professional subtitle editor and translator.
         The input is a speech-to-text transcription from a video. It may contain mistakes (wrong words, names, punctuation).
+        Read the entire INPUT_JSON first (all cues), then produce the output.
         Your tasks for each cue:
         1) Fix the transcription in \(sourceName) (\(sourceID)) with MINIMAL changes. Do not rewrite whole sentences.
         2) Translate the FIXED transcription into \(targetName) (\(targetID)).
         Use context for natural phrasing, but keep every cue aligned. Do not move content between cues.
+        You may use internet search to verify names, places, and terms when helpful.
 
         Rules:
         - Do NOT add, remove, merge, split, or reorder cues.
         - Keep each cue aligned by its cue number `n`.
         - Output ONLY valid JSON (no markdown, no commentary).
-        - Use standard JSON double quotes (") only. Do not use smart quotes (“ ”).
+        - Output must start with { and end with } and be valid JSON.
+        - Use ASCII double quotes U+0022 (") only. Never use smart quotes (“ ” ‘ ’) or fullwidth quotes (＂).
         - Copy the `source` and `target` values EXACTLY as provided in INPUT_JSON.
         - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
         - For empty cue text, output an empty string.
         - Preserve line breaks using \\n when needed.
         - In OUTPUT_JSON, `fixed` must be in the SOURCE language and `text` must be in the TARGET language.
+        - Only include `fixed` for cues that actually need a correction. If a cue needs no correction, omit `fixed` for that cue.
 
-        Output JSON schema (must match exactly):
+        Output JSON schema (keys must match exactly):
         {
           "source": "\(sourceID)",
           "target": "\(targetID)",
           "cues": [
-            { "n": 1, "fixed": "...", "text": "..." }
+            { "n": 1, "text": "...", "fixed": "..." }
           ]
         }
 
