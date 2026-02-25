@@ -190,3 +190,30 @@
 "Free up space and retry." = "Free up space and retry.";
 "Resume processing from the last checkpoint." = "Resume processing from the last checkpoint.";
 "Start a new project." = "Start a new project.";
+
+/* Monetization / Paywall */
+"Upgrade" = "Upgrade";
+"Upgrade to Pro" = "Upgrade to Pro";
+"Unlock Pro" = "Unlock Pro";
+"Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.";
+"Weekly Subscription" = "Weekly Subscription";
+"Unlimited exports, saving, and sharing. Cancel anytime." = "Unlimited exports, saving, and sharing. Cancel anytime.";
+"Loading purchase options..." = "Loading purchase options...";
+"Lifetime Unlock" = "Lifetime Unlock";
+"Restore Purchases" = "Restore Purchases";
+"Subscription details" = "Subscription details";
+"Weekly subscription (1 week): %@ per week. Auto-renewable." = "Weekly subscription (1 week): %@ per week. Auto-renewable.";
+"Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load." = "Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load.";
+"Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions." = "Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions.";
+"Privacy Policy" = "Privacy Policy";
+"Terms of Use (EULA)" = "Terms of Use (EULA)";
+"Close" = "Close";
+
+/* Manual AI */
+"Copy prompt" = "Copy prompt";
+"Paste subtitle" = "Paste subtitle";
+"Target subtitle" = "Target subtitle";
+"Manual fix & translate" = "Manual fix & translate";
+"Manual fix" = "Manual fix";
+"Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.";
+"Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it.";

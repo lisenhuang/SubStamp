@@ -645,6 +645,7 @@ struct PurchasePaywallView: View {
     var onUnlocked: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
 
     var body: some View {
         let weekly = purchaseManager.product(for: PurchaseManager.weeklyProductID)
@@ -652,17 +653,17 @@ struct PurchasePaywallView: View {
 
         NavigationStack {
             VStack(alignment: .leading, spacing: AppSpacing.m) {
-                Text("Unlock Pro")
+                Text(String(localized: "Unlock Pro", bundle: .forLocale(locale)))
                     .font(AppTypography.title)
-                Text("Free users can save to Photos or share up to \(freeLimit) different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.")
+                Text(String(format: String(localized: "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
                     .font(AppTypography.body)
                     .foregroundStyle(AppColors.secondaryText)
 
                 SubscriptionStoreView(productIDs: [PurchaseManager.weeklyProductID]) {
                     VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                        Text("Weekly Subscription")
+                        Text(String(localized: "Weekly Subscription", bundle: .forLocale(locale)))
                             .font(AppTypography.bodyEmphasis)
-                        Text("Unlimited exports, saving, and sharing. Cancel anytime.")
+                        Text(String(localized: "Unlimited exports, saving, and sharing. Cancel anytime.", bundle: .forLocale(locale)))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
                     }
@@ -672,17 +673,17 @@ struct PurchasePaywallView: View {
                 .subscriptionStorePolicyDestination(url: AppLegal.privacyPolicyURL, for: .privacyPolicy)
 
                 if purchaseManager.isLoadingProducts {
-                    ProgressView("Loading purchase options...")
+                    ProgressView(String(localized: "Loading purchase options...", bundle: .forLocale(locale)))
                 } else if let lifetime {
                     payButton(
-                        title: "Lifetime Unlock",
+                        title: String(localized: "Lifetime Unlock", bundle: .forLocale(locale)),
                         subtitle: lifetime.displayPrice
                     ) {
                         Task { await purchaseManager.purchase(lifetime) }
                     }
                 }
 
-                Button("Restore Purchases") {
+                Button(String(localized: "Restore Purchases", bundle: .forLocale(locale))) {
                     Task { await purchaseManager.restorePurchases() }
                 }
                 .font(AppTypography.bodyEmphasis)
@@ -690,27 +691,27 @@ struct PurchasePaywallView: View {
 
                 VStack(alignment: .leading, spacing: AppSpacing.s) {
                     Divider()
-                    Text("Subscription details")
+                    Text(String(localized: "Subscription details", bundle: .forLocale(locale)))
                         .font(AppTypography.bodyEmphasis)
 
                     if let weekly {
-                        Text("Weekly subscription (1 week): \(weekly.displayPrice) per week. Auto-renewable.")
+                        Text(String(format: String(localized: "Weekly subscription (1 week): %@ per week. Auto-renewable.", bundle: .forLocale(locale)), weekly.displayPrice))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
                     } else {
-                        Text("Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load.")
+                        Text(String(localized: "Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load.", bundle: .forLocale(locale)))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
                     }
 
-                    Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions.")
+                    Text(String(localized: "Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions.", bundle: .forLocale(locale)))
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
 
                     HStack {
-                        Link("Privacy Policy", destination: AppLegal.privacyPolicyURL)
+                        Link(String(localized: "Privacy Policy", bundle: .forLocale(locale)), destination: AppLegal.privacyPolicyURL)
                         Spacer()
-                        Link("Terms of Use (EULA)", destination: AppLegal.termsOfUseURL)
+                        Link(String(localized: "Terms of Use (EULA)", bundle: .forLocale(locale)), destination: AppLegal.termsOfUseURL)
                     }
                     .font(AppTypography.caption)
                 }
@@ -726,7 +727,7 @@ struct PurchasePaywallView: View {
             .padding(AppSpacing.l)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { dismiss() }
+                    Button(String(localized: "Close", bundle: .forLocale(locale))) { dismiss() }
                 }
             }
         }

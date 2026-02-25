@@ -189,3 +189,30 @@
 "Free up space and retry." = "释放空间后重试。";
 "Resume processing from the last checkpoint." = "从上次中断处恢复处理。";
 "Start a new project." = "开始新项目。";
+
+/* 付费 / 购买页 */
+"Upgrade" = "升级";
+"Upgrade to Pro" = "升级到 Pro";
+"Unlock Pro" = "解锁 Pro";
+"Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "免费用户最多可对 %d 个不同视频进行保存到照片或分享。每个视频只计一次。升级到 Pro 后可无限保存与分享。";
+"Weekly Subscription" = "周订阅";
+"Unlimited exports, saving, and sharing. Cancel anytime." = "无限导出、保存与分享。随时取消。";
+"Loading purchase options..." = "正在加载购买选项...";
+"Lifetime Unlock" = "永久解锁";
+"Restore Purchases" = "恢复购买";
+"Subscription details" = "订阅详情";
+"Weekly subscription (1 week): %@ per week. Auto-renewable." = "周订阅（1 周）：%@ / 周。自动续订。";
+"Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load." = "周订阅（1 周）：按周计费。加载 App Store 商品后将显示价格。";
+"Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions." = "付款将在确认购买时从你的 Apple ID 账户扣款。订阅将自动续订，除非在当前周期结束前至少 24 小时取消。可在 设置 > Apple ID > 订阅 中管理或取消。";
+"Privacy Policy" = "隐私政策";
+"Terms of Use (EULA)" = "使用条款（EULA）";
+"Close" = "关闭";
+
+/* 手动 AI */
+"Copy prompt" = "复制提示词";
+"Paste subtitle" = "粘贴字幕";
+"Target subtitle" = "目标字幕";
+"Manual fix & translate" = "手动修正与翻译";
+"Manual fix" = "手动修正";
+"Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "复制提示词，用任意 AI 修正并翻译，然后将 JSON 结果粘贴回这里。应用会在应用前验证格式。";
+"Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "复制提示词，用任意 AI 修正转录，然后将 JSON 结果粘贴回这里。应用会在应用前验证格式。";

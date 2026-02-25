@@ -514,7 +514,7 @@ struct PreviewExportView: View {
                             } label: {
                                 Group {
                                     if didCopyManualPrompt {
-                                        Text("✅ Copied")
+                                        Text("✅ \(String(localized: "Copied", bundle: .forLocale(locale)))")
                                     } else {
                                         Label(String(localized: "Copy prompt", bundle: .forLocale(locale)), systemImage: "doc.on.doc")
                                     }

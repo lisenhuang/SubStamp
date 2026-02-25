@@ -6,6 +6,7 @@ struct SettingsMenuButton: View {
     @ObservedObject var purchaseManager: PurchaseManager
     @State private var showPaywall = false
     @State private var paywallUsedCount = 0
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Menu {
@@ -16,7 +17,7 @@ struct SettingsMenuButton: View {
                         showPaywall = true
                     }
                 } label: {
-                    Label("Upgrade to Pro", systemImage: "crown.fill")
+                    Label(String(localized: "Upgrade to Pro", bundle: .forLocale(locale)), systemImage: "crown.fill")
                 }
 
                 Divider()
@@ -37,7 +38,7 @@ struct SettingsMenuButton: View {
                     }
                 }
             } label: {
-                Label("Display Language", systemImage: "globe")
+                Label(String(localized: "Display Language", bundle: .forLocale(locale)), systemImage: "globe")
             }
 
             Divider()
@@ -48,7 +49,7 @@ struct SettingsMenuButton: View {
                     settingsManager.appearanceMode = nil
                 } label: {
                     HStack {
-                        Text("System")
+                        Text(String(localized: "System", bundle: .forLocale(locale)))
                         if settingsManager.appearanceMode == nil {
                             Image(systemName: "checkmark")
                         }
@@ -58,7 +59,7 @@ struct SettingsMenuButton: View {
                     settingsManager.appearanceMode = .light
                 } label: {
                     HStack {
-                        Text("Light")
+                        Text(String(localized: "Light", bundle: .forLocale(locale)))
                         if settingsManager.appearanceMode == .light {
                             Image(systemName: "checkmark")
                         }
@@ -68,14 +69,14 @@ struct SettingsMenuButton: View {
                     settingsManager.appearanceMode = .dark
                 } label: {
                     HStack {
-                        Text("Dark")
+                        Text(String(localized: "Dark", bundle: .forLocale(locale)))
                         if settingsManager.appearanceMode == .dark {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
             } label: {
-                Label("Appearance", systemImage: "moon.circle")
+                Label(String(localized: "Appearance", bundle: .forLocale(locale)), systemImage: "moon.circle")
             }
         } label: {
             Image(systemName: "gearshape")

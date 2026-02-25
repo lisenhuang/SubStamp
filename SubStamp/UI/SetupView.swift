@@ -50,7 +50,7 @@ struct SetupView: View {
                                 showPaywall = true
                             }
                         } label: {
-                            Label("Upgrade", systemImage: "crown.fill")
+                            Label(String(localized: "Upgrade", bundle: .forLocale(locale)), systemImage: "crown.fill")
                                 .font(AppTypography.bodyEmphasis)
                                 .foregroundStyle(AppColors.accent)
                                 .padding(.horizontal, AppSpacing.m)
