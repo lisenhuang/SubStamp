@@ -37,6 +37,7 @@ struct PreviewExportView: View {
     @State private var manualTranslationTrack: ManualTranslationTrack = .subtitle2
     @State private var lastManualPromptContext: ManualPromptContext?
     @State private var isManualToolsExpanded: Bool = false
+    @State private var safariURLItem: SafariURLItem?
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -335,6 +336,9 @@ struct PreviewExportView: View {
             }
             .background(Color.black)
         }
+        .sheet(item: $safariURLItem) { item in
+            SafariView(url: item.url)
+        }
         .onAppear {
             player = AVPlayer(url: videoURL)
             if let player {
@@ -538,6 +542,15 @@ struct PreviewExportView: View {
                         )
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
+
+                        Button {
+                            safariURLItem = SafariURLItem(url: URL(string: "https://lisenhuang.vercel.app/substamp.mp4")!)
+                        } label: {
+                            Label(String(localized: "How to use", bundle: .forLocale(locale)), systemImage: "questionmark.circle")
+                                .font(AppTypography.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(AppColors.accent)
                     }
                     .padding(.top, AppSpacing.xs)
                 } label: {

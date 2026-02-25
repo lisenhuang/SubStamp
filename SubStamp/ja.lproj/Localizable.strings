@@ -216,3 +216,4 @@
 "Manual fix" = "手動で修正";
 "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "プロンプトをコピーして任意のAIで修正・翻訳し、JSON結果をここに貼り付けてください。適用前に形式を検証します。";
 "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "プロンプトをコピーして任意のAIで文字起こしを修正し、JSON結果をここに貼り付けてください。適用前に形式を検証します。";
+"How to use" = "使い方";

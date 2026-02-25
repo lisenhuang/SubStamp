@@ -216,3 +216,4 @@
 "Manual fix" = "手动修正";
 "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "复制提示词，用任意 AI 修正并翻译，然后将 JSON 结果粘贴回这里。应用会在应用前验证格式。";
 "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "复制提示词，用任意 AI 修正转录，然后将 JSON 结果粘贴回这里。应用会在应用前验证格式。";
+"How to use" = "如何使用";
