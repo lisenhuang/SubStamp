@@ -863,27 +863,90 @@ struct PreviewExportView: View {
     private func splitCue(at index: Int) {
         guard orchestrator.cues.indices.contains(index) else { return }
         let cue = orchestrator.cues[index]
-        let words = cue.primaryText.split(separator: " ")
-        guard words.count > 1 else { return }
-        let midpoint = words.count / 2
-        let firstText = words.prefix(midpoint).joined(separator: " ")
-        let secondText = words.suffix(from: midpoint).joined(separator: " ")
+
+        func splitText(_ text: String) -> (String, String)? {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count >= 2 else { return nil }
+
+            // Prefer splitting on whitespace (works well for Latin scripts).
+            let words = trimmed.split(whereSeparator: \.isWhitespace)
+            if words.count >= 2 {
+                let midpoint = words.count / 2
+                let first = words.prefix(midpoint).joined(separator: " ")
+                let second = words.suffix(from: midpoint).joined(separator: " ")
+                guard !first.isEmpty, !second.isEmpty else { return nil }
+                return (String(first), String(second))
+            }
+
+            // Fallback: split around the middle, biasing toward a nearby delimiter if possible.
+            let chars = Array(trimmed)
+            let mid = chars.count / 2
+            let delimiters: Set<Character> = [" ", "\n", ".", "。", ",", "，", "!", "！", "?", "？", ";", "；", ":", "：", "、", "—", "-", "…"]
+
+            var splitIndex: Int? = nil
+            let window = 10
+            let lo = max(1, mid - window)
+            let hi = min(chars.count - 1, mid + window)
+            if lo < hi {
+                // Prefer a delimiter at/after mid.
+                for i in mid..<hi where delimiters.contains(chars[i]) {
+                    splitIndex = i + 1
+                    break
+                }
+                // Otherwise look before mid.
+                if splitIndex == nil {
+                    for i in stride(from: mid - 1, through: lo, by: -1) where delimiters.contains(chars[i]) {
+                        splitIndex = i + 1
+                        break
+                    }
+                }
+            }
+            if splitIndex == nil { splitIndex = mid }
+            guard let cut = splitIndex, cut > 0, cut < chars.count else { return nil }
+
+            let first = String(chars[0..<cut]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let second = String(chars[cut...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !first.isEmpty, !second.isEmpty else { return nil }
+            return (first, second)
+        }
+
+        // Always split the underlying transcription (shown as "Original Transcription" in the UI).
+        let sourceText = cue.originalTranscription ?? cue.primaryText
+        guard let (firstOriginal, secondOriginal) = splitText(sourceText) else { return }
+
+        // If subtitle tracks are translated, best-effort split those strings too to avoid duplicating the full cue.
+        let (firstPrimary, secondPrimary): (String, String) = {
+            if showSubtitle1Translation {
+                return splitText(cue.primaryText) ?? (firstOriginal, secondOriginal)
+            }
+            return (firstOriginal, secondOriginal)
+        }()
+        let (firstSecondary, secondSecondary): (String?, String?) = {
+            guard let s = cue.secondaryText else { return (nil, nil) }
+            if showSubtitle2Translation {
+                let split = splitText(s) ?? ("", "")
+                return (split.0.isEmpty ? nil : split.0, split.1.isEmpty ? nil : split.1)
+            }
+            // Transcript track (rare) or user-entered: mirror the split transcription.
+            return (firstOriginal, secondOriginal)
+        }()
+
         let midTime = CMTime(seconds: (cue.start.seconds + cue.end.seconds) / 2, preferredTimescale: 600)
         orchestrator.cues[index] = SubtitleCue(
             id: cue.id,
             start: cue.start,
             end: midTime,
-            primaryText: String(firstText),
-            secondaryText: cue.secondaryText,
-            originalTranscription: cue.originalTranscription,
+            primaryText: firstPrimary,
+            secondaryText: firstSecondary,
+            originalTranscription: firstOriginal,
             hasTranslationError: cue.hasTranslationError
         )
         let newCue = SubtitleCue(
             start: midTime,
             end: cue.end,
-            primaryText: String(secondText),
-            secondaryText: cue.secondaryText,
-            originalTranscription: cue.originalTranscription,
+            primaryText: secondPrimary,
+            secondaryText: secondSecondary,
+            originalTranscription: secondOriginal,
             hasTranslationError: cue.hasTranslationError
         )
         orchestrator.cues.insert(newCue, at: index + 1)
