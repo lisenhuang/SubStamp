@@ -73,9 +73,16 @@ struct PreviewExportView: View {
         var id: String { rawValue }
     }
 
+    private enum ManualPromptMode: String, Equatable {
+        case single
+        case both
+    }
+
     private struct ManualPromptContext: Equatable {
-        let track: ManualTranslationTrack
-        let target: String
+        let mode: ManualPromptMode
+        let track: ManualTranslationTrack?
+        let target: String?
+        let targets: [String: String]?  // keys: "subtitle1", "subtitle2" (normalized locale IDs)
         let cueNumbers: Set<Int>  // 1-based cue numbers (index + 1)
     }
 
@@ -85,8 +92,14 @@ struct PreviewExportView: View {
             let text: String  // current (possibly edited) transcription
         }
 
+        struct Targets: Encodable {
+            let subtitle1: String
+            let subtitle2: String
+        }
+
         let source: String
-        let target: String
+        let target: String?
+        let targets: Targets?
         let cues: [Cue]
     }
 
@@ -95,10 +108,18 @@ struct PreviewExportView: View {
             let n: Int
             let fixed: String?
             let text: String?
+            let subtitle1: String?
+            let subtitle2: String?
+        }
+
+        struct Targets: Decodable {
+            let subtitle1: String
+            let subtitle2: String
         }
 
         let source: String?
-        let target: String
+        let target: String?
+        let targets: Targets?
         let cues: [Cue]
     }
 
@@ -502,16 +523,6 @@ struct PreviewExportView: View {
             VStack(alignment: .leading, spacing: AppSpacing.s) {
                 DisclosureGroup(isExpanded: $isManualToolsExpanded) {
                     VStack(alignment: .leading, spacing: AppSpacing.s) {
-                        if needsTranslation, manualTranslationTracks.count > 1 {
-                            Picker(String(localized: "Target subtitle", bundle: .forLocale(locale)), selection: $manualTranslationTrack) {
-                                ForEach(manualTranslationTracks) { track in
-                                    Text(manualTrackDisplayName(track))
-                                        .tag(track)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
-
                         HStack(spacing: AppSpacing.s) {
                             Button {
                                 copyManualTranslationPromptToClipboard()
@@ -1012,7 +1023,9 @@ struct PreviewExportView: View {
     private func copyManualTranslationPromptToClipboard() {
         guard let job else { return }
 
-        if needsTranslation {
+        let isBothMode = needsTranslation && manualTranslationTracks.count == 2
+
+        if needsTranslation, !isBothMode {
             guard manualTranslationTracks.contains(manualTranslationTrack) else {
                 if let first = manualTranslationTracks.first {
                     manualTranslationTrack = first
@@ -1034,19 +1047,22 @@ struct PreviewExportView: View {
             return
         }
 
-        let targetID: String
-        if needsTranslation {
-            targetID = manualTargetLocaleID(for: job, track: manualTranslationTrack)
-            guard !targetID.isEmpty else {
+        let singleTargetID: String?
+        if isBothMode {
+            singleTargetID = nil
+        } else if needsTranslation {
+            let t = manualTargetLocaleID(for: job, track: manualTranslationTrack)
+            guard !t.isEmpty else {
                 clipboardAlert = ClipboardAlert(
                     title: String(localized: "Unavailable", bundle: .forLocale(locale)),
                     message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
                 )
                 return
             }
+            singleTargetID = t
         } else {
             // Fix-only mode: keep target == source so the output stays compatible with the same JSON parser.
-            targetID = sourceID
+            singleTargetID = sourceID
         }
 
         // For manual translation, include the full (possibly edited) transcription so external AIs can use global context.
@@ -1065,11 +1081,30 @@ struct PreviewExportView: View {
             return
         }
 
-        let payload = ManualFixTranslateInput(
-            source: sourceID,
-            target: targetID,
-            cues: selection.inputs.map { ManualFixTranslateInput.Cue(n: $0.n, text: $0.text) }
-        )
+        let payload: ManualFixTranslateInput
+        if isBothMode {
+            guard let t2 = job.translationTargetLocale, !t2.isEmpty else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Unavailable", bundle: .forLocale(locale)),
+                    message: String(localized: "No target language is set for subtitle 2.", bundle: .forLocale(locale))
+                )
+                return
+            }
+            payload = ManualFixTranslateInput(
+                source: sourceID,
+                target: nil,
+                targets: .init(subtitle1: job.language1Locale, subtitle2: t2),
+                cues: selection.inputs.map { ManualFixTranslateInput.Cue(n: $0.n, text: $0.text) }
+            )
+        } else {
+            let targetID = singleTargetID ?? sourceID
+            payload = ManualFixTranslateInput(
+                source: sourceID,
+                target: targetID,
+                targets: nil,
+                cues: selection.inputs.map { ManualFixTranslateInput.Cue(n: $0.n, text: $0.text) }
+            )
+        }
 
         let payloadJSON: String
         do {
@@ -1087,56 +1122,116 @@ struct PreviewExportView: View {
         }
 
         let sourceName = Locale.current.localizedString(forIdentifier: sourceID) ?? sourceID
+        let targetID = singleTargetID ?? sourceID
         let targetName = Locale.current.localizedString(forIdentifier: targetID) ?? targetID
+        let subtitle1Name = Locale.current.localizedString(forIdentifier: job.language1Locale) ?? job.language1Locale
+        let subtitle2Name = job.translationTargetLocale.flatMap { Locale.current.localizedString(forIdentifier: $0) } ?? (job.translationTargetLocale ?? "")
         let beforeBlock = formatContextBlock(label: "Context before (reference only)", lines: selection.contextBefore)
         let afterBlock = formatContextBlock(label: "Context after (reference only)", lines: selection.contextAfter)
 
-        let prompt = """
-        You are a professional subtitle editor and translator.
-        The input is a speech-to-text transcription from a video. It may contain mistakes (wrong words, names, punctuation).
-        Read the entire INPUT_JSON first (all cues), then produce the output.
-        Your tasks for each cue:
-        1) Fix the transcription in \(sourceName) (\(sourceID)) with MINIMAL changes. Do not rewrite whole sentences.
-        2) Translate the FIXED transcription into \(targetName) (\(targetID)).
-        Use context for natural phrasing, but keep every cue aligned. Do not move content between cues.
-        You may use internet search to verify names, places, and terms when helpful.
+        let prompt: String
+        if isBothMode, let t2 = job.translationTargetLocale {
+            prompt = """
+            You are a professional subtitle editor and translator.
+            The input is a speech-to-text transcription from a video. It may contain mistakes (wrong words, names, punctuation).
+            Read the entire INPUT_JSON first (all cues), then produce the output.
+            Your tasks for each cue:
+            1) Fix the transcription in \(sourceName) (\(sourceID)) with MINIMAL changes. Do not rewrite whole sentences.
+            2) Translate the FIXED transcription into BOTH targets:
+               - subtitle1: \(subtitle1Name) (\(job.language1Locale))
+               - subtitle2: \(subtitle2Name) (\(t2))
+            Use context for natural phrasing, but keep every cue aligned. Do not move content between cues.
+            You may use internet search to verify names, places, and terms when helpful.
 
-        Rules:
-        - Do NOT add, remove, merge, split, or reorder cues.
-        - Keep each cue aligned by its cue number `n`.
-        - Output ONLY valid JSON (no markdown, no commentary).
-        - Output must start with { and end with } and be valid JSON.
-        - Use ASCII double quotes U+0022 (") only. Never use smart quotes (“ ” ‘ ’) or fullwidth quotes (＂).
-        - Copy the `source` and `target` values EXACTLY as provided in INPUT_JSON.
-        - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
-        - For empty cue text, output an empty string.
-        - Preserve line breaks using \\n when needed.
-        - In OUTPUT_JSON, `fixed` must be in the SOURCE language and `text` must be in the TARGET language.
-        - Only include `fixed` for cues that actually need a correction. If a cue needs no correction, omit `fixed` for that cue.
-        - If the target language is the same as the source language, DO NOT translate. Only output the cues that you actually fixed.
+            Rules:
+            - Do NOT add, remove, merge, split, or reorder cues.
+            - Keep each cue aligned by its cue number `n`.
+            - Output ONLY valid JSON (no markdown, no commentary).
+            - Output must start with { and end with } and be valid JSON.
+            - Use ASCII double quotes U+0022 (") only. Never use smart quotes (“ ” ‘ ’) or fullwidth quotes (＂).
+            - Copy the `source` and `targets` values EXACTLY as provided in INPUT_JSON.
+            - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
+            - For empty cue text, output an empty string for both subtitle1 and subtitle2.
+            - Preserve line breaks using \\n when needed.
+            - Only include `fixed` for cues that actually need a correction. If a cue needs no correction, omit `fixed` for that cue.
 
-        Output JSON schema (keys must match exactly):
-        {
-          "source": "\(sourceID)",
-          "target": "\(targetID)",
-          "cues": [
-            { "n": 1, "text": "...", "fixed": "..." }
-          ]
+            Output JSON schema (keys must match exactly):
+            {
+              "source": "\(sourceID)",
+              "targets": { "subtitle1": "\(job.language1Locale)", "subtitle2": "\(t2)" },
+              "cues": [
+                { "n": 1, "subtitle1": "...", "subtitle2": "...", "fixed": "..." }
+              ]
+            }
+
+            \(beforeBlock)\(afterBlock)
+
+            INPUT_JSON:
+            \(payloadJSON)
+            """
+        } else {
+            prompt = """
+            You are a professional subtitle editor and translator.
+            The input is a speech-to-text transcription from a video. It may contain mistakes (wrong words, names, punctuation).
+            Read the entire INPUT_JSON first (all cues), then produce the output.
+            Your tasks for each cue:
+            1) Fix the transcription in \(sourceName) (\(sourceID)) with MINIMAL changes. Do not rewrite whole sentences.
+            2) Translate the FIXED transcription into \(targetName) (\(targetID)).
+            Use context for natural phrasing, but keep every cue aligned. Do not move content between cues.
+            You may use internet search to verify names, places, and terms when helpful.
+
+            Rules:
+            - Do NOT add, remove, merge, split, or reorder cues.
+            - Keep each cue aligned by its cue number `n`.
+            - Output ONLY valid JSON (no markdown, no commentary).
+            - Output must start with { and end with } and be valid JSON.
+            - Use ASCII double quotes U+0022 (") only. Never use smart quotes (“ ” ‘ ’) or fullwidth quotes (＂).
+            - Copy the `source` and `target` values EXACTLY as provided in INPUT_JSON.
+            - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
+            - For empty cue text, output an empty string.
+            - Preserve line breaks using \\n when needed.
+            - In OUTPUT_JSON, `fixed` must be in the SOURCE language and `text` must be in the TARGET language.
+            - Only include `fixed` for cues that actually need a correction. If a cue needs no correction, omit `fixed` for that cue.
+            - If the target language is the same as the source language, DO NOT translate. Only output the cues that you actually fixed.
+
+            Output JSON schema (keys must match exactly):
+            {
+              "source": "\(sourceID)",
+              "target": "\(targetID)",
+              "cues": [
+                { "n": 1, "text": "...", "fixed": "..." }
+              ]
+            }
+
+            \(beforeBlock)\(afterBlock)
+
+            INPUT_JSON:
+            \(payloadJSON)
+            """
         }
-
-        \(beforeBlock)\(afterBlock)
-
-        INPUT_JSON:
-        \(payloadJSON)
-        """
 
         UIPasteboard.general.string = prompt
 
-        lastManualPromptContext = ManualPromptContext(
-            track: manualTranslationTrack,
-            target: normalizeLocaleIdentifier(targetID),
-            cueNumbers: Set(selection.inputs.map(\.n))
-        )
+        if isBothMode, let t2 = job.translationTargetLocale {
+            lastManualPromptContext = ManualPromptContext(
+                mode: .both,
+                track: nil,
+                target: nil,
+                targets: [
+                    "subtitle1": normalizeLocaleIdentifier(job.language1Locale),
+                    "subtitle2": normalizeLocaleIdentifier(t2)
+                ],
+                cueNumbers: Set(selection.inputs.map(\.n))
+            )
+        } else {
+            lastManualPromptContext = ManualPromptContext(
+                mode: .single,
+                track: needsTranslation ? manualTranslationTrack : nil,
+                target: normalizeLocaleIdentifier(targetID),
+                targets: nil,
+                cueNumbers: Set(selection.inputs.map(\.n))
+            )
+        }
 
         showCopiedManualPromptFeedback()
     }
@@ -1165,6 +1260,7 @@ struct PreviewExportView: View {
         }
 
         let wasTranslationComplete = orchestrator.translationComplete
+        let expectsBothTranslations = needsTranslation && manualTranslationTracks.count == 2
         if needsTranslation {
             guard manualTranslationTracks.contains(manualTranslationTrack) else {
                 clipboardAlert = ClipboardAlert(
@@ -1176,19 +1272,21 @@ struct PreviewExportView: View {
         }
 
         let expectedSource = normalizeLocaleIdentifier(job.transcriptionLocale)
-        let expectedTarget: String
-        if needsTranslation {
-            expectedTarget = normalizeLocaleIdentifier(manualTargetLocaleID(for: job, track: manualTranslationTrack))
-            if expectedTarget.isEmpty {
+        let expectedTargetSingle: String
+        if needsTranslation, !expectsBothTranslations {
+            expectedTargetSingle = normalizeLocaleIdentifier(manualTargetLocaleID(for: job, track: manualTranslationTrack))
+            if expectedTargetSingle.isEmpty {
                 clipboardAlert = ClipboardAlert(
                     title: String(localized: "Unavailable", bundle: .forLocale(locale)),
                     message: String(localized: "No target language is set for this subtitle track.", bundle: .forLocale(locale))
                 )
                 return
             }
+        } else if needsTranslation, expectsBothTranslations {
+            expectedTargetSingle = ""
         } else {
             // Fix-only mode expects target == source in the pasted JSON.
-            expectedTarget = expectedSource
+            expectedTargetSingle = expectedSource
         }
 
         let decoded: ManualFixTranslateOutput
@@ -1220,13 +1318,34 @@ struct PreviewExportView: View {
             }
         }
 
-        let pastedTarget = normalizeLocaleIdentifier(decoded.target)
-        guard pastedTarget == expectedTarget else {
-            clipboardAlert = ClipboardAlert(
-                title: String(localized: "Paste failed", bundle: .forLocale(locale)),
-                message: String(localized: "The pasted subtitles target a different language than your current selection.", bundle: .forLocale(locale))
-            )
-            return
+        if expectsBothTranslations {
+            guard let targets = decoded.targets else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                    message: String(localized: "The pasted JSON doesn't include both subtitle targets. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                )
+                return
+            }
+            let pastedS1 = normalizeLocaleIdentifier(targets.subtitle1)
+            let pastedS2 = normalizeLocaleIdentifier(targets.subtitle2)
+            let expectedS1 = normalizeLocaleIdentifier(job.language1Locale)
+            let expectedS2 = normalizeLocaleIdentifier(job.translationTargetLocale ?? "")
+            guard pastedS1 == expectedS1, pastedS2 == expectedS2 else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                    message: String(localized: "The pasted subtitles target different languages than your current selection.", bundle: .forLocale(locale))
+                )
+                return
+            }
+        } else {
+            let pastedTarget = normalizeLocaleIdentifier(decoded.target ?? "")
+            guard pastedTarget == expectedTargetSingle else {
+                clipboardAlert = ClipboardAlert(
+                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                    message: String(localized: "The pasted subtitles target a different language than your current selection.", bundle: .forLocale(locale))
+                )
+                return
+            }
         }
 
         let cueNumbers = decoded.cues.map(\.n)
@@ -1240,19 +1359,38 @@ struct PreviewExportView: View {
         }
 
         if let last = lastManualPromptContext {
-            guard last.track == manualTranslationTrack else {
-                clipboardAlert = ClipboardAlert(
-                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
-                    message: String(localized: "The last copied prompt was for a different subtitle track. Please copy a new prompt for the current track.", bundle: .forLocale(locale))
-                )
-                return
-            }
-            guard last.target == expectedTarget else {
-                clipboardAlert = ClipboardAlert(
-                    title: String(localized: "Paste failed", bundle: .forLocale(locale)),
-                    message: String(localized: "The last copied prompt was for a different target language. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
-                )
-                return
+            if expectsBothTranslations {
+                guard last.mode == .both else {
+                    clipboardAlert = ClipboardAlert(
+                        title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                        message: String(localized: "The last copied prompt was for a different mode. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                    )
+                    return
+                }
+                let expectedS1 = normalizeLocaleIdentifier(job.language1Locale)
+                let expectedS2 = normalizeLocaleIdentifier(job.translationTargetLocale ?? "")
+                guard last.targets?["subtitle1"] == expectedS1, last.targets?["subtitle2"] == expectedS2 else {
+                    clipboardAlert = ClipboardAlert(
+                        title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                        message: String(localized: "The last copied prompt was for different target languages. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                    )
+                    return
+                }
+            } else if needsTranslation {
+                guard last.mode == .single, last.track == manualTranslationTrack else {
+                    clipboardAlert = ClipboardAlert(
+                        title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                        message: String(localized: "The last copied prompt was for a different subtitle track. Please copy a new prompt for the current track.", bundle: .forLocale(locale))
+                    )
+                    return
+                }
+                guard last.target == expectedTargetSingle else {
+                    clipboardAlert = ClipboardAlert(
+                        title: String(localized: "Paste failed", bundle: .forLocale(locale)),
+                        message: String(localized: "The last copied prompt was for a different target language. Please copy a new prompt and translate again.", bundle: .forLocale(locale))
+                    )
+                    return
+                }
             }
 
             let pastedSet = Set(decoded.cues.map(\.n))
@@ -1286,19 +1424,30 @@ struct PreviewExportView: View {
                 appliedFixed += 1
             }
 
-            if let translated = cue.text {
-                let cleaned = SubtitleTextCleaner.clean(translated)
-                if needsTranslation {
-                    switch manualTranslationTrack {
-                    case .subtitle1:
-                        orchestrator.cues[index].primaryText = cleaned
-                        orchestrator.cues[index].hasTranslationError = false
-                    case .subtitle2:
-                        orchestrator.cues[index].secondaryText = cleaned
-                        orchestrator.cues[index].hasTranslationError = false
-                    }
-                    appliedTranslation += 1
+            if expectsBothTranslations {
+                var didApplyThisCue = false
+                if let s1 = cue.subtitle1 {
+                    orchestrator.cues[index].primaryText = SubtitleTextCleaner.clean(s1)
+                    orchestrator.cues[index].hasTranslationError = false
+                    didApplyThisCue = true
                 }
+                if let s2 = cue.subtitle2 {
+                    orchestrator.cues[index].secondaryText = SubtitleTextCleaner.clean(s2)
+                    orchestrator.cues[index].hasTranslationError = false
+                    didApplyThisCue = true
+                }
+                if didApplyThisCue { appliedTranslation += 1 }
+            } else if let translated = cue.text, needsTranslation {
+                let cleaned = SubtitleTextCleaner.clean(translated)
+                switch manualTranslationTrack {
+                case .subtitle1:
+                    orchestrator.cues[index].primaryText = cleaned
+                    orchestrator.cues[index].hasTranslationError = false
+                case .subtitle2:
+                    orchestrator.cues[index].secondaryText = cleaned
+                    orchestrator.cues[index].hasTranslationError = false
+                }
+                appliedTranslation += 1
             }
         }
 
