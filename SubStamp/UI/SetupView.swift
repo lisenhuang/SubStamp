@@ -652,14 +652,24 @@ struct SetupView: View {
     }
 
     private var continueButton: some View {
-        PrimaryButton(
+        // Treat "Subtitle 2 enabled but no language selected" as effectively disabled.
+        let effectiveSubtitle2ID: String? = {
+            guard subtitle2Enabled else { return nil }
+            guard let id = selectedSubtitle2ID, !id.isEmpty else { return nil }
+            return id
+        }()
+        return PrimaryButton(
             title: "Continue",
             systemImage: "arrow.right.circle",
-            isEnabled: assetManager.isReadyToProceed && (selectedSubtitle1ID != "") && (!subtitle2Enabled || (selectedSubtitle2ID != nil && selectedSubtitle2ID != ""))
+            isEnabled: assetManager.isReadyToProceed && (!selectedSubtitle1ID.isEmpty)
         ) {
             // Update bindings
             language1Identifier = (selectedSubtitle1ID == "transcript") ? transcriptionLocaleIdentifier : selectedSubtitle1ID
-            language2Identifier = subtitle2Enabled ? (selectedSubtitle2ID == "transcript" ? transcriptionLocaleIdentifier : selectedSubtitle2ID) : nil
+            if let s2 = effectiveSubtitle2ID {
+                language2Identifier = (s2 == "transcript") ? transcriptionLocaleIdentifier : s2
+            } else {
+                language2Identifier = nil
+            }
             
             // Mode 1
             if selectedSubtitle1ID == "transcript" {
@@ -669,7 +679,7 @@ struct SetupView: View {
             }
             
             // Mode 2
-            if subtitle2Enabled, let targetID = selectedSubtitle2ID {
+            if let targetID = effectiveSubtitle2ID {
                 if targetID == "transcript" {
                     subtitle2Mode = nil
                 } else if let option = subtitleTargets.first(where: { $0.id == targetID }) {
