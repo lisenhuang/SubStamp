@@ -21,9 +21,9 @@ struct SubtitleCue: Identifiable, Codable, Hashable {
         self.id = id
         self.start = start
         self.end = end
-        self.primaryText = primaryText
-        self.secondaryText = secondaryText
-        self.originalTranscription = originalTranscription
+        self.primaryText = SubtitleTextCleaner.clean(primaryText)
+        self.secondaryText = secondaryText.map(SubtitleTextCleaner.clean)
+        self.originalTranscription = originalTranscription.map(SubtitleTextCleaner.clean)
         self.hasTranslationError = hasTranslationError
     }
 
@@ -61,9 +61,9 @@ extension SubtitleCue {
         id = try container.decode(UUID.self, forKey: .id)
         let startSeconds = try container.decode(Double.self, forKey: .startSeconds)
         let endSeconds = try container.decode(Double.self, forKey: .endSeconds)
-        primaryText = try container.decode(String.self, forKey: .primaryText)
-        secondaryText = try container.decodeIfPresent(String.self, forKey: .secondaryText)
-        let decodedOriginal = try container.decodeIfPresent(String.self, forKey: .originalTranscription)
+        primaryText = SubtitleTextCleaner.clean(try container.decode(String.self, forKey: .primaryText))
+        secondaryText = try container.decodeIfPresent(String.self, forKey: .secondaryText).map(SubtitleTextCleaner.clean)
+        let decodedOriginal = try container.decodeIfPresent(String.self, forKey: .originalTranscription).map(SubtitleTextCleaner.clean)
         originalTranscription = decodedOriginal ?? primaryText
         hasTranslationError = try container.decodeIfPresent(Bool.self, forKey: .hasTranslationError) ?? false
         start = CMTime(seconds: startSeconds, preferredTimescale: 600)

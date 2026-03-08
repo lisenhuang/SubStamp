@@ -539,7 +539,7 @@ final class TranscriptionService {
 
         var segments: [String] = stride(from: 0, to: lines.count, by: maxLines).map { start in
             let end = min(lines.count, start + maxLines)
-            return lines[start..<end].joined(separator: "\n")
+            return lines[start..<end].joined(separator: " ")
         }
 
         let totalDuration = max(0, cue.end.seconds - cue.start.seconds)
@@ -629,7 +629,7 @@ final class TranscriptionService {
                     bestIndex = i
                 }
             }
-            let merged = [segments[bestIndex], segments[bestIndex + 1]].joined(separator: "\n")
+            let merged = [segments[bestIndex], segments[bestIndex + 1]].joined(separator: " ")
             segments[bestIndex] = merged
             segments.remove(at: bestIndex + 1)
         }
