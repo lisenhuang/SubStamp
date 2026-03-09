@@ -1129,7 +1129,6 @@ struct PreviewExportView: View {
         }
 
         // For manual translation, include the full (possibly edited) transcription so external AIs can use global context.
-        // If the AI can't output everything in one response, it can return subsets and the user can paste multiple times.
         let selection = makeManualTranslationSelection(
             track: manualTranslationTrack,
             maxCues: orchestrator.cues.count,
@@ -1213,7 +1212,8 @@ struct PreviewExportView: View {
             - Output must start with { and end with } and be valid JSON.
             - Use ASCII double quotes U+0022 (") only. Never use smart quotes (“ ” ‘ ’) or fullwidth quotes (＂).
             - Copy the `source` and `targets` values EXACTLY as provided in INPUT_JSON.
-            - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
+            - Return ONE complete JSON response that covers ALL cues in INPUT_JSON.
+            - Do NOT split the work into parts, subsets, batches, multiple responses, or partial JSON.
             - For empty cue text, output an empty string for both subtitle1 and subtitle2.
             - Preserve line breaks using \\n when needed.
             - Only include `fixed` for cues that actually need a correction. If a cue needs no correction, omit `fixed` for that cue.
@@ -1250,7 +1250,8 @@ struct PreviewExportView: View {
             - Output must start with { and end with } and be valid JSON.
             - Use ASCII double quotes U+0022 (") only. Never use smart quotes (“ ” ‘ ’) or fullwidth quotes (＂).
             - Copy the `source` and `target` values EXACTLY as provided in INPUT_JSON.
-            - If the output is too long, translate in parts: return a complete JSON with a subset of cues (e.g. n=1..200), then continue with the next subset in a new JSON.
+            - Return ONE complete JSON response that covers ALL cues in INPUT_JSON.
+            - Do NOT split the work into parts, subsets, batches, multiple responses, or partial JSON.
             - For empty cue text, output an empty string.
             - Preserve line breaks using \\n when needed.
             - In OUTPUT_JSON, `fixed` must be in the SOURCE language and `text` must be in the TARGET language.
