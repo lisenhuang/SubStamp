@@ -48,6 +48,8 @@
 "Pick a video" = "동영상 선택";
 "Choose a clip and confirm it has audio." = "클립을 선택하고 오디오가 포함되어 있는지 확인하세요.";
 "Choose video" = "동영상 선택";
+"Choose from Photos" = "사진에서 선택";
+"Choose from Files" = "파일에서 선택";
 "Loading video…" = "동영상 로딩 중…";
 "Video details" = "동영상 정보";
 "Duration" = "길이";
@@ -130,11 +132,15 @@
 "Preset" = "프리셋";
 "Saving..." = "저장 중...";
 "Save to Photos" = "사진에 저장";
+"Save to Disk" = "디스크에 저장";
 "Share" = "공유";
 "Start another" = "다른 동영상 처리";
 "Not saved to Photos" = "사진에 저장되지 않음";
+"Not saved yet" = "아직 저장되지 않음";
 "You haven't saved this video to Photos yet. Continue anyway?" = "동영상이 아직 사진에 저장되지 않았습니다. 계속하시겠습니까?";
+"You haven't saved this video yet. Continue anyway?" = "동영상이 아직 저장되지 않았습니다. 계속하시겠습니까?";
 "Saved to Photos!" = "사진에 저장됨!";
+"Saved to Disk!" = "디스크에 저장됨!";
 "Saving to Photos..." = "사진에 저장 중...";
 "Failed:" = "실패:";
 
@@ -194,7 +200,9 @@
 "Upgrade" = "업그레이드";
 "Upgrade to Pro" = "Pro로 업그레이드";
 "Unlock Pro" = "Pro 잠금 해제";
+"Free users can save or share up to %d different videos. Each video counts once." = "무료 사용자는 서로 다른 동영상을 최대 %d개까지 저장하거나 공유할 수 있습니다. 각 동영상은 한 번만 계산됩니다.";
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "무료 사용자는 서로 다른 비디오 최대 %d개를 사진에 저장하거나 공유할 수 있습니다. 각 비디오는 한 번만 카운트됩니다. Pro로 업그레이드하면 저장 및 공유가 무제한입니다.";
+"Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "무료 사용자는 서로 다른 동영상을 최대 %d개까지 저장하거나 공유할 수 있습니다. 각 동영상은 한 번만 계산됩니다. Pro로 업그레이드하면 저장 및 공유를 무제한으로 이용할 수 있습니다.";
 "Weekly Subscription" = "주간 구독";
 "Unlimited exports, saving, and sharing. Cancel anytime." = "내보내기, 저장, 공유 무제한. 언제든 취소 가능.";
 "Loading purchase options..." = "구매 옵션을 불러오는 중...";

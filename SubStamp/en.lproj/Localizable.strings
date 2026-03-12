@@ -48,6 +48,8 @@
 "Pick a video" = "Pick a video";
 "Choose a clip and confirm it has audio." = "Choose a clip and confirm it has audio.";
 "Choose video" = "Choose video";
+"Choose from Photos" = "Choose from Photos";
+"Choose from Files" = "Choose from Files";
 "Loading video…" = "Loading video…";
 "Video details" = "Video details";
 "Duration" = "Duration";
@@ -131,11 +133,15 @@
 "Preset" = "Preset";
 "Saving..." = "Saving...";
 "Save to Photos" = "Save to Photos";
+"Save to Disk" = "Save to Disk";
 "Share" = "Share";
 "Start another" = "Start another";
 "Not saved to Photos" = "Not saved to Photos";
+"Not saved yet" = "Not saved yet";
 "You haven't saved this video to Photos yet. Continue anyway?" = "You haven't saved this video to Photos yet. Continue anyway?";
+"You haven't saved this video yet. Continue anyway?" = "You haven't saved this video yet. Continue anyway?";
 "Saved to Photos!" = "Saved to Photos!";
+"Saved to Disk!" = "Saved to Disk!";
 "Saving to Photos..." = "Saving to Photos...";
 "Failed:" = "Failed:";
 
@@ -195,7 +201,9 @@
 "Upgrade" = "Upgrade";
 "Upgrade to Pro" = "Upgrade to Pro";
 "Unlock Pro" = "Unlock Pro";
+"Free users can save or share up to %d different videos. Each video counts once." = "Free users can save or share up to %d different videos. Each video counts once.";
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.";
+"Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.";
 "Weekly Subscription" = "Weekly Subscription";
 "Unlimited exports, saving, and sharing. Cancel anytime." = "Unlimited exports, saving, and sharing. Cancel anytime.";
 "Loading purchase options..." = "Loading purchase options...";

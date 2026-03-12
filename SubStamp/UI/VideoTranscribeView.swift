@@ -24,12 +24,14 @@ struct VideoTranscribeView: View {
 
     @State private var pickerItem: PhotosPickerItem?
     @State private var isLoadingVideo = false
+    @State private var isImportingFromFiles = false
     @State private var videoError: String?
     @State private var showBackToSetupConfirmation = false
 
     @Environment(\.locale) private var locale
 
     private let jobStore = JobStore()
+    private var isRunningOnMac: Bool { ProcessInfo.processInfo.isiOSAppOnMac }
 
     var body: some View {
         ScrollViewReader { scrollProxy in
@@ -86,6 +88,19 @@ struct VideoTranscribeView: View {
         .onChange(of: pickerItem) { _, newValue in
             loadVideo(from: newValue)
         }
+        .fileImporter(
+            isPresented: $isImportingFromFiles,
+            allowedContentTypes: [.movie, .mpeg4Movie],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                loadVideo(fromFileURL: url)
+            case .failure:
+                videoError = String(localized: "Could not load video. Try another clip.", bundle: .forLocale(locale))
+            }
+        }
         .onChange(of: orchestrator.transcriptionComplete) { _, complete in
             if complete { onNext() }
         }
@@ -121,20 +136,59 @@ struct VideoTranscribeView: View {
 
     // MARK: - Video picker
 
+    @ViewBuilder
     private var videoPicker: some View {
-        PhotosPicker(selection: $pickerItem, matching: .videos) {
-            HStack(spacing: AppSpacing.s) {
-                Image(systemName: "photo.on.rectangle")
-                Text(String(localized: "Choose video", bundle: .forLocale(locale)))
-                    .font(AppTypography.bodyEmphasis)
+        if isRunningOnMac {
+            VStack(spacing: AppSpacing.s) {
+                PhotosPicker(selection: $pickerItem, matching: .videos) {
+                    HStack(spacing: AppSpacing.s) {
+                        Image(systemName: "photo.on.rectangle")
+                        Text(String(localized: "Choose from Photos", bundle: .forLocale(locale)))
+                            .font(AppTypography.bodyEmphasis)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, AppSpacing.m)
+                    .foregroundStyle(Color.white)
+                    .background(AppColors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    isImportingFromFiles = true
+                } label: {
+                    HStack(spacing: AppSpacing.s) {
+                        Image(systemName: "folder")
+                        Text(String(localized: "Choose from Files", bundle: .forLocale(locale)))
+                            .font(AppTypography.bodyEmphasis)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, AppSpacing.m)
+                    .foregroundStyle(AppColors.primaryText)
+                    .background(AppColors.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                            .stroke(AppColors.cardBorder, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, AppSpacing.m)
-            .foregroundStyle(Color.white)
-            .background(AppColors.accent)
-            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+        } else {
+            PhotosPicker(selection: $pickerItem, matching: .videos) {
+                HStack(spacing: AppSpacing.s) {
+                    Image(systemName: "photo.on.rectangle")
+                    Text(String(localized: "Choose video", bundle: .forLocale(locale)))
+                        .font(AppTypography.bodyEmphasis)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, AppSpacing.m)
+                .foregroundStyle(Color.white)
+                .background(AppColors.accent)
+                .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Metadata card
@@ -277,6 +331,25 @@ struct VideoTranscribeView: View {
         }
     }
 
+    private func loadVideo(fromFileURL url: URL) {
+        isLoadingVideo = true
+        videoError = nil
+        orchestrator.cancel()
+        orchestrator.resetStages()
+        activeJob = nil
+
+        Task { @MainActor in
+            do {
+                let imported = try ImportedVideo.importFromFileURL(url)
+                selectedVideoURL = imported.url
+                metadata = await VideoMetadata.load(from: imported.url)
+            } catch {
+                videoError = String(localized: "Could not load video. Try another clip.", bundle: .forLocale(locale))
+            }
+            isLoadingVideo = false
+        }
+    }
+
     private func startTranscription() {
         guard let selectedVideoURL else { return }
         let savedStyle = SetupPreferences.loadSubtitleStyle()
@@ -316,19 +389,33 @@ struct ImportedVideo: Transferable {
     }
 
     private static func copyReceivedVideo(_ received: ReceivedTransferredFile) throws -> Self {
+        try copyVideo(at: received.file)
+    }
+
+    static func importFromFileURL(_ sourceURL: URL) throws -> Self {
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                sourceURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        return try copyVideo(at: sourceURL)
+    }
+
+    private static func copyVideo(at sourceURL: URL) throws -> Self {
         let destDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("SubStamp/uploads", isDirectory: true)
         if !FileManager.default.fileExists(atPath: destDir.path) {
             try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
         }
-        let ext = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
+        let ext = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension
         let dest = destDir
             .appendingPathComponent("video_\(UUID().uuidString)")
             .appendingPathExtension(ext)
         if FileManager.default.fileExists(atPath: dest.path) {
             try FileManager.default.removeItem(at: dest)
         }
-        try FileManager.default.copyItem(at: received.file, to: dest)
+        try FileManager.default.copyItem(at: sourceURL, to: dest)
         return Self(url: dest)
     }
 }

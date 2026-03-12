@@ -48,6 +48,8 @@
 "Pick a video" = "動画を選択";
 "Choose a clip and confirm it has audio." = "クリップを選択し、音声が含まれていることを確認してください。";
 "Choose video" = "動画を選択";
+"Choose from Photos" = "写真から選択";
+"Choose from Files" = "ファイルから選択";
 "Loading video…" = "動画を読み込み中…";
 "Video details" = "動画の詳細";
 "Duration" = "再生時間";
@@ -130,11 +132,15 @@
 "Preset" = "プリセット";
 "Saving..." = "保存中...";
 "Save to Photos" = "写真に保存";
+"Save to Disk" = "ディスクに保存";
 "Share" = "共有";
 "Start another" = "別の動画を処理";
 "Not saved to Photos" = "写真に保存されていません";
+"Not saved yet" = "まだ保存されていません";
 "You haven't saved this video to Photos yet. Continue anyway?" = "この動画はまだ写真に保存されていません。続行しますか？";
+"You haven't saved this video yet. Continue anyway?" = "この動画はまだ保存されていません。続行しますか？";
 "Saved to Photos!" = "写真に保存しました！";
+"Saved to Disk!" = "ディスクに保存しました！";
 "Saving to Photos..." = "写真に保存中...";
 "Failed:" = "失敗:";
 
@@ -194,7 +200,9 @@
 "Upgrade" = "アップグレード";
 "Upgrade to Pro" = "Pro にアップグレード";
 "Unlock Pro" = "Pro をアンロック";
+"Free users can save or share up to %d different videos. Each video counts once." = "無料ユーザーは最大 %d 本の異なる動画を保存または共有できます。各動画は1回だけカウントされます。";
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "無料ユーザーは、最大 %d 本の異なる動画を写真に保存または共有できます。各動画は1回だけカウントされます。Pro にアップグレードすると保存と共有が無制限になります。";
+"Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "無料ユーザーは最大 %d 本の異なる動画を保存または共有できます。各動画は1回だけカウントされます。Pro にアップグレードすると保存と共有が無制限になります。";
 "Weekly Subscription" = "週間サブスクリプション";
 "Unlimited exports, saving, and sharing. Cancel anytime." = "エクスポート、保存、共有が無制限。いつでもキャンセルできます。";
 "Loading purchase options..." = "購入オプションを読み込み中...";

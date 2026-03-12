@@ -48,6 +48,8 @@
 "Pick a video" = "选择视频";
 "Choose a clip and confirm it has audio." = "选择一段视频并确认包含音频。";
 "Choose video" = "选择视频";
+"Choose from Photos" = "从照片中选择";
+"Choose from Files" = "从文件中选择";
 "Loading video…" = "加载视频中…";
 "Video details" = "视频详情";
 "Duration" = "时长";
@@ -130,11 +132,15 @@
 "Preset" = "预设";
 "Saving..." = "保存中...";
 "Save to Photos" = "保存到相册";
+"Save to Disk" = "保存到磁盘";
 "Share" = "分享";
 "Start another" = "处理下一个";
 "Not saved to Photos" = "未保存到相册";
+"Not saved yet" = "尚未保存";
 "You haven't saved this video to Photos yet. Continue anyway?" = "视频尚未保存到相册。是否继续？";
+"You haven't saved this video yet. Continue anyway?" = "视频尚未保存。是否继续？";
 "Saved to Photos!" = "已保存到相册！";
+"Saved to Disk!" = "已保存到磁盘！";
 "Saving to Photos..." = "正在保存到相册...";
 "Failed:" = "失败:";
 
@@ -194,7 +200,9 @@
 "Upgrade" = "升级";
 "Upgrade to Pro" = "升级到 Pro";
 "Unlock Pro" = "解锁 Pro";
+"Free users can save or share up to %d different videos. Each video counts once." = "免费用户最多可对 %d 个不同视频进行保存或分享。每个视频只计一次。";
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "免费用户最多可对 %d 个不同视频进行保存到照片或分享。每个视频只计一次。升级到 Pro 后可无限保存与分享。";
+"Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "免费用户最多可对 %d 个不同视频进行保存或分享。每个视频只计一次。升级到 Pro 后可无限保存与分享。";
 "Weekly Subscription" = "周订阅";
 "Unlimited exports, saving, and sharing. Cancel anytime." = "无限导出、保存与分享。随时取消。";
 "Loading purchase options..." = "正在加载购买选项...";

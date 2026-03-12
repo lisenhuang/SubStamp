@@ -18,17 +18,22 @@ struct ResultView: View {
     @State private var metadata: VideoMetadata?
     @State private var saveStatus: String?
     @State private var isSaving = false
-    @State private var hasSavedToPhotos = false
+    @State private var hasSavedExport = false
     @State private var showStartOverConfirmation = false
     @State private var quotaSnapshot = SaveShareQuotaStore.Snapshot.initial
     @State private var shareShouldConsumeQuota = false
     @State private var showShareSheet = false
+    @State private var diskSaveShouldConsumeQuota = false
+    @State private var showSaveToDiskPicker = false
     @State private var showPaywall = false
 
     @Environment(\.locale) private var locale
 
     private var videoFingerprint: String {
         SaveShareQuotaStore.fingerprint(for: sourceVideoURL)
+    }
+    private var isRunningOnMac: Bool {
+        ProcessInfo.processInfo.isiOSAppOnMac
     }
 
     var body: some View {
@@ -99,13 +104,23 @@ struct ResultView: View {
                 }
 
                 if !purchaseManager.hasPremiumAccess {
-                    Text("Free users can save to Photos or share up to \(quotaSnapshot.limit) different videos. Each video counts once.")
+                    Text(String(format: String(localized: "Free users can save or share up to %d different videos. Each video counts once.", bundle: .forLocale(locale)), quotaSnapshot.limit))
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
                 } else {
                     Text("Premium unlocked: unlimited saves and sharing.")
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.secondaryText)
+                }
+
+                if isRunningOnMac {
+                    PrimaryButton(
+                        title: "Save to Disk",
+                        systemImage: "folder.badge.plus",
+                        isEnabled: !isSaving && !showSaveToDiskPicker
+                    ) {
+                        Task { await beginDiskSaveFlow() }
+                    }
                 }
 
                 PrimaryButton(
@@ -125,7 +140,7 @@ struct ResultView: View {
                 }
 
                 PrimaryButton(title: "Start another", systemImage: "arrow.counterclockwise") {
-                    if hasSavedToPhotos {
+                    if hasSavedExport {
                         onStartOver()
                     } else {
                         showStartOverConfirmation = true
@@ -135,15 +150,20 @@ struct ResultView: View {
             .padding(AppSpacing.l)
         }
         .background(AppColors.background)
-        .alert(Text(String(localized: "Not saved to Photos", bundle: .forLocale(locale))), isPresented: $showStartOverConfirmation) {
+        .alert(Text(String(localized: "Not saved yet", bundle: .forLocale(locale))), isPresented: $showStartOverConfirmation) {
             Button(String(localized: "Continue", bundle: .forLocale(locale)), role: .destructive) { onStartOver() }
             Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {}
         } message: {
-            Text(String(localized: "You haven't saved this video to Photos yet. Continue anyway?", bundle: .forLocale(locale)))
+            Text(String(localized: "You haven't saved this video yet. Continue anyway?", bundle: .forLocale(locale)))
         }
         .sheet(isPresented: $showShareSheet) {
             ActivityShareSheet(activityItems: [outputURL]) { completed in
                 onShareFinished(completed: completed)
+            }
+        }
+        .sheet(isPresented: $showSaveToDiskPicker) {
+            DocumentExportSheet(fileURL: outputURL) { completed in
+                onDiskSaveFinished(completed: completed)
             }
         }
         .sheet(isPresented: $showPaywall) {
@@ -183,6 +203,24 @@ struct ResultView: View {
     }
 
     @MainActor
+    private func beginDiskSaveFlow() async {
+        let decision = await SaveShareQuotaStore.shared.evaluateAccess(
+            for: videoFingerprint,
+            isPaid: purchaseManager.hasPremiumAccess
+        )
+        quotaSnapshot = decision.snapshot
+
+        guard decision.isAllowed else {
+            saveStatus = "Free save/share limit reached. Please unlock premium to continue."
+            showPaywall = true
+            return
+        }
+
+        diskSaveShouldConsumeQuota = decision.shouldConsumeQuota
+        showSaveToDiskPicker = true
+    }
+
+    @MainActor
     private func beginShareFlow() async {
         let decision = await SaveShareQuotaStore.shared.evaluateAccess(
             for: videoFingerprint,
@@ -198,6 +236,26 @@ struct ResultView: View {
 
         shareShouldConsumeQuota = decision.shouldConsumeQuota
         showShareSheet = true
+    }
+
+    @MainActor
+    private func onDiskSaveFinished(completed: Bool) {
+        let shouldConsumeQuota = diskSaveShouldConsumeQuota
+        diskSaveShouldConsumeQuota = false
+        guard completed else { return }
+        saveStatus = String(localized: "Saved to Disk!", bundle: .forLocale(locale))
+        hasSavedExport = true
+
+        Task {
+            if shouldConsumeQuota {
+                let updated = await SaveShareQuotaStore.shared.recordSuccess(for: videoFingerprint)
+                await MainActor.run {
+                    quotaSnapshot = updated
+                }
+            } else {
+                await refreshQuotaSnapshot()
+            }
+        }
     }
 
     @MainActor
@@ -246,7 +304,7 @@ struct ResultView: View {
                 await MainActor.run {
                     self.isSaving = false
                     self.saveStatus = String(localized: "Saved to Photos!", bundle: .forLocale(self.locale))
-                    self.hasSavedToPhotos = true
+                    self.hasSavedExport = true
                     self.quotaSnapshot = latestQuota
                 }
             } catch {
@@ -638,6 +696,39 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+private struct DocumentExportSheet: UIViewControllerRepresentable {
+    let fileURL: URL
+    var completion: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(completion: completion)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let controller = UIDocumentPickerViewController(forExporting: [fileURL], asCopy: true)
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let completion: (Bool) -> Void
+
+        init(completion: @escaping (Bool) -> Void) {
+            self.completion = completion
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            completion(!urls.isEmpty)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            completion(false)
+        }
+    }
+}
+
 struct PurchasePaywallView: View {
     @ObservedObject var purchaseManager: PurchaseManager
     let usedCount: Int
@@ -655,7 +746,7 @@ struct PurchasePaywallView: View {
             VStack(alignment: .leading, spacing: AppSpacing.m) {
                 Text(String(localized: "Unlock Pro", bundle: .forLocale(locale)))
                     .font(AppTypography.title)
-                Text(String(format: String(localized: "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
+                Text(String(format: String(localized: "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
                     .font(AppTypography.body)
                     .foregroundStyle(AppColors.secondaryText)
 
