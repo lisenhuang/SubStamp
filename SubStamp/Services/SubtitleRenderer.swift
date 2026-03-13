@@ -119,7 +119,8 @@ final class SubtitleRenderer {
         let margin = max(24, renderSize.height * 0.06)
         let maxWidth = renderSize.width * 0.86
         let baseFontSize = fontSize(for: style.fontSize, renderSize: renderSize)
-        let verticalOffset = style.verticalOffsetDistance(in: renderSize)
+        let primaryVerticalOffset = style.primaryVerticalOffsetDistance(in: renderSize)
+        let secondaryVerticalOffset = style.secondaryVerticalOffsetDistance(in: renderSize)
         let background: SubtitleBackground = style.usesShadow ? .translucent : .none
         let padding: CGFloat = 4
         var layers: [CALayer] = []
@@ -137,8 +138,7 @@ final class SubtitleRenderer {
                 lineSpacing: style.lineSpacing,
                 background: background,
                 usesShadow: style.usesShadow,
-                padding: padding,
-                extraOffset: verticalOffset
+                padding: padding
             )
 
             let secondaryLayer: CALayer?
@@ -153,8 +153,7 @@ final class SubtitleRenderer {
                     lineSpacing: style.lineSpacing,
                     background: background,
                     usesShadow: style.usesShadow,
-                    padding: padding,
-                    extraOffset: verticalOffset
+                    padding: padding
                 )
 
                 // Adjust stacking: Language 1 on top of Language 2
@@ -170,6 +169,11 @@ final class SubtitleRenderer {
                 }
             } else {
                 secondaryLayer = nil
+            }
+
+            primaryLayer.frame.origin.y += primaryVerticalOffset
+            if let secondaryLayer {
+                secondaryLayer.frame.origin.y += secondaryVerticalOffset
             }
 
             let cueLayers = [primaryLayer, secondaryLayer].compactMap { $0 }
@@ -193,8 +197,7 @@ final class SubtitleRenderer {
         lineSpacing: Double,
         background: SubtitleBackground,
         usesShadow: Bool,
-        padding: CGFloat,
-        extraOffset: CGFloat = 0
+        padding: CGFloat
     ) -> CALayer {
         let attributed = attributedText(text: text, font: font, lineSpacing: lineSpacing)
         let boundingRect = attributed.boundingRect(
@@ -216,8 +219,7 @@ final class SubtitleRenderer {
             for: position,
             height: height,
             renderSize: renderSize,
-            margin: margin,
-            extraOffset: extraOffset
+            margin: margin
         )
         textLayer.frame = CGRect(x: x, y: y, width: width, height: height)
 
@@ -310,16 +312,15 @@ final class SubtitleRenderer {
         for position: SubtitlePosition,
         height: CGFloat,
         renderSize: CGSize,
-        margin: CGFloat,
-        extraOffset: CGFloat
+        margin: CGFloat
     ) -> CGFloat {
         switch position {
         case .bottom:
-            return margin + extraOffset
+            return margin
         case .middle:
-            return (renderSize.height - height) / 2 + extraOffset
+            return (renderSize.height - height) / 2
         case .top:
-            return renderSize.height - margin - height + extraOffset
+            return renderSize.height - margin - height
         }
     }
 

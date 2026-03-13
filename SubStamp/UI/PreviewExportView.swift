@@ -491,6 +491,7 @@ struct PreviewExportView: View {
                 cuesChangedSinceExport = true
             }
         )
+        let showsSecondaryOffsetControl = (activeJob?.subtitleMode == .bilingual)
 
         return VStack(alignment: .leading, spacing: AppSpacing.s) {
             Text(String(localized: "Subtitle style", bundle: .forLocale(locale)))
@@ -511,44 +512,45 @@ struct PreviewExportView: View {
             }
             .pickerStyle(.segmented)
             VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                HStack(spacing: AppSpacing.s) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "Vertical offset", bundle: .forLocale(locale)))
-                            .font(AppTypography.caption)
-                            .foregroundStyle(AppColors.primaryText)
-                        Text(String(localized: "Positive moves subtitles up.", bundle: .forLocale(locale)))
-                            .font(AppTypography.caption)
-                            .foregroundStyle(AppColors.secondaryText)
-                    }
-                    Spacer(minLength: AppSpacing.s)
-                    HStack(spacing: AppSpacing.xs) {
-                        Button {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingVerticalOffset(by: -1)
-                        } label: {
-                            Image(systemName: "minus")
-                                .frame(width: 18, height: 18)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(styleBinding.wrappedValue.verticalOffset <= SubtitleStyle.minimumVerticalOffset)
-                        .accessibilityLabel(String(localized: "Move subtitle down", bundle: .forLocale(locale)))
+                Text(String(localized: "Vertical offset", bundle: .forLocale(locale)))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.primaryText)
+                Text(String(localized: "Positive moves subtitles up.", bundle: .forLocale(locale)))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
 
-                        Text(verbatim: formattedSubtitleVerticalOffset(styleBinding.wrappedValue.verticalOffset))
-                            .font(AppTypography.bodyEmphasis)
-                            .monospacedDigit()
-                            .frame(minWidth: 32)
-
-                        Button {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingVerticalOffset(by: 1)
-                        } label: {
-                            Image(systemName: "plus")
-                                .frame(width: 18, height: 18)
+                if showsSecondaryOffsetControl {
+                    subtitleVerticalOffsetControl(
+                        title: String(localized: "Subtitle 1", bundle: .forLocale(locale)),
+                        value: styleBinding.wrappedValue.primaryVerticalOffset,
+                        decreaseAction: {
+                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: -1)
+                        },
+                        increaseAction: {
+                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: 1)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(styleBinding.wrappedValue.verticalOffset >= SubtitleStyle.maximumVerticalOffset)
-                        .accessibilityLabel(String(localized: "Move subtitle up", bundle: .forLocale(locale)))
-                    }
+                    )
+                    subtitleVerticalOffsetControl(
+                        title: String(localized: "Subtitle 2", bundle: .forLocale(locale)),
+                        value: styleBinding.wrappedValue.secondaryVerticalOffset,
+                        decreaseAction: {
+                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingSecondaryVerticalOffset(by: -1)
+                        },
+                        increaseAction: {
+                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingSecondaryVerticalOffset(by: 1)
+                        }
+                    )
+                } else {
+                    subtitleVerticalOffsetControl(
+                        title: String(localized: "Subtitle 1", bundle: .forLocale(locale)),
+                        value: styleBinding.wrappedValue.primaryVerticalOffset,
+                        decreaseAction: {
+                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: -1)
+                        },
+                        increaseAction: {
+                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: 1)
+                        }
+                    )
                 }
             }
         }
@@ -567,6 +569,44 @@ struct PreviewExportView: View {
             return "+\(value)"
         }
         return "\(value)"
+    }
+
+    @ViewBuilder
+    private func subtitleVerticalOffsetControl(
+        title: String,
+        value: Int,
+        decreaseAction: @escaping () -> Void,
+        increaseAction: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: AppSpacing.s) {
+            Text(title)
+                .foregroundStyle(AppColors.primaryText)
+            Spacer(minLength: AppSpacing.s)
+            HStack(spacing: AppSpacing.xs) {
+                Button(action: decreaseAction) {
+                    Image(systemName: "minus")
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(value <= SubtitleStyle.minimumVerticalOffset)
+                .accessibilityLabel(String(localized: "Move subtitle down", bundle: .forLocale(locale)))
+
+                Text(verbatim: formattedSubtitleVerticalOffset(value))
+                    .font(AppTypography.bodyEmphasis)
+                    .monospacedDigit()
+                    .frame(minWidth: 32)
+
+                Button(action: increaseAction) {
+                    Image(systemName: "plus")
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(value >= SubtitleStyle.maximumVerticalOffset)
+                .accessibilityLabel(String(localized: "Move subtitle up", bundle: .forLocale(locale)))
+            }
+        }
     }
 
     // MARK: - Manual fix & translate card

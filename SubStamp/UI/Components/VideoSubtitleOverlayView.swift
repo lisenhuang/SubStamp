@@ -16,15 +16,15 @@ struct VideoSubtitleOverlayView: View {
             let margin = max(12, videoRect.height * 0.06)
             let maxWidth = videoRect.width * 0.86
             let baseFontSize = fontSize(for: style.fontSize, in: videoRect.size)
-            let verticalOffset = style.verticalOffsetDistance(in: videoRect.size)
+            let primaryVerticalOffset = style.primaryVerticalOffsetDistance(in: videoRect.size)
+            let secondaryVerticalOffset = style.secondaryVerticalOffsetDistance(in: videoRect.size)
             let background: SubtitleBackground = style.usesShadow ? .translucent : .none
 
             ZStack {
                 positionedContainer(
                     in: videoRect,
                     position: style.position,
-                    margin: margin,
-                    verticalOffset: verticalOffset
+                    margin: margin
                 ) {
                     VStack(spacing: margin * 0.12) {
                         subtitleLine(
@@ -34,6 +34,7 @@ struct VideoSubtitleOverlayView: View {
                             opacity: 1,
                             background: background
                         )
+                        .offset(y: -primaryVerticalOffset)
 
                         if let secondaryText, !secondaryText.isEmpty {
                             let secondaryOpacity: Double = (style.secondaryStyle == .subdued) ? 0.85 : 1
@@ -45,6 +46,7 @@ struct VideoSubtitleOverlayView: View {
                                 opacity: secondaryOpacity,
                                 background: background
                             )
+                            .offset(y: -secondaryVerticalOffset)
                         }
                     }
                     .frame(maxWidth: maxWidth)
@@ -61,7 +63,6 @@ struct VideoSubtitleOverlayView: View {
         in videoRect: CGRect,
         position: SubtitlePosition,
         margin: CGFloat,
-        verticalOffset: CGFloat,
         @ViewBuilder content: () -> Content
     ) -> some View {
         ZStack {
@@ -86,7 +87,6 @@ struct VideoSubtitleOverlayView: View {
                 }
             }
         }
-        .offset(y: -verticalOffset)
         .frame(width: videoRect.width, height: videoRect.height)
         .position(x: videoRect.midX, y: videoRect.midY)
     }

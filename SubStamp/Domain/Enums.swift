@@ -100,22 +100,32 @@ struct SubtitleStyle: Codable, Hashable {
     var padding: Double = 4
     var lineSpacing: Double = 2
     var position: SubtitlePosition = .bottom
-    var verticalOffset: Int = 0
+    var primaryVerticalOffset: Int = 0
+    var secondaryVerticalOffset: Int = 0
 
     init() {}
 
-    func verticalOffsetDistance(in renderSize: CGSize) -> CGFloat {
+    func primaryVerticalOffsetDistance(in renderSize: CGSize) -> CGFloat {
         guard renderSize.height > 0 else { return 0 }
         let stepDistance = max(Self.minimumVerticalOffsetDistance, renderSize.height * Self.verticalOffsetStepFraction)
-        return CGFloat(verticalOffset) * stepDistance
+        return CGFloat(primaryVerticalOffset) * stepDistance
     }
 
-    func adjustingVerticalOffset(by delta: Int) -> SubtitleStyle {
+    func secondaryVerticalOffsetDistance(in renderSize: CGSize) -> CGFloat {
+        guard renderSize.height > 0 else { return 0 }
+        let stepDistance = max(Self.minimumVerticalOffsetDistance, renderSize.height * Self.verticalOffsetStepFraction)
+        return CGFloat(secondaryVerticalOffset) * stepDistance
+    }
+
+    func adjustingPrimaryVerticalOffset(by delta: Int) -> SubtitleStyle {
         var updated = self
-        updated.verticalOffset = min(
-            Self.maximumVerticalOffset,
-            max(Self.minimumVerticalOffset, updated.verticalOffset + delta)
-        )
+        updated.primaryVerticalOffset = Self.clampedVerticalOffset(updated.primaryVerticalOffset + delta)
+        return updated
+    }
+
+    func adjustingSecondaryVerticalOffset(by delta: Int) -> SubtitleStyle {
+        var updated = self
+        updated.secondaryVerticalOffset = Self.clampedVerticalOffset(updated.secondaryVerticalOffset + delta)
         return updated
     }
 
@@ -127,6 +137,8 @@ struct SubtitleStyle: Codable, Hashable {
         case padding
         case lineSpacing
         case position
+        case primaryVerticalOffset
+        case secondaryVerticalOffset
         case verticalOffset
     }
 
@@ -139,7 +151,13 @@ struct SubtitleStyle: Codable, Hashable {
         padding = try container.decodeIfPresent(Double.self, forKey: .padding) ?? 4
         lineSpacing = try container.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 2
         position = try container.decodeIfPresent(SubtitlePosition.self, forKey: .position) ?? .bottom
-        verticalOffset = try container.decodeIfPresent(Int.self, forKey: .verticalOffset) ?? 0
+        let legacyOffset = Self.clampedVerticalOffset(try container.decodeIfPresent(Int.self, forKey: .verticalOffset) ?? 0)
+        primaryVerticalOffset = Self.clampedVerticalOffset(
+            try container.decodeIfPresent(Int.self, forKey: .primaryVerticalOffset) ?? legacyOffset
+        )
+        secondaryVerticalOffset = Self.clampedVerticalOffset(
+            try container.decodeIfPresent(Int.self, forKey: .secondaryVerticalOffset) ?? legacyOffset
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -151,7 +169,12 @@ struct SubtitleStyle: Codable, Hashable {
         try container.encode(padding, forKey: .padding)
         try container.encode(lineSpacing, forKey: .lineSpacing)
         try container.encode(position, forKey: .position)
-        try container.encode(verticalOffset, forKey: .verticalOffset)
+        try container.encode(primaryVerticalOffset, forKey: .primaryVerticalOffset)
+        try container.encode(secondaryVerticalOffset, forKey: .secondaryVerticalOffset)
+    }
+
+    private static func clampedVerticalOffset(_ value: Int) -> Int {
+        min(maximumVerticalOffset, max(minimumVerticalOffset, value))
     }
 }
 
