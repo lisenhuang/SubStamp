@@ -121,12 +121,10 @@ final class SubtitleRenderer {
         let baseFontSize = fontSize(for: style.fontSize, renderSize: renderSize)
         let background: SubtitleBackground = style.usesShadow ? .translucent : .none
         let padding: CGFloat = 4
-        let secondaryScale: CGFloat = 0.84
-
         var layers: [CALayer] = []
         for cue in cues {
             let primaryFont = UIFont.systemFont(ofSize: baseFontSize, weight: .semibold)
-            let secondaryFont = UIFont.systemFont(ofSize: baseFontSize * secondaryScale, weight: .regular)
+            let secondaryFont = UIFont.systemFont(ofSize: baseFontSize, weight: .regular)
 
             let primaryLayer = buildTextLayer(
                 text: cue.primaryText,

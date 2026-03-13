@@ -7,17 +7,19 @@ struct VideoSubtitleOverlayView: View {
     let primaryText: String
     let secondaryText: String?
     let style: SubtitleStyle
+    let videoRenderSize: CGSize?
 
     var body: some View {
         GeometryReader { proxy in
-            let size = proxy.size
-            let margin = max(12, size.height * 0.06)
-            let maxWidth = size.width * 0.86
-            let baseFontSize = fontSize(for: style.fontSize, in: size)
+            let containerSize = proxy.size
+            let videoRect = displayedVideoRect(in: containerSize)
+            let margin = max(12, videoRect.height * 0.06)
+            let maxWidth = videoRect.width * 0.86
+            let baseFontSize = fontSize(for: style.fontSize, in: videoRect.size)
             let background: SubtitleBackground = style.usesShadow ? .translucent : .none
 
             ZStack {
-                positionedContainer(position: style.position, margin: margin) {
+                positionedContainer(in: videoRect, position: style.position, margin: margin) {
                     VStack(spacing: margin * 0.12) {
                         subtitleLine(
                             primaryText,
@@ -32,7 +34,7 @@ struct VideoSubtitleOverlayView: View {
                             let secondaryWeight: Font.Weight = (style.secondaryStyle == .subdued) ? .regular : .semibold
                             subtitleLine(
                                 secondaryText,
-                                fontSize: baseFontSize * 0.84,
+                                fontSize: baseFontSize,
                                 weight: secondaryWeight,
                                 opacity: secondaryOpacity,
                                 background: background
@@ -40,40 +42,45 @@ struct VideoSubtitleOverlayView: View {
                         }
                     }
                     .frame(maxWidth: maxWidth)
-                    .padding(.horizontal, (size.width - maxWidth) / 2)
+                    .padding(.horizontal, (videoRect.width - maxWidth) / 2)
                 }
             }
-            .frame(width: size.width, height: size.height)
+            .frame(width: containerSize.width, height: containerSize.height)
         }
         .allowsHitTesting(false)
     }
 
     @ViewBuilder
     private func positionedContainer<Content: View>(
+        in videoRect: CGRect,
         position: SubtitlePosition,
         margin: CGFloat,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        switch position {
-        case .top:
-            VStack {
-                content()
-                    .padding(.top, margin)
-                Spacer(minLength: 0)
-            }
-        case .middle:
-            VStack {
-                Spacer(minLength: 0)
-                content()
-                Spacer(minLength: 0)
-            }
-        case .bottom:
-            VStack {
-                Spacer(minLength: 0)
-                content()
-                    .padding(.bottom, margin)
+        ZStack {
+            switch position {
+            case .top:
+                VStack {
+                    content()
+                        .padding(.top, margin)
+                    Spacer(minLength: 0)
+                }
+            case .middle:
+                VStack {
+                    Spacer(minLength: 0)
+                    content()
+                    Spacer(minLength: 0)
+                }
+            case .bottom:
+                VStack {
+                    Spacer(minLength: 0)
+                    content()
+                        .padding(.bottom, margin)
+                }
             }
         }
+        .frame(width: videoRect.width, height: videoRect.height)
+        .position(x: videoRect.midX, y: videoRect.midY)
     }
 
     private func subtitleLine(
@@ -125,5 +132,28 @@ struct VideoSubtitleOverlayView: View {
         case .large:
             return base * 1.25
         }
+    }
+
+    private func displayedVideoRect(in containerSize: CGSize) -> CGRect {
+        guard containerSize.width > 0, containerSize.height > 0 else {
+            return CGRect(origin: .zero, size: containerSize)
+        }
+
+        guard let videoRenderSize,
+              videoRenderSize.width > 0,
+              videoRenderSize.height > 0 else {
+            return CGRect(origin: .zero, size: containerSize)
+        }
+
+        let scale = min(containerSize.width / videoRenderSize.width, containerSize.height / videoRenderSize.height)
+        let fittedSize = CGSize(
+            width: videoRenderSize.width * scale,
+            height: videoRenderSize.height * scale
+        )
+        let origin = CGPoint(
+            x: (containerSize.width - fittedSize.width) / 2,
+            y: (containerSize.height - fittedSize.height) / 2
+        )
+        return CGRect(origin: origin, size: fittedSize)
     }
 }

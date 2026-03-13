@@ -28,6 +28,7 @@ struct PreviewExportView: View {
     @State private var cueStartSeconds: [Double] = []
     @State private var cueIndexByID: [UUID: Int] = [:]
     @State private var activeCueID: UUID?
+    @State private var previewVideoRenderSize: CGSize?
     @State private var timeObserverToken: Any?
     @State private var isVideoFullScreen = false
     @FocusState private var isTextFieldFocused: Bool
@@ -226,7 +227,8 @@ struct PreviewExportView: View {
                         VideoSubtitleOverlayView(
                             primaryText: cue.primaryText,
                             secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
-                            style: job?.subtitleStyle ?? SubtitleStyle()
+                            style: job?.subtitleStyle ?? SubtitleStyle(),
+                            videoRenderSize: previewVideoRenderSize
                         )
                     }
 
@@ -339,7 +341,8 @@ struct PreviewExportView: View {
                         VideoSubtitleOverlayView(
                             primaryText: cue.primaryText,
                             secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
-                            style: job?.subtitleStyle ?? SubtitleStyle()
+                            style: job?.subtitleStyle ?? SubtitleStyle(),
+                            videoRenderSize: previewVideoRenderSize
                         )
                     }
                 }
@@ -364,6 +367,9 @@ struct PreviewExportView: View {
             player = AVPlayer(url: videoURL)
             if let player {
                 installTimeObserver(for: player)
+            }
+            Task {
+                previewVideoRenderSize = await loadPreviewVideoRenderSize(from: videoURL)
             }
             rebuildCueTimingIndex()
             updateActiveCue(at: playbackTimeSeconds)
@@ -1814,5 +1820,22 @@ struct PreviewExportView: View {
             .replacingOccurrences(of: "  ", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+
+    private func loadPreviewVideoRenderSize(from url: URL) async -> CGSize? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first else {
+            return nil
+        }
+
+        let naturalSize = (try? await track.load(.naturalSize)) ?? .zero
+        let preferredTransform = (try? await track.load(.preferredTransform)) ?? .identity
+        let transformedSize = naturalSize.applying(preferredTransform)
+
+        let width = max(abs(transformedSize.width), abs(naturalSize.width))
+        let height = max(abs(transformedSize.height), abs(naturalSize.height))
+        guard width > 0, height > 0 else { return nil }
+
+        return CGSize(width: round(width), height: round(height))
     }
 }
