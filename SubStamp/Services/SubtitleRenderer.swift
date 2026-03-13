@@ -2,6 +2,14 @@ import AVFoundation
 import UIKit
 
 final class SubtitleRenderer {
+    private struct CueStats {
+        let primaryChars: Int
+        let secondaryChars: Int
+        let bilingualCueCount: Int
+        let maxCueChars: Int
+        let maxCueDuration: Double
+    }
+
     struct RenderResult {
         let composition: AVMutableComposition
         let videoComposition: AVMutableVideoComposition
@@ -52,6 +60,14 @@ final class SubtitleRenderer {
         let renderSize = CGSize(width: safeWidth, height: safeHeight)
         videoComposition.renderSize = renderSize
 
+        let stats = cueStats(for: cues)
+        AppLog.append(
+            "[RENDER] start range=\(formatTimeRange(sourceRange)) cues=\(cues.count) mode=\(mode.rawValue) layout=\(layout.rawValue) style=\(describe(style: style)) natural=\(format(size: naturalSize)) transformed=\(format(size: CGSize(width: transformedWidth, height: transformedHeight))) render=\(format(size: renderSize))"
+        )
+        AppLog.append(
+            "[RENDER] cue-stats primaryChars=\(stats.primaryChars) secondaryChars=\(stats.secondaryChars) bilingualCues=\(stats.bilingualCueCount) maxCueChars=\(stats.maxCueChars) maxCueDuration=\(String(format: "%.2f", stats.maxCueDuration))"
+        )
+
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = timelineRange
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoCompositionTrack!)
@@ -76,10 +92,14 @@ final class SubtitleRenderer {
         )
         overlayLayers.forEach { parentLayer.addSublayer($0) }
 
+        AppLog.append("[RENDER] overlay-built layers=\(overlayLayers.count) timelineDuration=\(String(format: "%.2f", timelineRange.duration.seconds))s")
+
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
             postProcessingAsVideoLayer: videoLayer,
             in: parentLayer
         )
+
+        AppLog.append("[RENDER] ready instructions=\(videoComposition.instructions.count) frameDuration=\(String(format: "%.4f", videoComposition.frameDuration.seconds))s")
 
         return RenderResult(composition: composition, videoComposition: videoComposition, renderSize: renderSize)
     }
@@ -250,5 +270,48 @@ final class SubtitleRenderer {
             width: topFrame.width,
             height: topFrame.height
         )
+    }
+
+    private func cueStats(for cues: [SubtitleCue]) -> CueStats {
+        var primaryChars = 0
+        var secondaryChars = 0
+        var bilingualCueCount = 0
+        var maxCueChars = 0
+        var maxCueDuration = 0.0
+
+        for cue in cues {
+            let primary = cue.primaryText.count
+            let secondary = cue.secondaryText?.count ?? 0
+            primaryChars += primary
+            secondaryChars += secondary
+            if secondary > 0 {
+                bilingualCueCount += 1
+            }
+            maxCueChars = max(maxCueChars, primary + secondary)
+            maxCueDuration = max(maxCueDuration, max(0, cue.end.seconds - cue.start.seconds))
+        }
+
+        return CueStats(
+            primaryChars: primaryChars,
+            secondaryChars: secondaryChars,
+            bilingualCueCount: bilingualCueCount,
+            maxCueChars: maxCueChars,
+            maxCueDuration: maxCueDuration
+        )
+    }
+
+    private func format(size: CGSize) -> String {
+        "\(Int(round(size.width)))x\(Int(round(size.height)))"
+    }
+
+    private func formatTimeRange(_ range: CMTimeRange) -> String {
+        let start = String(format: "%.2f", range.start.seconds)
+        let duration = String(format: "%.2f", range.duration.seconds)
+        let end = String(format: "%.2f", range.end.seconds)
+        return "\(start)-\(end)s duration=\(duration)s"
+    }
+
+    private func describe(style: SubtitleStyle) -> String {
+        "font=\(style.fontSize.rawValue) bg=\(style.background.rawValue) shadow=\(style.usesShadow) pos=\(style.position.rawValue) pOffset=\(style.primaryVerticalOffset) sOffset=\(style.secondaryVerticalOffset)"
     }
 }

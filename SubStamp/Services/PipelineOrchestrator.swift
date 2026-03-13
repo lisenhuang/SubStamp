@@ -620,10 +620,12 @@ final class PipelineOrchestrator: ObservableObject {
             let shouldSegment = shouldUseSegmentedExport(range: effectiveRange, cueCount: cues.count)
             let exportedURL: URL
 
+            AppLog.append(
+                "[EXPORT] start preset=\(job.exportPreset.rawValue) segmented=\(shouldSegment) input=\(job.videoURL.lastPathComponent) range=\(formatTimeRange(effectiveRange)) cues=\(cues.count) mode=\(job.subtitleMode.rawValue) layout=\(job.subtitleLayout.rawValue)"
+            )
+
             if shouldSegment {
-#if DEBUG
-                AppLog.append("[EXPORT] segmented mode enabled duration=\(effectiveRange.duration.seconds)s cues=\(cues.count)")
-#endif
+                AppLog.append("[EXPORT] segmented mode enabled duration=\(String(format: "%.2f", effectiveRange.duration.seconds))s cues=\(cues.count)")
                 currentStage = .exporting
                 stageStates[.exporting] = .active
                 updatedJob.stage = .exporting
@@ -646,12 +648,11 @@ final class PipelineOrchestrator: ObservableObject {
                     activeSegmentRange = segmentRange
                     let segmentCues = cues(in: segmentRange, from: cues)
 
-#if DEBUG
-                    AppLog.append("[EXPORT] segment \(segmentIndex + 1)/\(segmentCount) range=\(segmentRange.start.seconds)-\(segmentRange.end.seconds) cues=\(segmentCues.count)")
-#endif
+                    AppLog.append("[EXPORT] segment \(segmentIndex + 1)/\(segmentCount) range=\(formatTimeRange(segmentRange)) cues=\(segmentCues.count)")
 
                     updateStageProgress(.rendering, value: Double(segmentIndex) / Double(segmentCount))
 
+                    AppLog.append("[EXPORT] segment \(segmentIndex + 1)/\(segmentCount) render(start)")
                     let renderResult = try await subtitleRenderer.createComposition(
                         asset: asset,
                         cues: segmentCues,
@@ -660,13 +661,15 @@ final class PipelineOrchestrator: ObservableObject {
                         layout: job.subtitleLayout,
                         timeRange: segmentRange
                     )
+                    AppLog.append("[EXPORT] segment \(segmentIndex + 1)/\(segmentCount) render(done) renderSize=\(format(size: renderResult.renderSize))")
 
                     updateStageProgress(.rendering, value: Double(segmentIndex + 1) / Double(segmentCount))
 
                     let segmentURL = try await exportService.export(
                         composition: renderResult.composition,
                         videoComposition: renderResult.videoComposition,
-                        preset: job.exportPreset
+                        preset: job.exportPreset,
+                        label: "segment \(segmentIndex + 1)/\(segmentCount)"
                     ) { [weak self] progress in
                         let completedSegments = Double(segmentIndex)
                         let totalSegments = Double(segmentCount)
@@ -684,6 +687,7 @@ final class PipelineOrchestrator: ObservableObject {
                 stageStates[.rendering] = .done
                 updateStageProgress(.rendering, value: 1, force: true)
 
+                AppLog.append("[EXPORT] merge(prepare) segmentCount=\(segmentURLs.count)")
                 exportedURL = try await exportService.concatenate(
                     segmentURLs: segmentURLs,
                     preference: job.exportPreset
@@ -702,6 +706,7 @@ final class PipelineOrchestrator: ObservableObject {
                     layout: job.subtitleLayout,
                     timeRange: range
                 )
+                AppLog.append("[EXPORT] full render(done) renderSize=\(format(size: renderResult.renderSize))")
 
                 try Task.checkCancellation()
 
@@ -716,7 +721,8 @@ final class PipelineOrchestrator: ObservableObject {
                 exportedURL = try await exportService.export(
                     composition: renderResult.composition,
                     videoComposition: renderResult.videoComposition,
-                    preset: job.exportPreset
+                    preset: job.exportPreset,
+                    label: "full"
                 ) { [weak self] progress in
                     Task { @MainActor in
                         self?.updateStageProgress(.exporting, value: progress)
@@ -737,17 +743,16 @@ final class PipelineOrchestrator: ObservableObject {
             currentStage = .completed
             isRunning = false
         } catch is CancellationError {
+            AppLog.append("[EXPORT] cancelled")
             isRunning = false
             return
         } catch {
             guard !Task.isCancelled else { isRunning = false; return }
-#if DEBUG
             if let activeSegmentIndex, let activeSegmentRange {
-                AppLog.append("[EXPORT] failed segment=\(activeSegmentIndex + 1) range=\(activeSegmentRange.start.seconds)-\(activeSegmentRange.end.seconds) error=\(error.localizedDescription)")
+                AppLog.append("[EXPORT] failed segment=\(activeSegmentIndex + 1) range=\(formatTimeRange(activeSegmentRange)) error=\(describe(error: error))")
             } else {
-                AppLog.append("[EXPORT] failed error=\(error.localizedDescription)")
+                AppLog.append("[EXPORT] failed error=\(describe(error: error))")
             }
-#endif
             self.error = (error as? SubStampError) ?? .exportFailed(underlying: error)
             markFailed()
         }
@@ -756,6 +761,26 @@ final class PipelineOrchestrator: ObservableObject {
     private func shouldUseSegmentedExport(range: CMTimeRange, cueCount: Int) -> Bool {
         let duration = max(0, range.duration.seconds)
         return duration > 15 * 60 || cueCount >= 700
+    }
+
+    private func formatTimeRange(_ range: CMTimeRange) -> String {
+        let start = String(format: "%.2f", range.start.seconds)
+        let duration = String(format: "%.2f", range.duration.seconds)
+        let end = String(format: "%.2f", range.end.seconds)
+        return "\(start)-\(end)s duration=\(duration)s"
+    }
+
+    private func format(size: CGSize) -> String {
+        "\(Int(round(size.width)))x\(Int(round(size.height)))"
+    }
+
+    private func describe(error: Error) -> String {
+        let nsError = error as NSError
+        let underlying = (nsError.userInfo[NSUnderlyingErrorKey] as? NSError).map {
+            "\($0.domain)(\($0.code)): \($0.localizedDescription)"
+        } ?? "nil"
+        let keys = nsError.userInfo.keys.map { String(describing: $0) }.sorted().joined(separator: ",")
+        return "domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription) reason=\(nsError.localizedFailureReason ?? "nil") suggestion=\(nsError.localizedRecoverySuggestion ?? "nil") underlying=\(underlying) userInfoKeys=[\(keys)]"
     }
 
     private func makeSegmentRange(
