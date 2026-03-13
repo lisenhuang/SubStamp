@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 enum SubtitleMode: String, Codable, CaseIterable, Identifiable {
@@ -90,8 +89,6 @@ enum SubtitlePosition: String, Codable, CaseIterable, Identifiable {
 struct SubtitleStyle: Codable, Hashable {
     static let minimumVerticalOffset = -20
     static let maximumVerticalOffset = 20
-    private static let verticalOffsetStepFraction: CGFloat = 0.012
-    private static let minimumVerticalOffsetDistance: CGFloat = 6
 
     var fontSize: SubtitleFontSize = .medium
     var background: SubtitleBackground = .translucent
@@ -104,18 +101,6 @@ struct SubtitleStyle: Codable, Hashable {
     var secondaryVerticalOffset: Int = 0
 
     init() {}
-
-    func primaryVerticalOffsetDistance(in renderSize: CGSize) -> CGFloat {
-        guard renderSize.height > 0 else { return 0 }
-        let stepDistance = max(Self.minimumVerticalOffsetDistance, renderSize.height * Self.verticalOffsetStepFraction)
-        return CGFloat(primaryVerticalOffset) * stepDistance
-    }
-
-    func secondaryVerticalOffsetDistance(in renderSize: CGSize) -> CGFloat {
-        guard renderSize.height > 0 else { return 0 }
-        let stepDistance = max(Self.minimumVerticalOffsetDistance, renderSize.height * Self.verticalOffsetStepFraction)
-        return CGFloat(secondaryVerticalOffset) * stepDistance
-    }
 
     func adjustingPrimaryVerticalOffset(by delta: Int) -> SubtitleStyle {
         var updated = self

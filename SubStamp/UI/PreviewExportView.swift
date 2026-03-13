@@ -1,5 +1,4 @@
 import AVFoundation
-import AVKit
 import Combine
 import SwiftUI
 import Translation
@@ -29,6 +28,8 @@ struct PreviewExportView: View {
     @State private var cueIndexByID: [UUID: Int] = [:]
     @State private var activeCueID: UUID?
     @State private var previewVideoRenderSize: CGSize?
+    @State private var inlinePreviewVideoRect: CGRect = .zero
+    @State private var fullscreenPreviewVideoRect: CGRect = .zero
     @State private var timeObserverToken: Any?
     @State private var isVideoFullScreen = false
     @FocusState private var isTextFieldFocused: Bool
@@ -221,34 +222,41 @@ struct PreviewExportView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 ZStack(alignment: .bottomTrailing) {
-                    VideoPlayer(player: player)
+                    PlayerSurfaceView(player: player) { rect in
+                        inlinePreviewVideoRect = rect
+                    }
 
                     if let cue = currentOverlayCue {
                         VideoSubtitleOverlayView(
                             primaryText: cue.primaryText,
                             secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
                             style: job?.subtitleStyle ?? SubtitleStyle(),
-                            videoRenderSize: previewVideoRenderSize
+                            videoRenderSize: previewVideoRenderSize,
+                            displayedVideoRect: inlinePreviewVideoRect.isEmpty ? nil : inlinePreviewVideoRect
                         )
                     }
 
                     if player != nil {
-                        Button {
-                            isVideoFullScreen = true
-                        } label: {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
-                                .font(.title)
-                                .foregroundStyle(.white)
-                                .padding(AppSpacing.s)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
+                        HStack {
+                            overlayControlButton(systemName: isPlayingPreview ? "pause.circle.fill" : "play.circle.fill") {
+                                togglePreviewPlayback()
+                            }
+
+                            Spacer()
+
+                            overlayControlButton(systemName: "arrow.up.left.and.arrow.down.right.circle.fill") {
+                                isVideoFullScreen = true
+                            }
                         }
                         .padding(AppSpacing.m)
-                        .accessibilityLabel(Text("Full screen"))
                     }
                 }
                 .frame(height: 220)
                 .background(Color.black)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    togglePreviewPlayback()
+                }
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
@@ -328,37 +336,47 @@ struct PreviewExportView: View {
             }
         }
         .fullScreenCover(isPresented: $isVideoFullScreen) {
-            ZStack(alignment: .topLeading) {
-                ZStack {
-                    if let player {
-                        VideoPlayer(player: player)
-                            .ignoresSafeArea()
-                    } else {
-                        Color.black.ignoresSafeArea()
-                    }
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-                    if let cue = currentOverlayCue {
-                        VideoSubtitleOverlayView(
-                            primaryText: cue.primaryText,
-                            secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
-                            style: job?.subtitleStyle ?? SubtitleStyle(),
-                            videoRenderSize: previewVideoRenderSize
-                        )
-                    }
+                PlayerSurfaceView(player: player) { rect in
+                    fullscreenPreviewVideoRect = rect
+                }
+                .ignoresSafeArea()
+
+                if let cue = currentOverlayCue {
+                    VideoSubtitleOverlayView(
+                        primaryText: cue.primaryText,
+                        secondaryText: (job?.subtitleMode == .bilingual) ? cue.secondaryText : nil,
+                        style: job?.subtitleStyle ?? SubtitleStyle(),
+                        videoRenderSize: previewVideoRenderSize,
+                        displayedVideoRect: fullscreenPreviewVideoRect.isEmpty ? nil : fullscreenPreviewVideoRect
+                    )
+                    .ignoresSafeArea()
                 }
 
-                Button {
-                    isVideoFullScreen = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.largeTitle)
-                        .foregroundStyle(.white)
-                        .padding()
-                        .shadow(radius: 4)
+                VStack {
+                    HStack {
+                        overlayControlButton(systemName: "xmark.circle.fill") {
+                            isVideoFullScreen = false
+                        }
+                        Spacer()
+                    }
+                    Spacer()
+                    HStack {
+                        overlayControlButton(systemName: isPlayingPreview ? "pause.circle.fill" : "play.circle.fill") {
+                            togglePreviewPlayback()
+                        }
+                        Spacer()
+                    }
                 }
-                .accessibilityLabel(Text("Close"))
+                .padding()
             }
             .background(Color.black)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                togglePreviewPlayback()
+            }
         }
         .sheet(item: $safariURLItem) { item in
             SafariView(url: item.url)
@@ -569,6 +587,18 @@ struct PreviewExportView: View {
             return "+\(value)"
         }
         return "\(value)"
+    }
+
+    @ViewBuilder
+    private func overlayControlButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.title)
+                .foregroundStyle(.white)
+                .padding(AppSpacing.s)
+                .background(Color.black.opacity(0.5))
+                .clipShape(Circle())
+        }
     }
 
     @ViewBuilder
@@ -1157,6 +1187,7 @@ struct PreviewExportView: View {
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
             playbackTimeSeconds = time.seconds
             updateActiveCue(at: time.seconds)
+            isPlayingPreview = player.timeControlStatus == .playing
         }
     }
 
@@ -1164,6 +1195,17 @@ struct PreviewExportView: View {
         guard let token = timeObserverToken else { return }
         player?.removeTimeObserver(token)
         timeObserverToken = nil
+    }
+
+    private func togglePreviewPlayback() {
+        guard let player else { return }
+        if player.timeControlStatus == .playing {
+            player.pause()
+            isPlayingPreview = false
+        } else {
+            player.play()
+            isPlayingPreview = true
+        }
     }
 
     // MARK: - Manual fix + translate (copy prompt / paste result)

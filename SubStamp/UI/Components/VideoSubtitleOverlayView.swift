@@ -2,55 +2,39 @@ import SwiftUI
 
 /// Live (non-burned) subtitle overlay for previewing timing + style.
 ///
-/// This is intentionally lightweight and uses the same size/position heuristics as `SubtitleRenderer`.
+/// Layout is derived from the same calculator used by the export renderer so
+/// inline preview, fullscreen preview, and the burned-in output stay aligned.
 struct VideoSubtitleOverlayView: View {
     let primaryText: String
     let secondaryText: String?
     let style: SubtitleStyle
     let videoRenderSize: CGSize?
+    let displayedVideoRect: CGRect?
 
     var body: some View {
         GeometryReader { proxy in
             let containerSize = proxy.size
-            let videoRect = displayedVideoRect(in: containerSize)
-            let margin = max(12, videoRect.height * 0.06)
-            let maxWidth = videoRect.width * 0.86
-            let baseFontSize = fontSize(for: style.fontSize, in: videoRect.size)
-            let primaryVerticalOffset = style.primaryVerticalOffsetDistance(in: videoRect.size)
-            let secondaryVerticalOffset = style.secondaryVerticalOffsetDistance(in: videoRect.size)
-            let background: SubtitleBackground = style.usesShadow ? .translucent : .none
+            let videoRect = resolvedVideoRect(in: containerSize)
+            let layout = SubtitleLayoutCalculator.makeCueLayout(
+                primaryText: primaryText,
+                secondaryText: secondaryText,
+                style: style,
+                renderSize: videoRect.size
+            )
 
-            ZStack {
-                positionedContainer(
-                    in: videoRect,
-                    position: style.position,
-                    margin: margin
-                ) {
-                    VStack(spacing: margin * 0.12) {
-                        subtitleLine(
-                            primaryText,
-                            fontSize: baseFontSize,
-                            weight: .semibold,
-                            opacity: 1,
-                            background: background
+            ZStack(alignment: .topLeading) {
+                subtitleLine(layout.primary, background: layout.background, lineSpacing: layout.lineSpacing)
+                    .position(
+                        x: videoRect.minX + layout.primary.outerFrame.midX,
+                        y: videoRect.minY + layout.primary.outerFrame.midY
+                    )
+
+                if let secondary = layout.secondary {
+                    subtitleLine(secondary, background: layout.background, lineSpacing: layout.lineSpacing)
+                        .position(
+                            x: videoRect.minX + secondary.outerFrame.midX,
+                            y: videoRect.minY + secondary.outerFrame.midY
                         )
-                        .offset(y: -primaryVerticalOffset)
-
-                        if let secondaryText, !secondaryText.isEmpty {
-                            let secondaryOpacity: Double = (style.secondaryStyle == .subdued) ? 0.85 : 1
-                            let secondaryWeight: Font.Weight = (style.secondaryStyle == .subdued) ? .regular : .semibold
-                            subtitleLine(
-                                secondaryText,
-                                fontSize: baseFontSize,
-                                weight: secondaryWeight,
-                                opacity: secondaryOpacity,
-                                background: background
-                            )
-                            .offset(y: -secondaryVerticalOffset)
-                        }
-                    }
-                    .frame(maxWidth: maxWidth)
-                    .padding(.horizontal, (videoRect.width - maxWidth) / 2)
                 }
             }
             .frame(width: containerSize.width, height: containerSize.height)
@@ -58,63 +42,31 @@ struct VideoSubtitleOverlayView: View {
         .allowsHitTesting(false)
     }
 
-    @ViewBuilder
-    private func positionedContainer<Content: View>(
-        in videoRect: CGRect,
-        position: SubtitlePosition,
-        margin: CGFloat,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        ZStack {
-            switch position {
-            case .top:
-                VStack {
-                    content()
-                        .padding(.top, margin)
-                    Spacer(minLength: 0)
-                }
-            case .middle:
-                VStack {
-                    Spacer(minLength: 0)
-                    content()
-                    Spacer(minLength: 0)
-                }
-            case .bottom:
-                VStack {
-                    Spacer(minLength: 0)
-                    content()
-                        .padding(.bottom, margin)
-                }
-            }
-        }
-        .frame(width: videoRect.width, height: videoRect.height)
-        .position(x: videoRect.midX, y: videoRect.midY)
-    }
-
     private func subtitleLine(
-        _ text: String,
-        fontSize: CGFloat,
-        weight: Font.Weight,
-        opacity: Double,
-        background: SubtitleBackground
+        _ line: SubtitleLineLayout,
+        background: SubtitleBackground,
+        lineSpacing: Double
     ) -> some View {
-        let padding: CGFloat = 4
+        let innerWidth = line.innerSize.width
+        let innerHeight = line.innerSize.height
 
-        return Text(text)
-            .font(.system(size: fontSize, weight: weight))
-            .foregroundStyle(Color.white.opacity(opacity))
+        return Text(line.text)
+            .font(.system(size: line.font.pointSize, weight: Font.Weight(line.font.weight)))
+            .foregroundStyle(Color.white.opacity(line.opacity))
             .multilineTextAlignment(.center)
-            .lineSpacing(style.lineSpacing)
+            .lineSpacing(lineSpacing)
             .shadow(
                 color: style.usesShadow ? Color.black.opacity(0.6) : .clear,
                 radius: style.usesShadow ? 3 : 0,
                 x: 0,
                 y: style.usesShadow ? 1 : 0
             )
-            .padding(.horizontal, padding)
-            .padding(.vertical, padding)
+            .frame(width: innerWidth, height: innerHeight, alignment: .center)
+            .padding(.horizontal, line.padding)
+            .padding(.vertical, line.padding)
             .background(backgroundView(background))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .frame(width: line.outerFrame.width, height: line.outerFrame.height, alignment: .center)
     }
 
     @ViewBuilder
@@ -129,20 +81,14 @@ struct VideoSubtitleOverlayView: View {
         }
     }
 
-    private func fontSize(for size: SubtitleFontSize, in renderSize: CGSize) -> CGFloat {
-        let referenceDimension = (renderSize.width + renderSize.height) / 2
-        let base = referenceDimension * 0.03
-        switch size {
-        case .small:
-            return base * 0.8
-        case .medium:
-            return base
-        case .large:
-            return base * 1.25
+    private func resolvedVideoRect(in containerSize: CGSize) -> CGRect {
+        if let displayedVideoRect,
+           !displayedVideoRect.isEmpty,
+           displayedVideoRect.width > 0,
+           displayedVideoRect.height > 0 {
+            return displayedVideoRect
         }
-    }
 
-    private func displayedVideoRect(in containerSize: CGSize) -> CGRect {
         guard containerSize.width > 0, containerSize.height > 0 else {
             return CGRect(origin: .zero, size: containerSize)
         }
@@ -163,5 +109,30 @@ struct VideoSubtitleOverlayView: View {
             y: (containerSize.height - fittedSize.height) / 2
         )
         return CGRect(origin: origin, size: fittedSize)
+    }
+}
+
+private extension Font.Weight {
+    init(_ uiWeight: UIFont.Weight) {
+        switch uiWeight {
+        case .ultraLight: self = .ultraLight
+        case .thin: self = .thin
+        case .light: self = .light
+        case .regular: self = .regular
+        case .medium: self = .medium
+        case .semibold: self = .semibold
+        case .bold: self = .bold
+        case .heavy: self = .heavy
+        case .black: self = .black
+        default: self = .regular
+        }
+    }
+}
+
+private extension UIFont {
+    var weight: UIFont.Weight {
+        let traits = fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
+        let raw = traits?[.weight] as? CGFloat ?? UIFont.Weight.regular.rawValue
+        return UIFont.Weight(raw)
     }
 }
