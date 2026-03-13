@@ -28,6 +28,7 @@ struct PreviewExportView: View {
     @State private var cueIndexByID: [UUID: Int] = [:]
     @State private var activeCueID: UUID?
     @State private var previewVideoRenderSize: CGSize?
+    @State private var loadedPreviewDurationSeconds: Double = 0
     @State private var inlinePreviewVideoRect: CGRect = .zero
     @State private var fullscreenPreviewVideoRect: CGRect = .zero
     @State private var arePreviewControlsVisible = true
@@ -365,7 +366,10 @@ struct PreviewExportView: View {
                 installTimeObserver(for: player)
             }
             Task {
-                previewVideoRenderSize = await loadPreviewVideoRenderSize(from: videoURL)
+                async let renderSize = loadPreviewVideoRenderSize(from: videoURL)
+                async let durationSeconds = loadPreviewDurationSeconds(from: videoURL)
+                previewVideoRenderSize = await renderSize
+                loadedPreviewDurationSeconds = await durationSeconds
             }
             rebuildCueTimingIndex()
             updateActiveCue(at: playbackTimeSeconds)
@@ -431,6 +435,9 @@ struct PreviewExportView: View {
     }
 
     private var previewDurationSeconds: Double {
+        if loadedPreviewDurationSeconds > 0 {
+            return loadedPreviewDurationSeconds
+        }
         guard let seconds = player?.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 else {
             return max(playbackTimeSeconds, scrubbedPlaybackTimeSeconds ?? 0, 0)
         }
@@ -1278,6 +1285,12 @@ struct PreviewExportView: View {
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
             if !isScrubbingPreview {
                 playbackTimeSeconds = time.seconds
+            }
+            if loadedPreviewDurationSeconds <= 0,
+               let seconds = player.currentItem?.duration.seconds,
+               seconds.isFinite,
+               seconds > 0 {
+                loadedPreviewDurationSeconds = seconds
             }
             updateActiveCue(at: time.seconds)
             isPlayingPreview = player.timeControlStatus == .playing
@@ -2137,5 +2150,11 @@ struct PreviewExportView: View {
         guard width > 0, height > 0 else { return nil }
 
         return CGSize(width: round(width), height: round(height))
+    }
+
+    private func loadPreviewDurationSeconds(from url: URL) async -> Double {
+        let asset = AVURLAsset(url: url)
+        let duration = (try? await asset.load(.duration))?.seconds ?? 0
+        return duration.isFinite && duration > 0 ? duration : 0
     }
 }
