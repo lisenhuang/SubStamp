@@ -30,6 +30,10 @@ struct PreviewExportView: View {
     @State private var previewVideoRenderSize: CGSize?
     @State private var inlinePreviewVideoRect: CGRect = .zero
     @State private var fullscreenPreviewVideoRect: CGRect = .zero
+    @State private var arePreviewControlsVisible = true
+    @State private var previewControlsHideTask: Task<Void, Never>?
+    @State private var isScrubbingPreview = false
+    @State private var scrubbedPlaybackTimeSeconds: Double?
     @State private var timeObserverToken: Any?
     @State private var isVideoFullScreen = false
     @FocusState private var isTextFieldFocused: Bool
@@ -221,7 +225,7 @@ struct PreviewExportView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ZStack(alignment: .bottomTrailing) {
+                ZStack {
                     PlayerSurfaceView(player: player) { rect in
                         inlinePreviewVideoRect = rect
                     }
@@ -237,25 +241,14 @@ struct PreviewExportView: View {
                     }
 
                     if player != nil {
-                        HStack {
-                            overlayControlButton(systemName: isPlayingPreview ? "pause.circle.fill" : "play.circle.fill") {
-                                togglePreviewPlayback()
-                            }
-
-                            Spacer()
-
-                            overlayControlButton(systemName: "arrow.up.left.and.arrow.down.right.circle.fill") {
-                                isVideoFullScreen = true
-                            }
-                        }
-                        .padding(AppSpacing.m)
+                        previewControlsOverlay(isFullscreen: false)
                     }
                 }
                 .frame(height: 220)
                 .background(Color.black)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    togglePreviewPlayback()
+                    togglePreviewControlsVisibility()
                 }
 
                 ScrollViewReader { scrollProxy in
@@ -355,27 +348,12 @@ struct PreviewExportView: View {
                     .ignoresSafeArea()
                 }
 
-                VStack {
-                    HStack {
-                        overlayControlButton(systemName: "xmark.circle.fill") {
-                            isVideoFullScreen = false
-                        }
-                        Spacer()
-                    }
-                    Spacer()
-                    HStack {
-                        overlayControlButton(systemName: isPlayingPreview ? "pause.circle.fill" : "play.circle.fill") {
-                            togglePreviewPlayback()
-                        }
-                        Spacer()
-                    }
-                }
-                .padding()
+                previewControlsOverlay(isFullscreen: true)
             }
             .background(Color.black)
             .contentShape(Rectangle())
             .onTapGesture {
-                togglePreviewPlayback()
+                togglePreviewControlsVisibility()
             }
         }
         .sheet(item: $safariURLItem) { item in
@@ -399,8 +377,10 @@ struct PreviewExportView: View {
             if orchestrator.translationComplete {
                 snapshotTranslations()
             }
+            showPreviewControls()
         }
         .onDisappear {
+            cancelPreviewControlsAutoHide()
             removeTimeObserver()
             player?.pause()
             player = nil
@@ -448,6 +428,27 @@ struct PreviewExportView: View {
             }
         }
         return orchestrator.cues.first { $0.id == activeCueID }
+    }
+
+    private var previewDurationSeconds: Double {
+        guard let seconds = player?.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 else {
+            return max(playbackTimeSeconds, scrubbedPlaybackTimeSeconds ?? 0, 0)
+        }
+        return seconds
+    }
+
+    private var effectivePlaybackTimeSeconds: Double {
+        scrubbedPlaybackTimeSeconds ?? playbackTimeSeconds
+    }
+
+    private var previewTimeBinding: Binding<Double> {
+        Binding(
+            get: { effectivePlaybackTimeSeconds },
+            set: { newValue in
+                scrubbedPlaybackTimeSeconds = newValue
+                updateActiveCue(at: newValue)
+            }
+        )
     }
 
     // MARK: - Translation progress (inline, shown when translating)
@@ -590,7 +591,95 @@ struct PreviewExportView: View {
     }
 
     @ViewBuilder
-    private func overlayControlButton(systemName: String, action: @escaping () -> Void) -> some View {
+    private func previewControlsOverlay(isFullscreen: Bool) -> some View {
+        if arePreviewControlsVisible {
+            ZStack {
+                Color.black.opacity(isFullscreen ? 0.16 : 0.12)
+
+                VStack(spacing: AppSpacing.m) {
+                    Spacer()
+
+                    playbackControlRow
+
+                    Spacer()
+
+                    HStack(spacing: AppSpacing.s) {
+                        Text(TimeFormatting.duration(effectivePlaybackTimeSeconds))
+                            .font(AppTypography.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+
+                        Slider(
+                            value: previewTimeBinding,
+                            in: 0...max(previewDurationSeconds, 0.1),
+                            onEditingChanged: handlePreviewScrubbingChanged
+                        )
+                        .tint(.white)
+                        .disabled(previewDurationSeconds <= 0)
+
+                        Text(TimeFormatting.duration(previewDurationSeconds))
+                            .font(AppTypography.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, AppSpacing.m)
+                    .padding(.trailing, 56)
+                    .padding(.bottom, AppSpacing.m)
+                }
+
+                overlayControlButton(
+                    systemName: isFullscreen
+                        ? "arrow.down.right.and.arrow.up.left.circle.fill"
+                        : "arrow.up.left.and.arrow.down.right.circle.fill",
+                    accessibilityLabel: isFullscreen
+                        ? String(localized: "Exit full screen preview", bundle: .forLocale(locale))
+                        : String(localized: "Full screen preview", bundle: .forLocale(locale))
+                ) {
+                    togglePreviewFullScreen()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, AppSpacing.m)
+                .padding(.bottom, AppSpacing.m)
+            }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.2), value: arePreviewControlsVisible)
+        }
+    }
+
+    private var playbackControlRow: some View {
+        HStack(spacing: AppSpacing.m) {
+            overlayControlButton(
+                systemName: "gobackward.10",
+                accessibilityLabel: String(localized: "Rewind 10 seconds", bundle: .forLocale(locale))
+            ) {
+                seekPreview(by: -10)
+            }
+
+            overlayControlButton(
+                systemName: isPlayingPreview ? "pause.circle.fill" : "play.circle.fill",
+                accessibilityLabel: isPlayingPreview
+                    ? String(localized: "Pause preview", bundle: .forLocale(locale))
+                    : String(localized: "Play preview", bundle: .forLocale(locale))
+            ) {
+                togglePreviewPlayback()
+            }
+
+            overlayControlButton(
+                systemName: "goforward.10",
+                accessibilityLabel: String(localized: "Fast forward 10 seconds", bundle: .forLocale(locale))
+            ) {
+                seekPreview(by: 10)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func overlayControlButton(
+        systemName: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.title)
@@ -599,6 +688,7 @@ struct PreviewExportView: View {
                 .background(Color.black.opacity(0.5))
                 .clipShape(Circle())
         }
+        .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder
@@ -1124,6 +1214,7 @@ struct PreviewExportView: View {
         activeCueID = cue.id
         player.play()
         isPlayingPreview = true
+        showPreviewControls()
         let durationSeconds = max(0.2, cue.end.seconds - cue.start.seconds)
         Task {
             try? await Task.sleep(nanoseconds: UInt64(durationSeconds * 1_000_000_000))
@@ -1185,7 +1276,9 @@ struct PreviewExportView: View {
         removeTimeObserver()
         let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
-            playbackTimeSeconds = time.seconds
+            if !isScrubbingPreview {
+                playbackTimeSeconds = time.seconds
+            }
             updateActiveCue(at: time.seconds)
             isPlayingPreview = player.timeControlStatus == .playing
         }
@@ -1203,9 +1296,86 @@ struct PreviewExportView: View {
             player.pause()
             isPlayingPreview = false
         } else {
+            let durationSeconds = previewDurationSeconds
+            if durationSeconds > 0, player.currentTime().seconds >= durationSeconds - 0.1 {
+                player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+                playbackTimeSeconds = 0
+                updateActiveCue(at: 0)
+            }
             player.play()
             isPlayingPreview = true
         }
+        showPreviewControls()
+    }
+
+    private func seekPreview(by deltaSeconds: Double) {
+        guard let player else { return }
+        let currentSeconds = player.currentTime().seconds
+        seekPreview(to: currentSeconds + deltaSeconds)
+    }
+
+    private func seekPreview(to targetSeconds: Double) {
+        guard let player else { return }
+        let boundedDuration = max(previewDurationSeconds, 0)
+        let boundedTargetSeconds = min(max(targetSeconds, 0), boundedDuration)
+        let targetTime = CMTime(seconds: boundedTargetSeconds, preferredTimescale: 600)
+
+        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        playbackTimeSeconds = boundedTargetSeconds
+        scrubbedPlaybackTimeSeconds = nil
+        updateActiveCue(at: boundedTargetSeconds)
+        showPreviewControls()
+    }
+
+    private func handlePreviewScrubbingChanged(_ isEditing: Bool) {
+        isScrubbingPreview = isEditing
+        if isEditing {
+            showPreviewControls(autoHide: false)
+        } else {
+            seekPreview(to: scrubbedPlaybackTimeSeconds ?? playbackTimeSeconds)
+        }
+    }
+
+    private func togglePreviewControlsVisibility() {
+        if arePreviewControlsVisible {
+            hidePreviewControls()
+        } else {
+            showPreviewControls()
+        }
+    }
+
+    private func togglePreviewFullScreen() {
+        isVideoFullScreen.toggle()
+        showPreviewControls()
+    }
+
+    private func showPreviewControls(autoHide: Bool = true) {
+        cancelPreviewControlsAutoHide()
+        arePreviewControlsVisible = true
+
+        guard autoHide else { return }
+        previewControlsHideTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard !isScrubbingPreview else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    arePreviewControlsVisible = false
+                }
+            }
+        }
+    }
+
+    private func hidePreviewControls() {
+        cancelPreviewControlsAutoHide()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            arePreviewControlsVisible = false
+        }
+    }
+
+    private func cancelPreviewControlsAutoHide() {
+        previewControlsHideTask?.cancel()
+        previewControlsHideTask = nil
     }
 
     // MARK: - Manual fix + translate (copy prompt / paste result)
