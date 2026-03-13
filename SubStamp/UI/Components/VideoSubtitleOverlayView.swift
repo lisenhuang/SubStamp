@@ -16,10 +16,16 @@ struct VideoSubtitleOverlayView: View {
             let margin = max(12, videoRect.height * 0.06)
             let maxWidth = videoRect.width * 0.86
             let baseFontSize = fontSize(for: style.fontSize, in: videoRect.size)
+            let verticalOffset = style.verticalOffsetDistance(in: videoRect.size)
             let background: SubtitleBackground = style.usesShadow ? .translucent : .none
 
             ZStack {
-                positionedContainer(in: videoRect, position: style.position, margin: margin) {
+                positionedContainer(
+                    in: videoRect,
+                    position: style.position,
+                    margin: margin,
+                    verticalOffset: verticalOffset
+                ) {
                     VStack(spacing: margin * 0.12) {
                         subtitleLine(
                             primaryText,
@@ -55,6 +61,7 @@ struct VideoSubtitleOverlayView: View {
         in videoRect: CGRect,
         position: SubtitlePosition,
         margin: CGFloat,
+        verticalOffset: CGFloat,
         @ViewBuilder content: () -> Content
     ) -> some View {
         ZStack {
@@ -79,6 +86,7 @@ struct VideoSubtitleOverlayView: View {
                 }
             }
         }
+        .offset(y: -verticalOffset)
         .frame(width: videoRect.width, height: videoRect.height)
         .position(x: videoRect.midX, y: videoRect.midY)
     }

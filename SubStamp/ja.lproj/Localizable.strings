@@ -107,13 +107,17 @@
 "Subtitle style" = "字幕スタイル";
 "Font size" = "フォントサイズ";
 "Position" = "位置";
+"Vertical offset" = "縦方向オフセット";
 "Small" = "小";
 "Medium" = "中";
 "Large" = "大";
 "Text shadow" = "テキストシャドウ";
+"Positive moves subtitles up." = "正の値で字幕が上に移動します。";
 "Top" = "上";
 "Middle" = "中央";
 "Bottom" = "下";
+"Move subtitle down" = "字幕を下へ移動";
+"Move subtitle up" = "字幕を上へ移動";
 "Copy subtitles" = "字幕をコピー";
 "Keep the screen awake for fastest processing." = "最速で処理するには画面を点灯したままにしてください。";
 "Continue to export" = "エクスポートを続行";

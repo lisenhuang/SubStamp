@@ -119,6 +119,7 @@ final class SubtitleRenderer {
         let margin = max(24, renderSize.height * 0.06)
         let maxWidth = renderSize.width * 0.86
         let baseFontSize = fontSize(for: style.fontSize, renderSize: renderSize)
+        let verticalOffset = style.verticalOffsetDistance(in: renderSize)
         let background: SubtitleBackground = style.usesShadow ? .translucent : .none
         let padding: CGFloat = 4
         var layers: [CALayer] = []
@@ -136,7 +137,8 @@ final class SubtitleRenderer {
                 lineSpacing: style.lineSpacing,
                 background: background,
                 usesShadow: style.usesShadow,
-                padding: padding
+                padding: padding,
+                extraOffset: verticalOffset
             )
 
             let secondaryLayer: CALayer?
@@ -151,7 +153,8 @@ final class SubtitleRenderer {
                     lineSpacing: style.lineSpacing,
                     background: background,
                     usesShadow: style.usesShadow,
-                    padding: padding
+                    padding: padding,
+                    extraOffset: verticalOffset
                 )
 
                 // Adjust stacking: Language 1 on top of Language 2
@@ -312,11 +315,11 @@ final class SubtitleRenderer {
     ) -> CGFloat {
         switch position {
         case .bottom:
-            return margin + extraOffset  // From bottom (Y increases downward in video coords)
+            return margin + extraOffset
         case .middle:
             return (renderSize.height - height) / 2 + extraOffset
         case .top:
-            return renderSize.height - margin - height - extraOffset  // From top
+            return renderSize.height - margin - height + extraOffset
         }
     }
 

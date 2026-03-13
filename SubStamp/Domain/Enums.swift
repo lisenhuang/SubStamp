@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum SubtitleMode: String, Codable, CaseIterable, Identifiable {
@@ -87,6 +88,11 @@ enum SubtitlePosition: String, Codable, CaseIterable, Identifiable {
 }
 
 struct SubtitleStyle: Codable, Hashable {
+    static let minimumVerticalOffset = -20
+    static let maximumVerticalOffset = 20
+    private static let verticalOffsetStepFraction: CGFloat = 0.012
+    private static let minimumVerticalOffsetDistance: CGFloat = 6
+
     var fontSize: SubtitleFontSize = .medium
     var background: SubtitleBackground = .translucent
     var secondaryStyle: SubtitleSecondaryStyle = .subdued
@@ -94,6 +100,59 @@ struct SubtitleStyle: Codable, Hashable {
     var padding: Double = 4
     var lineSpacing: Double = 2
     var position: SubtitlePosition = .bottom
+    var verticalOffset: Int = 0
+
+    init() {}
+
+    func verticalOffsetDistance(in renderSize: CGSize) -> CGFloat {
+        guard renderSize.height > 0 else { return 0 }
+        let stepDistance = max(Self.minimumVerticalOffsetDistance, renderSize.height * Self.verticalOffsetStepFraction)
+        return CGFloat(verticalOffset) * stepDistance
+    }
+
+    func adjustingVerticalOffset(by delta: Int) -> SubtitleStyle {
+        var updated = self
+        updated.verticalOffset = min(
+            Self.maximumVerticalOffset,
+            max(Self.minimumVerticalOffset, updated.verticalOffset + delta)
+        )
+        return updated
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case fontSize
+        case background
+        case secondaryStyle
+        case usesShadow
+        case padding
+        case lineSpacing
+        case position
+        case verticalOffset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fontSize = try container.decodeIfPresent(SubtitleFontSize.self, forKey: .fontSize) ?? .medium
+        background = try container.decodeIfPresent(SubtitleBackground.self, forKey: .background) ?? .translucent
+        secondaryStyle = try container.decodeIfPresent(SubtitleSecondaryStyle.self, forKey: .secondaryStyle) ?? .subdued
+        usesShadow = try container.decodeIfPresent(Bool.self, forKey: .usesShadow) ?? true
+        padding = try container.decodeIfPresent(Double.self, forKey: .padding) ?? 4
+        lineSpacing = try container.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 2
+        position = try container.decodeIfPresent(SubtitlePosition.self, forKey: .position) ?? .bottom
+        verticalOffset = try container.decodeIfPresent(Int.self, forKey: .verticalOffset) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(fontSize, forKey: .fontSize)
+        try container.encode(background, forKey: .background)
+        try container.encode(secondaryStyle, forKey: .secondaryStyle)
+        try container.encode(usesShadow, forKey: .usesShadow)
+        try container.encode(padding, forKey: .padding)
+        try container.encode(lineSpacing, forKey: .lineSpacing)
+        try container.encode(position, forKey: .position)
+        try container.encode(verticalOffset, forKey: .verticalOffset)
+    }
 }
 
 enum SubStampError: LocalizedError {

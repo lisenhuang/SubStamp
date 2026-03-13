@@ -108,13 +108,17 @@
 "Subtitle style" = "Subtitle style";
 "Font size" = "Font size";
 "Position" = "Position";
+"Vertical offset" = "Vertical offset";
 "Small" = "Small";
 "Medium" = "Medium";
 "Large" = "Large";
 "Text shadow" = "Text shadow";
+"Positive moves subtitles up." = "Positive moves subtitles up.";
 "Top" = "Top";
 "Middle" = "Middle";
 "Bottom" = "Bottom";
+"Move subtitle down" = "Move subtitle down";
+"Move subtitle up" = "Move subtitle up";
 "Copy subtitles" = "Copy subtitles";
 "Keep the screen awake for fastest processing." = "Keep the screen awake for fastest processing.";
 "Continue to export" = "Continue to export";

@@ -107,13 +107,17 @@
 "Subtitle style" = "자막 스타일";
 "Font size" = "글자 크기";
 "Position" = "위치";
+"Vertical offset" = "세로 오프셋";
 "Small" = "작게";
 "Medium" = "보통";
 "Large" = "크게";
 "Text shadow" = "텍스트 그림자";
+"Positive moves subtitles up." = "양수는 자막을 위로 이동합니다.";
 "Top" = "상단";
 "Middle" = "중앙";
 "Bottom" = "하단";
+"Move subtitle down" = "자막 아래로 이동";
+"Move subtitle up" = "자막 위로 이동";
 "Copy subtitles" = "자막 복사";
 "Keep the screen awake for fastest processing." = "가장 빠른 처리를 위해 화면을 켜두세요.";
 "Continue to export" = "내보내기 계속";
