@@ -52,7 +52,7 @@ struct VideoSubtitleOverlayView: View {
 
         return Text(line.text)
             .font(.system(size: line.font.pointSize, weight: Font.Weight(line.font.weight)))
-            .foregroundStyle(Color.white.opacity(line.opacity))
+            .foregroundStyle(Color(uiColor: line.color).opacity(line.opacity))
             .multilineTextAlignment(.center)
             .lineSpacing(lineSpacing)
             .shadow(

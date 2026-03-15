@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum SubtitleMode: String, Codable, CaseIterable, Identifiable {
     case single
@@ -78,6 +79,78 @@ enum SubtitleSecondaryStyle: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum SubtitleTextColor: String, Codable, CaseIterable, Identifiable {
+    case white
+    case yellow
+    case cyan
+    case green
+    case pink
+
+    var id: String { rawValue }
+
+    var subtitleColor: SubtitleColor {
+        switch self {
+        case .white:
+            return .white
+        case .yellow:
+            return SubtitleColor(uiColor: UIColor(red: 1.0, green: 0.91, blue: 0.35, alpha: 1.0))
+        case .cyan:
+            return SubtitleColor(uiColor: UIColor(red: 0.46, green: 0.94, blue: 1.0, alpha: 1.0))
+        case .green:
+            return SubtitleColor(uiColor: UIColor(red: 0.56, green: 0.98, blue: 0.55, alpha: 1.0))
+        case .pink:
+            return SubtitleColor(uiColor: UIColor(red: 1.0, green: 0.64, blue: 0.86, alpha: 1.0))
+        }
+    }
+}
+
+struct SubtitleColor: Codable, Hashable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+
+    static let white = SubtitleColor(red: 1, green: 1, blue: 1, alpha: 1)
+
+    init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    init(uiColor: UIColor) {
+        let resolved = uiColor.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        var red: CGFloat = 1
+        var green: CGFloat = 1
+        var blue: CGFloat = 1
+        var alpha: CGFloat = 1
+
+        if !resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha),
+           let components = resolved.cgColor.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)?.components,
+           components.count >= 4 {
+            red = components[0]
+            green = components[1]
+            blue = components[2]
+            alpha = components[3]
+        }
+
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    var uiColor: UIColor {
+        UIColor(
+            red: red,
+            green: green,
+            blue: blue,
+            alpha: alpha
+        )
+    }
+}
+
 enum SubtitlePosition: String, Codable, CaseIterable, Identifiable {
     case top
     case middle
@@ -91,6 +164,7 @@ struct SubtitleStyle: Codable, Hashable {
     static let maximumVerticalOffset = 20
 
     var fontSize: SubtitleFontSize = .medium
+    var textColor: SubtitleColor = .white
     var background: SubtitleBackground = .translucent
     var secondaryStyle: SubtitleSecondaryStyle = .subdued
     var usesShadow: Bool = true
@@ -116,6 +190,9 @@ struct SubtitleStyle: Codable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case fontSize
+        case textColor
+        case primaryTextColor
+        case secondaryTextColor
         case background
         case secondaryStyle
         case usesShadow
@@ -130,6 +207,12 @@ struct SubtitleStyle: Codable, Hashable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fontSize = try container.decodeIfPresent(SubtitleFontSize.self, forKey: .fontSize) ?? .medium
+        let legacyPrimaryTextColor = try container.decodeIfPresent(SubtitleTextColor.self, forKey: .primaryTextColor)
+        let legacySecondaryTextColor = try container.decodeIfPresent(SubtitleTextColor.self, forKey: .secondaryTextColor)
+        textColor = try container.decodeIfPresent(SubtitleColor.self, forKey: .textColor)
+            ?? legacyPrimaryTextColor?.subtitleColor
+            ?? legacySecondaryTextColor?.subtitleColor
+            ?? .white
         background = try container.decodeIfPresent(SubtitleBackground.self, forKey: .background) ?? .translucent
         secondaryStyle = try container.decodeIfPresent(SubtitleSecondaryStyle.self, forKey: .secondaryStyle) ?? .subdued
         usesShadow = try container.decodeIfPresent(Bool.self, forKey: .usesShadow) ?? true
@@ -148,6 +231,7 @@ struct SubtitleStyle: Codable, Hashable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(fontSize, forKey: .fontSize)
+        try container.encode(textColor, forKey: .textColor)
         try container.encode(background, forKey: .background)
         try container.encode(secondaryStyle, forKey: .secondaryStyle)
         try container.encode(usesShadow, forKey: .usesShadow)

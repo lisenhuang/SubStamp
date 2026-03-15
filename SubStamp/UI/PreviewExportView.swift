@@ -284,8 +284,8 @@ struct PreviewExportView: View {
                             translationProgressSection
                             translateButtonSection
 
-                            styleCard
                             manualFixTranslateCard
+                            styleCard
 
                             // Export / render progress / Next button
                             exportSection
@@ -528,6 +528,7 @@ struct PreviewExportView: View {
                 Label(String(localized: "Large", bundle: .forLocale(locale)), systemImage: "textformat.size.larger").tag(SubtitleFontSize.large)
             }
             .pickerStyle(.segmented)
+            subtitleColorControl(styleBinding: styleBinding)
             Toggle(isOn: styleBinding.usesShadow) {
                 Label(String(localized: "Text shadow", bundle: .forLocale(locale)), systemImage: "square.3.layers.3d.down.right")
             }
@@ -651,6 +652,46 @@ struct PreviewExportView: View {
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.2), value: arePreviewControlsVisible)
         }
+    }
+
+    private func subtitleColorControl(styleBinding: Binding<SubtitleStyle>) -> some View {
+        let textColorBinding = Binding<Color>(
+            get: { Color(uiColor: styleBinding.wrappedValue.textColor.uiColor) },
+            set: { newColor in
+                var updated = styleBinding.wrappedValue
+                updated.textColor = SubtitleColor(uiColor: UIColor(newColor))
+                styleBinding.wrappedValue = updated
+            }
+        )
+
+        return ColorPicker(selection: textColorBinding, supportsOpacity: false) {
+            HStack(spacing: AppSpacing.s) {
+                Text(String(localized: "Text color", bundle: .forLocale(locale)))
+                    .foregroundStyle(AppColors.primaryText)
+
+                Spacer()
+
+                Text(textColorHex(styleBinding.wrappedValue.textColor))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+            }
+        }
+        .padding(.horizontal, AppSpacing.s)
+        .padding(.vertical, AppSpacing.s)
+        .background(AppColors.secondaryBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+        .accessibilityLabel(String(localized: "Text color", bundle: .forLocale(locale)))
+    }
+
+    private func textColorHex(_ color: SubtitleColor) -> String {
+        let red = max(0, min(255, Int(round(color.red * 255))))
+        let green = max(0, min(255, Int(round(color.green * 255))))
+        let blue = max(0, min(255, Int(round(color.blue * 255))))
+        return String(format: "#%02X%02X%02X", red, green, blue)
     }
 
     private var playbackControlRow: some View {

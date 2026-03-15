@@ -6,6 +6,7 @@ struct SubtitleLineLayout {
     let outerFrame: CGRect // top-based coordinates within the video rect
     let innerSize: CGSize
     let font: UIFont
+    let color: UIColor
     let opacity: CGFloat
     let padding: CGFloat
 }
@@ -35,6 +36,7 @@ enum SubtitleLayoutCalculator {
 
         let primaryWeight: UIFont.Weight = .semibold
         let primaryFont = UIFont.systemFont(ofSize: baseFontSize, weight: primaryWeight)
+        let textColor = style.textColor.uiColor
         let primaryTextSize = measuredTextSize(
             text: primaryText,
             font: primaryFont,
@@ -98,6 +100,7 @@ enum SubtitleLayoutCalculator {
             outerFrame: primaryOuterFrame,
             innerSize: primaryTextSize,
             font: primaryFont,
+            color: textColor,
             opacity: 1,
             padding: padding
         )
@@ -120,6 +123,7 @@ enum SubtitleLayoutCalculator {
                 ),
                 innerSize: secondaryTextSize,
                 font: secondaryFont,
+                color: textColor,
                 opacity: secondaryOpacity,
                 padding: padding
             )

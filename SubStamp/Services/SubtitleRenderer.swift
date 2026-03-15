@@ -176,6 +176,7 @@ final class SubtitleRenderer {
             text: line.text,
             font: line.font,
             lineSpacing: lineSpacing,
+            color: line.color,
             opacity: line.opacity
         )
 
@@ -218,7 +219,13 @@ final class SubtitleRenderer {
         }
     }
 
-    private func attributedText(text: String, font: UIFont, lineSpacing: Double, opacity: CGFloat) -> NSAttributedString {
+    private func attributedText(
+        text: String,
+        font: UIFont,
+        lineSpacing: Double,
+        color: UIColor,
+        opacity: CGFloat
+    ) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineSpacing = lineSpacing
@@ -228,7 +235,7 @@ final class SubtitleRenderer {
             string: SubtitleTextCleaner.clean(text),
             attributes: [
                 .font: font,
-                .foregroundColor: UIColor.white.withAlphaComponent(opacity),
+                .foregroundColor: color.withAlphaComponent(opacity),
                 .paragraphStyle: paragraph
             ]
         )
@@ -312,6 +319,9 @@ final class SubtitleRenderer {
     }
 
     private func describe(style: SubtitleStyle) -> String {
-        "font=\(style.fontSize.rawValue) bg=\(style.background.rawValue) shadow=\(style.usesShadow) pos=\(style.position.rawValue) pOffset=\(style.primaryVerticalOffset) sOffset=\(style.secondaryVerticalOffset)"
+        let red = Int(round(style.textColor.red * 255))
+        let green = Int(round(style.textColor.green * 255))
+        let blue = Int(round(style.textColor.blue * 255))
+        return "font=\(style.fontSize.rawValue) color=#\(String(format: "%02X%02X%02X", red, green, blue)) bg=\(style.background.rawValue) shadow=\(style.usesShadow) pos=\(style.position.rawValue) pOffset=\(style.primaryVerticalOffset) sOffset=\(style.secondaryVerticalOffset)"
     }
 }
