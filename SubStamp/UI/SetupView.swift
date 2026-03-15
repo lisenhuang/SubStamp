@@ -300,14 +300,14 @@ struct SetupView: View {
             Text("Audio language")
                 .font(AppTypography.bodyEmphasis)
             
-            Menu {
-                Picker(selection: $transcriptionLocaleIdentifier) {
-                    ForEach(Array(supportedSpeechLocales.enumerated()), id: \.element.identifier) { index, locale in
-                        let installed = installedSpeechIDs.contains(locale.identifier(.bcp47))
-                        Text("\(index + 1). \(audioLocaleLabel(locale))\(installed ? " ✓" : "")")
-                            .tag(locale.identifier)
-                    }
-                } label: { EmptyView() }
+            Picker(selection: $transcriptionLocaleIdentifier) {
+                Text(selectedAudioLocaleLabel()).tag(transcriptionLocaleIdentifier)
+                Divider()
+                ForEach(Array(supportedSpeechLocales.enumerated()), id: \.element.identifier) { index, locale in
+                    let installed = installedSpeechIDs.contains(locale.identifier(.bcp47))
+                    Text("\(index + 1). \(audioLocaleLabel(locale))\(installed ? " ✓" : "")")
+                        .tag(locale.identifier)
+                }
             } label: {
                 HStack {
                     Text(selectedAudioLocaleLabel())
@@ -318,6 +318,7 @@ struct SetupView: View {
                         .foregroundStyle(AppColors.secondaryText)
                 }
             }
+            .pickerStyle(.menu)
             
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -349,14 +350,14 @@ struct SetupView: View {
                 Text("Subtitle 1")
                     .font(AppTypography.bodyEmphasis)
                 
-                Menu {
-                    Picker(selection: $selectedSubtitle1ID) {
-                        Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript")
-                        ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
-                            Text("\(index + 1). \(targetLabel(target))")
-                                .tag(target.id)
-                        }
-                    } label: { EmptyView() }
+                Picker(selection: $selectedSubtitle1ID) {
+                    Text(selectedSubtitle1Label()).tag(selectedSubtitle1ID)
+                    Divider()
+                    Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript")
+                    ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
+                        Text("\(index + 1). \(targetLabel(target))")
+                            .tag(target.id)
+                    }
                 } label: {
                     HStack {
                         Text(selectedSubtitle1Label())
@@ -367,6 +368,7 @@ struct SetupView: View {
                             .foregroundStyle(AppColors.secondaryText)
                     }
                 }
+                .pickerStyle(.menu)
                 
                 if let option = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }),
                    option.mode == .pivot {
@@ -392,15 +394,15 @@ struct SetupView: View {
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.warning)
                     } else {
-                        Menu {
-                            Picker(selection: $selectedSubtitle2ID) {
-                                Text("Select language").tag(nil as String?)
-                                Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript" as String?)
-                                ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
-                                    Text("\(index + 1). \(targetLabel(target))")
-                                        .tag(target.id as String?)
-                                }
-                            } label: { EmptyView() }
+                        Picker(selection: $selectedSubtitle2ID) {
+                            Text(selectedSubtitle2Label()).tag(selectedSubtitle2ID)
+                            Divider()
+                            Text("Select language").tag(nil as String?)
+                            Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript" as String?)
+                            ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
+                                Text("\(index + 1). \(targetLabel(target))")
+                                    .tag(target.id as String?)
+                            }
                         } label: {
                             HStack {
                                 Text(selectedSubtitle2Label())
@@ -411,6 +413,7 @@ struct SetupView: View {
                                     .foregroundStyle(AppColors.secondaryText)
                             }
                         }
+                        .pickerStyle(.menu)
                         
                         if let selectedID = selectedSubtitle2ID,
                            let option = subtitleTargets.first(where: { $0.id == selectedID }),
