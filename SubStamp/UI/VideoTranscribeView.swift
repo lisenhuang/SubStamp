@@ -353,22 +353,48 @@ struct VideoTranscribeView: View {
     private func startTranscription() {
         guard let selectedVideoURL else { return }
         let savedStyle = SetupPreferences.loadSubtitleStyle()
-        let job = JobModel(
-            videoURL: selectedVideoURL,
-            transcriptionLocale: transcriptionLocale,
-            language1Locale: language1Locale,
-            subtitle1Mode: subtitle1Mode,
-            subtitleMode: language2Locale == nil ? .single : .bilingual,
-            translationTargetLocale: language2Locale,
-            subtitle2Mode: subtitle2Mode,
-            subtitleLayout: language2Locale == nil ? .single : .stacked,
-            subtitleStyle: savedStyle,
-            exportPreset: .balanced,
-            translationProvider: translationProvider,
-            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
-            isTestClip: isTestClip
-        )
+        let job: JobModel = {
+            if var existing = activeJob {
+                existing.videoURL = selectedVideoURL
+                existing.transcriptionLocale = transcriptionLocale
+                existing.language1Locale = language1Locale
+                existing.subtitle1Mode = subtitle1Mode
+                existing.subtitleMode = language2Locale == nil ? .single : .bilingual
+                existing.translationTargetLocale = language2Locale
+                existing.subtitle2Mode = subtitle2Mode
+                existing.subtitleLayout = language2Locale == nil ? .single : .stacked
+                existing.subtitleStyle = savedStyle
+                existing.exportPreset = .balanced
+                existing.translationProvider = translationProvider
+                existing.fixTranscriptionWithAppleIntelligence = fixTranscriptionWithAppleIntelligence
+                existing.stage = .idle
+                existing.shouldOfferResume = true
+                existing.outputURL = nil
+                existing.isTestClip = isTestClip
+                existing.updatedAt = Date()
+                return existing
+            }
+
+            return JobModel(
+                videoURL: selectedVideoURL,
+                transcriptionLocale: transcriptionLocale,
+                language1Locale: language1Locale,
+                subtitle1Mode: subtitle1Mode,
+                subtitleMode: language2Locale == nil ? .single : .bilingual,
+                translationTargetLocale: language2Locale,
+                subtitle2Mode: subtitle2Mode,
+                subtitleLayout: language2Locale == nil ? .single : .stacked,
+                subtitleStyle: savedStyle,
+                exportPreset: .balanced,
+                translationProvider: translationProvider,
+                fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
+                shouldOfferResume: true,
+                isTestClip: isTestClip
+            )
+        }()
         activeJob = job
+        jobStore.deleteCues(id: job.id, type: .transcribed)
+        jobStore.deleteCues(id: job.id, type: .translated)
         try? jobStore.save(job: job)
         orchestrator.startTranscription(job: job)
     }

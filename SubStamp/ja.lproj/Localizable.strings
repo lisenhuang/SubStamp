@@ -230,3 +230,18 @@
 "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "プロンプトをコピーして任意のAIで修正・翻訳し、JSON結果をここに貼り付けてください。適用前に形式を検証します。";
 "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "プロンプトをコピーして任意のAIで文字起こしを修正し、JSON結果をここに貼り付けてください。適用前に形式を検証します。";
 "How to use" = "使い方";
+
+/* プロジェクト */
+"Projects" = "プロジェクト";
+"Save Project" = "プロジェクトを保存";
+"Project saved." = "プロジェクトを保存しました。";
+"Delete Project?" = "このプロジェクトを削除しますか？";
+"This will remove the saved project and its local files." = "保存済みプロジェクトとローカルファイルが削除されます。";
+"No saved projects yet." = "保存されたプロジェクトはまだありません。";
+"Save a project after transcription or editing to reopen it later." = "文字起こしや編集の後にプロジェクトを保存すると、あとで再度開けます。";
+"Video missing" = "動画ファイルが見つかりません";
+"Open" = "開く";
+"Delete" = "削除";
+"%d cues" = "%d件の字幕";
+"Translated" = "翻訳済み";
+"Transcript only" = "文字起こしのみ";

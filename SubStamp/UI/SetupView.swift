@@ -13,6 +13,7 @@ struct SetupView: View {
     @Binding var subtitle2Mode: TranslationMode?
     @Binding var translationProvider: TranslationProvider
     @Binding var fixTranscriptionWithAppleIntelligence: Bool
+    var onOpenProjects: () -> Void
     var onContinue: () -> Void
 
     @State private var selectionLogic = LanguageSelectionLogic()
@@ -42,6 +43,13 @@ struct SetupView: View {
         ScrollView {
             VStack(spacing: AppSpacing.l) {
                 HStack {
+                    Button {
+                        onOpenProjects()
+                    } label: {
+                        Label(String(localized: "Projects", bundle: .forLocale(locale)), systemImage: "folder")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.secondaryText)
+                    }
                     Spacer()
                     if purchaseManager.hasCheckedEntitlements && !purchaseManager.hasPremiumAccess {
                         Button {

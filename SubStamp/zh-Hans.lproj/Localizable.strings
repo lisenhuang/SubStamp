@@ -230,3 +230,18 @@
 "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "复制提示词，用任意 AI 修正并翻译，然后将 JSON 结果粘贴回这里。应用会在应用前验证格式。";
 "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "复制提示词，用任意 AI 修正转录，然后将 JSON 结果粘贴回这里。应用会在应用前验证格式。";
 "How to use" = "如何使用";
+
+/* 项目 */
+"Projects" = "项目";
+"Save Project" = "保存项目";
+"Project saved." = "项目已保存。";
+"Delete Project?" = "删除此项目？";
+"This will remove the saved project and its local files." = "这将删除已保存的项目及其本地文件。";
+"No saved projects yet." = "还没有已保存的项目。";
+"Save a project after transcription or editing to reopen it later." = "完成转录或编辑后保存项目，之后可继续打开。";
+"Video missing" = "视频文件缺失";
+"Open" = "打开";
+"Delete" = "删除";
+"%d cues" = "%d 条字幕";
+"Translated" = "已翻译";
+"Transcript only" = "仅转录";

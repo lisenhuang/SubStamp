@@ -30,6 +30,7 @@ struct ContentView: View {
 
     @State private var resumeJob: JobModel?
     @State private var showResumeAlert = false
+    @State private var showProjectsSheet = false
 
     private let jobStore = JobStore()
 
@@ -59,6 +60,7 @@ struct ContentView: View {
                     subtitle2Mode: $subtitle2Mode,
                     translationProvider: $translationProvider,
                     fixTranscriptionWithAppleIntelligence: $fixTranscriptionWithAppleIntelligence,
+                    onOpenProjects: { showProjectsSheet = true },
                     onContinue: {
                         saveSetupSelections()
                         step = .videoAndTranscribe
@@ -116,9 +118,14 @@ struct ContentView: View {
         } message: {
             Text(String(localized: "We found a previous job that didn't finish. Would you like to resume?", bundle: .forLocale(locale)))
         }
+        .sheet(isPresented: $showProjectsSheet) {
+            ProjectListView { job in
+                openProject(job)
+            }
+        }
         .task {
             loadSetupSelections()
-            let jobs = jobStore.loadAllJobs().filter { $0.stage != .completed }
+            let jobs = jobStore.loadAllJobs().filter { $0.stage != .completed && $0.shouldOfferResume }
             if let job = jobs.first {
                 resumeJob = job
                 showResumeAlert = true
@@ -181,6 +188,15 @@ struct ContentView: View {
 
     private func resumeIncompleteJob() {
         guard let job = resumeJob else { return }
+        openProject(job)
+    }
+
+    private func openProject(_ job: JobModel) {
+        let existingOutputURL = job.outputURL.flatMap { url in
+            FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
+        showResumeAlert = false
+        resumeJob = nil
         activeJob = job
         selectedVideoURL = job.videoURL
         transcriptionLocaleIdentifier = job.transcriptionLocale
@@ -190,23 +206,23 @@ struct ContentView: View {
         subtitle2Mode = job.subtitle2Mode
         translationProvider = job.translationProvider
         fixTranscriptionWithAppleIntelligence = job.fixTranscriptionWithAppleIntelligence
+        outputURL = existingOutputURL
+        orchestrator.cancel()
+        orchestrator.resetStages()
+        orchestrator.job = job
+        orchestrator.outputURL = existingOutputURL
+        metadata = nil
 
-        let transcribed = jobStore.loadCues(id: job.id, type: .transcribed)
-        let translated = jobStore.loadCues(id: job.id, type: .translated)
+        Task { @MainActor in
+            metadata = await VideoMetadata.load(from: job.videoURL)
+        }
 
-        if let translated, !translated.isEmpty {
-            // Has translated cues → go to preview/export with both flags set
-            orchestrator.cues = translated
+        if let saved = jobStore.loadBestSavedCues(id: job.id) {
+            orchestrator.cues = saved.cues
             orchestrator.transcriptionComplete = true
-            orchestrator.translationComplete = true
-            step = .previewAndExport
-        } else if let transcribed, !transcribed.isEmpty {
-            // Has transcribed cues → go to preview/export with transcription done
-            orchestrator.cues = transcribed
-            orchestrator.transcriptionComplete = true
+            orchestrator.translationComplete = (saved.type == .translated)
             step = .previewAndExport
         } else {
-            // No cues saved yet → go to video & transcribe
             step = .videoAndTranscribe
         }
     }

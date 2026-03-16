@@ -231,3 +231,18 @@
 "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "Copy a prompt, fix and translate with any AI, then paste the JSON result back here. The app will validate the format before applying it.";
 "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it." = "Copy a prompt, fix transcription with any AI, then paste the JSON result back here. The app will validate the format before applying it.";
 "How to use" = "How to use";
+
+/* Projects */
+"Projects" = "Projects";
+"Save Project" = "Save Project";
+"Project saved." = "Project saved.";
+"Delete Project?" = "Delete Project?";
+"This will remove the saved project and its local files." = "This will remove the saved project and its local files.";
+"No saved projects yet." = "No saved projects yet.";
+"Save a project after transcription or editing to reopen it later." = "Save a project after transcription or editing to reopen it later.";
+"Video missing" = "Video missing";
+"Open" = "Open";
+"Delete" = "Delete";
+"%d cues" = "%d cues";
+"Translated" = "Translated";
+"Transcript only" = "Transcript only";

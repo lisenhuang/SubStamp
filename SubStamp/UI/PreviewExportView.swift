@@ -45,6 +45,8 @@ struct PreviewExportView: View {
     @State private var lastManualPromptContext: ManualPromptContext?
     @State private var isManualToolsExpanded: Bool = false
     @State private var safariURLItem: SafariURLItem?
+    @State private var autosaveTask: Task<Void, Never>?
+    @State private var projectSaveStatus: String?
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -384,6 +386,8 @@ struct PreviewExportView: View {
             showPreviewControls()
         }
         .onDisappear {
+            autosaveTask?.cancel()
+            saveProjectNow(showFeedback: false)
             cancelPreviewControlsAutoHide()
             removeTimeObserver()
             player?.pause()
@@ -394,8 +398,24 @@ struct PreviewExportView: View {
             rebuildCueTimingIndex()
             updateActiveCue(at: playbackTimeSeconds)
         }
+        .onChange(of: orchestrator.cues) { _, _ in
+            guard !orchestrator.isRunning else { return }
+            scheduleProjectAutosave(markExportStale: true)
+        }
         .onChange(of: orchestrator.outputURL) { _, newValue in
-            if let url = newValue { onExportComplete(url) }
+            if let url = newValue {
+                cuesChangedSinceExport = false
+                if var updated = activeJob {
+                    updated.outputURL = url
+                    updated.stage = .completed
+                    updated.shouldOfferResume = false
+                    updated.updatedAt = Date()
+                    activeJob = updated
+                    orchestrator.job = updated
+                    try? jobStore.save(job: updated)
+                }
+                onExportComplete(url)
+            }
         }
         .onChange(of: orchestrator.translationComplete) { _, complete in
             if complete {
@@ -510,11 +530,14 @@ struct PreviewExportView: View {
             set: { newValue in
                 guard var updated = activeJob else { return }
                 updated.subtitleStyle = newValue
+                updated.updatedAt = Date()
+                updated.outputURL = nil
                 activeJob = updated
                 orchestrator.job = updated
                 try? jobStore.save(job: updated)
                 SetupPreferences.saveSubtitleStyle(newValue)
                 cuesChangedSinceExport = true
+                projectSaveStatus = nil
             }
         )
         let showsSecondaryOffsetControl = (activeJob?.subtitleMode == .bilingual)
@@ -888,8 +911,8 @@ struct PreviewExportView: View {
 
     @ViewBuilder
     private var exportSection: some View {
-        if orchestrator.isRunning && (orchestrator.stageStates[.rendering] == .active || orchestrator.stageStates[.exporting] == .active) {
-            VStack(spacing: AppSpacing.l) {
+        VStack(spacing: AppSpacing.l) {
+            if orchestrator.isRunning && (orchestrator.stageStates[.rendering] == .active || orchestrator.stageStates[.exporting] == .active) {
                 PipelineStageRow(
                     title: "Rendering",
                     state: orchestrator.stageStates[.rendering] ?? .pending,
@@ -916,23 +939,49 @@ struct PreviewExportView: View {
                     RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
                         .stroke(AppColors.cardBorder, lineWidth: 1)
                 )
-            }
-        } else if hasValidExport {
-            // Came back from Step 4 with no changes — just go forward
-            PrimaryButton(
-                title: "Next",
-                systemImage: "arrow.right"
-            ) {
-                if let url = orchestrator.outputURL {
-                    onExportComplete(url)
+            } else if hasValidExport {
+                // Came back from Step 4 with no changes — just go forward
+                PrimaryButton(
+                    title: "Next",
+                    systemImage: "arrow.right"
+                ) {
+                    if let url = orchestrator.outputURL {
+                        onExportComplete(url)
+                    }
+                }
+            } else if canExport {
+                PrimaryButton(
+                    title: "Export Video",
+                    systemImage: "square.and.arrow.up"
+                ) {
+                    startExport()
                 }
             }
-        } else if canExport {
-            PrimaryButton(
-                title: "Export Video",
-                systemImage: "square.and.arrow.up"
-            ) {
-                startExport()
+
+            if !orchestrator.isRunning, activeJob != nil, !orchestrator.cues.isEmpty {
+                Button {
+                    saveProjectNow(showFeedback: true)
+                } label: {
+                    Label(String(localized: "Save Project", bundle: .forLocale(locale)), systemImage: "square.and.arrow.down.on.square")
+                        .font(AppTypography.bodyEmphasis)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, AppSpacing.m)
+                        .foregroundStyle(AppColors.primaryText)
+                        .background(AppColors.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                                .stroke(AppColors.cardBorder, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                if let projectSaveStatus {
+                    Text(projectSaveStatus)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(AppColors.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     }
@@ -990,6 +1039,72 @@ struct PreviewExportView: View {
     private func startExport() {
         guard let job else { return }
         orchestrator.startRenderExport(job: job)
+    }
+
+    private func scheduleProjectAutosave(markExportStale: Bool) {
+        autosaveTask?.cancel()
+        if markExportStale {
+            cuesChangedSinceExport = true
+            projectSaveStatus = nil
+        }
+
+        autosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            saveProjectNow(showFeedback: false)
+        }
+    }
+
+    private func saveProjectNow(showFeedback: Bool) {
+        autosaveTask?.cancel()
+        guard var updatedJob = activeJob else { return }
+
+        updatedJob.updatedAt = Date()
+        updatedJob.stage = resolvedProjectStage()
+        updatedJob.shouldOfferResume = false
+        if cuesChangedSinceExport {
+            updatedJob.outputURL = nil
+        } else if let exportURL = orchestrator.outputURL {
+            updatedJob.outputURL = exportURL
+        }
+
+        activeJob = updatedJob
+        orchestrator.job = updatedJob
+
+        try? jobStore.save(job: updatedJob)
+        let cueFileType = resolvedCueFileType()
+        try? jobStore.saveCues(orchestrator.cues, id: updatedJob.id, type: cueFileType)
+        if cueFileType == .transcribed {
+            jobStore.deleteCues(id: updatedJob.id, type: .translated)
+        }
+
+        if showFeedback {
+            projectSaveStatus = String(localized: "Project saved.", bundle: .forLocale(locale))
+        }
+    }
+
+    private func resolvedCueFileType() -> JobStore.CueFile {
+        let hasSecondaryText = orchestrator.cues.contains {
+            guard let secondary = $0.secondaryText else { return false }
+            return !secondary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if orchestrator.translationComplete || hasSecondaryText {
+            return .translated
+        }
+        return .transcribed
+    }
+
+    private func resolvedProjectStage() -> ProcessingStage {
+        if !cuesChangedSinceExport, (orchestrator.outputURL != nil || activeJob?.outputURL != nil) {
+            return .completed
+        }
+        if orchestrator.translationComplete {
+            return .translating
+        }
+        if orchestrator.transcriptionComplete || !orchestrator.cues.isEmpty {
+            return .transcribing
+        }
+        return activeJob?.stage ?? .idle
     }
 
     private func snapshotTranslations() {
@@ -1894,9 +2009,7 @@ struct PreviewExportView: View {
             markTranslationsStale()
         }
 
-        if let job = activeJob {
-            try? jobStore.saveCues(orchestrator.cues, id: job.id, type: .translated)
-        }
+        saveProjectNow(showFeedback: false)
 
         clipboardAlert = ClipboardAlert(
             title: String(localized: "Imported", bundle: .forLocale(locale)),

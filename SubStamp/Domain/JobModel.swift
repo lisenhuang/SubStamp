@@ -17,6 +17,7 @@ struct JobModel: Identifiable, Codable {
     var translationProvider: TranslationProvider
     var fixTranscriptionWithAppleIntelligence: Bool
     var stage: ProcessingStage
+    var shouldOfferResume: Bool
     var outputURL: URL?
     var isTestClip: Bool
     var testClipDuration: Double
@@ -38,6 +39,7 @@ struct JobModel: Identifiable, Codable {
         translationProvider: TranslationProvider = .translationFramework,
         fixTranscriptionWithAppleIntelligence: Bool = false,
         stage: ProcessingStage = .idle,
+        shouldOfferResume: Bool = true,
         outputURL: URL? = nil,
         isTestClip: Bool = false,
         testClipDuration: Double = 60
@@ -58,6 +60,7 @@ struct JobModel: Identifiable, Codable {
         self.translationProvider = translationProvider
         self.fixTranscriptionWithAppleIntelligence = fixTranscriptionWithAppleIntelligence
         self.stage = stage
+        self.shouldOfferResume = shouldOfferResume
         self.outputURL = outputURL
         self.isTestClip = isTestClip
         self.testClipDuration = testClipDuration
@@ -82,6 +85,7 @@ private extension JobModel {
         case translationProvider
         case fixTranscriptionWithAppleIntelligence
         case stage
+        case shouldOfferResume
         case outputURL
         case isTestClip
         case testClipDuration
@@ -108,6 +112,7 @@ extension JobModel {
         translationProvider = try container.decodeIfPresent(TranslationProvider.self, forKey: .translationProvider) ?? .translationFramework
         fixTranscriptionWithAppleIntelligence = try container.decodeIfPresent(Bool.self, forKey: .fixTranscriptionWithAppleIntelligence) ?? false
         stage = try container.decodeIfPresent(ProcessingStage.self, forKey: .stage) ?? .idle
+        shouldOfferResume = try container.decodeIfPresent(Bool.self, forKey: .shouldOfferResume) ?? (stage != .completed)
         outputURL = try container.decodeIfPresent(URL.self, forKey: .outputURL)
         isTestClip = try container.decodeIfPresent(Bool.self, forKey: .isTestClip) ?? false
         testClipDuration = try container.decodeIfPresent(Double.self, forKey: .testClipDuration) ?? 60
@@ -131,6 +136,7 @@ extension JobModel {
         try container.encode(translationProvider, forKey: .translationProvider)
         try container.encode(fixTranscriptionWithAppleIntelligence, forKey: .fixTranscriptionWithAppleIntelligence)
         try container.encode(stage, forKey: .stage)
+        try container.encode(shouldOfferResume, forKey: .shouldOfferResume)
         try container.encodeIfPresent(outputURL, forKey: .outputURL)
         try container.encode(isTestClip, forKey: .isTestClip)
         try container.encode(testClipDuration, forKey: .testClipDuration)
