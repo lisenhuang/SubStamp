@@ -37,7 +37,8 @@ final class JobStore {
     func loadJob(id: UUID) throws -> JobModel {
         let url = jobURL(id: id)
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(JobModel.self, from: data)
+        let job = try JSONDecoder().decode(JobModel.self, from: data)
+        return try normalizedPersistedJob(job, at: url)
     }
 
     func loadAllJobs() -> [JobModel] {
@@ -46,10 +47,7 @@ final class JobStore {
         }
         let jobs = contents
             .filter { $0.lastPathComponent.hasPrefix("job_") }
-            .compactMap { url -> JobModel? in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? JSONDecoder().decode(JobModel.self, from: data)
-            }
+            .compactMap(loadPersistedJob)
         return jobs.sorted(by: { $0.updatedAt > $1.updatedAt })
     }
 
@@ -179,10 +177,7 @@ final class JobStore {
         }
         let jobs = contents
             .filter { $0.lastPathComponent.hasPrefix("project_job_") }
-            .compactMap { url -> JobModel? in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? JSONDecoder().decode(JobModel.self, from: data)
-            }
+            .compactMap(loadPersistedJob)
         return jobs.sorted(by: { $0.updatedAt > $1.updatedAt })
     }
 
@@ -226,7 +221,76 @@ final class JobStore {
 
     private func loadSavedJob(id: UUID) throws -> JobModel {
         let data = try Data(contentsOf: savedJobURL(id: id))
-        return try JSONDecoder().decode(JobModel.self, from: data)
+        let job = try JSONDecoder().decode(JobModel.self, from: data)
+        return try normalizedPersistedJob(job, at: savedJobURL(id: id))
+    }
+
+    private func loadPersistedJob(from url: URL) -> JobModel? {
+        guard let data = try? Data(contentsOf: url),
+              let job = try? JSONDecoder().decode(JobModel.self, from: data) else {
+            return nil
+        }
+        return try? normalizedPersistedJob(job, at: url)
+    }
+
+    private func normalizedPersistedJob(_ job: JobModel, at persistedURL: URL) throws -> JobModel {
+        let normalized = normalizedManagedPaths(in: job)
+        guard hasDifferentManagedPaths(lhs: job, rhs: normalized) else { return normalized }
+
+        let data = try JSONEncoder().encode(normalized)
+        try ensureDirectory()
+        try data.write(to: persistedURL, options: .atomic)
+        return normalized
+    }
+
+    private func normalizedManagedPaths(in job: JobModel) -> JobModel {
+        var normalized = job
+        normalized.videoURL = remappedManagedURL(normalized.videoURL)
+        normalized.outputURL = normalized.outputURL.map(remappedManagedURL)
+        return normalized
+    }
+
+    private func hasDifferentManagedPaths(lhs: JobModel, rhs: JobModel) -> Bool {
+        lhs.videoURL.standardizedFileURL.path != rhs.videoURL.standardizedFileURL.path
+            || lhs.outputURL?.standardizedFileURL.path != rhs.outputURL?.standardizedFileURL.path
+    }
+
+    private func remappedManagedURL(_ url: URL) -> URL {
+        let standardized = url.standardizedFileURL
+        guard !fileManager.fileExists(atPath: standardized.path) else { return standardized }
+
+        if let candidate = remapURL(
+            standardized,
+            marker: "/Library/Application Support/SubStamp/uploads/",
+            currentBase: uploadsDirectory()
+        ), fileManager.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+
+        if let candidate = remapURL(
+            standardized,
+            marker: "/Library/Application Support/SubStamp/jobs/",
+            currentBase: jobsDirectory()
+        ), fileManager.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+
+        let tempCandidate = fileManager.temporaryDirectory
+            .appendingPathComponent(standardized.lastPathComponent)
+            .standardizedFileURL
+        if standardized.lastPathComponent.lowercased().hasPrefix("substamp_"),
+           fileManager.fileExists(atPath: tempCandidate.path) {
+            return tempCandidate
+        }
+
+        return standardized
+    }
+
+    private func remapURL(_ url: URL, marker: String, currentBase: URL) -> URL? {
+        let path = url.standardizedFileURL.path
+        guard let range = path.range(of: marker) else { return nil }
+        let suffix = String(path[range.upperBound...])
+        return currentBase.appendingPathComponent(suffix).standardizedFileURL
     }
 
     private func migrateLegacySavedProjectsIfNeeded() {

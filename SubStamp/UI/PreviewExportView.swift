@@ -420,7 +420,6 @@ struct PreviewExportView: View {
                 if var updated = activeJob {
                     updated.outputURL = url
                     updated.stage = .completed
-                    updated.shouldOfferResume = false
                     updated.updatedAt = Date()
                     activeJob = updated
                     orchestrator.job = updated
