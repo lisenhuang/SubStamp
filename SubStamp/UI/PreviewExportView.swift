@@ -47,6 +47,7 @@ struct PreviewExportView: View {
     @State private var safariURLItem: SafariURLItem?
     @State private var autosaveTask: Task<Void, Never>?
     @State private var projectSaveStatus: String?
+    @State private var previewScrollView: UIScrollView?
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -57,6 +58,7 @@ struct PreviewExportView: View {
     @State private var cuesChangedSinceExport = false
     @State private var scrollTrigger: Int = 0  // Increment to trigger scroll
 
+    @AppStorage(SetupPreferences.projectAutosaveKey) private var projectAutosaveEnabled = false
     @Environment(\.locale) private var locale
 
     private let jobStore = JobStore()
@@ -296,6 +298,12 @@ struct PreviewExportView: View {
                             Color.clear.frame(height: 1).id("bottomAnchor")
                         }
                         .padding(AppSpacing.l)
+                        .background(
+                            EnclosingScrollViewResolver { scrollView in
+                                guard previewScrollView !== scrollView else { return }
+                                previewScrollView = scrollView
+                            }
+                        )
                     }
                     .onChange(of: orchestrator.currentStage) { _, newValue in
                         if newValue == .translating || newValue == .rendering || newValue == .exporting {
@@ -387,7 +395,9 @@ struct PreviewExportView: View {
         }
         .onDisappear {
             autosaveTask?.cancel()
-            saveProjectNow(showFeedback: false)
+            if projectAutosaveEnabled, !orchestrator.isRunning {
+                saveProjectNow(showFeedback: false)
+            }
             cancelPreviewControlsAutoHide()
             removeTimeObserver()
             player?.pause()
@@ -400,7 +410,9 @@ struct PreviewExportView: View {
         }
         .onChange(of: orchestrator.cues) { _, _ in
             guard !orchestrator.isRunning else { return }
-            scheduleProjectAutosave(markExportStale: true)
+            cuesChangedSinceExport = true
+            projectSaveStatus = nil
+            scheduleProjectAutosave()
         }
         .onChange(of: orchestrator.outputURL) { _, newValue in
             if let url = newValue {
@@ -420,6 +432,7 @@ struct PreviewExportView: View {
         .onChange(of: orchestrator.translationComplete) { _, complete in
             if complete {
                 scrollTrigger += 1
+                scheduleProjectAutosave()
             }
         }
         .translationTask(config1) { session in
@@ -538,6 +551,7 @@ struct PreviewExportView: View {
                 SetupPreferences.saveSubtitleStyle(newValue)
                 cuesChangedSinceExport = true
                 projectSaveStatus = nil
+                scheduleProjectAutosave()
             }
         )
         let showsSecondaryOffsetControl = (activeJob?.subtitleMode == .bilingual)
@@ -574,20 +588,28 @@ struct PreviewExportView: View {
                         title: String(localized: "Subtitle 1", bundle: .forLocale(locale)),
                         value: styleBinding.wrappedValue.primaryVerticalOffset,
                         decreaseAction: {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: -1)
+                            performWithoutAdjustingPreviewScroll {
+                                styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: -1)
+                            }
                         },
                         increaseAction: {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: 1)
+                            performWithoutAdjustingPreviewScroll {
+                                styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: 1)
+                            }
                         }
                     )
                     subtitleVerticalOffsetControl(
                         title: String(localized: "Subtitle 2", bundle: .forLocale(locale)),
                         value: styleBinding.wrappedValue.secondaryVerticalOffset,
                         decreaseAction: {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingSecondaryVerticalOffset(by: -1)
+                            performWithoutAdjustingPreviewScroll {
+                                styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingSecondaryVerticalOffset(by: -1)
+                            }
                         },
                         increaseAction: {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingSecondaryVerticalOffset(by: 1)
+                            performWithoutAdjustingPreviewScroll {
+                                styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingSecondaryVerticalOffset(by: 1)
+                            }
                         }
                     )
                 } else {
@@ -595,10 +617,14 @@ struct PreviewExportView: View {
                         title: String(localized: "Subtitle 1", bundle: .forLocale(locale)),
                         value: styleBinding.wrappedValue.primaryVerticalOffset,
                         decreaseAction: {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: -1)
+                            performWithoutAdjustingPreviewScroll {
+                                styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: -1)
+                            }
                         },
                         increaseAction: {
-                            styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: 1)
+                            performWithoutAdjustingPreviewScroll {
+                                styleBinding.wrappedValue = styleBinding.wrappedValue.adjustingPrimaryVerticalOffset(by: 1)
+                            }
                         }
                     )
                 }
@@ -619,6 +645,26 @@ struct PreviewExportView: View {
             return "+\(value)"
         }
         return "\(value)"
+    }
+
+    private func performWithoutAdjustingPreviewScroll(_ action: () -> Void) {
+        guard let scrollView = previewScrollView else {
+            action()
+            return
+        }
+
+        let targetOffset = scrollView.contentOffset
+        action()
+
+        DispatchQueue.main.async {
+            guard previewScrollView === scrollView else { return }
+            scrollView.setContentOffset(targetOffset, animated: false)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                guard previewScrollView === scrollView else { return }
+                scrollView.setContentOffset(targetOffset, animated: false)
+            }
+        }
     }
 
     @ViewBuilder
@@ -889,7 +935,11 @@ struct PreviewExportView: View {
                         subtitle1Label: subtitle1Label,
                         subtitle2Label: subtitle2Label,
                         onOriginalEdited: { markCueStale(cueID: orchestrator.cues[index].id) },
-                        onSubtitleEdited: { cuesChangedSinceExport = true },
+                        onSubtitleEdited: {
+                            cuesChangedSinceExport = true
+                            projectSaveStatus = nil
+                            scheduleProjectAutosave()
+                        },
                         showRetranslateButton: staleCueIDs.contains(orchestrator.cues[index].id),
                         isRetranslating: retranslatingCueIDs.contains(orchestrator.cues[index].id),
                         onRetranslate: { retranslateCue(at: index) }
@@ -976,6 +1026,14 @@ struct PreviewExportView: View {
                 }
                 .buttonStyle(.plain)
 
+                Text(projectAutosaveEnabled
+                     ? String(localized: "Auto-save is on. Changes in this task are saved to Projects automatically.", bundle: .forLocale(locale))
+                     : String(localized: "This task is only added to Projects when you tap Save Project. It is not saved there automatically.", bundle: .forLocale(locale))
+                )
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 if let projectSaveStatus {
                     Text(projectSaveStatus)
                         .font(AppTypography.caption)
@@ -1041,16 +1099,13 @@ struct PreviewExportView: View {
         orchestrator.startRenderExport(job: job)
     }
 
-    private func scheduleProjectAutosave(markExportStale: Bool) {
-        autosaveTask?.cancel()
-        if markExportStale {
-            cuesChangedSinceExport = true
-            projectSaveStatus = nil
-        }
+    private func scheduleProjectAutosave() {
+        guard projectAutosaveEnabled, activeJob != nil, !orchestrator.cues.isEmpty else { return }
 
+        autosaveTask?.cancel()
         autosaveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, projectAutosaveEnabled, !orchestrator.isRunning else { return }
             saveProjectNow(showFeedback: false)
         }
     }
@@ -1072,10 +1127,11 @@ struct PreviewExportView: View {
         orchestrator.job = updatedJob
 
         try? jobStore.save(job: updatedJob)
+        try? jobStore.saveProjectSnapshot(updatedJob)
         let cueFileType = resolvedCueFileType()
-        try? jobStore.saveCues(orchestrator.cues, id: updatedJob.id, type: cueFileType)
+        try? jobStore.saveProjectCues(orchestrator.cues, id: updatedJob.id, type: cueFileType)
         if cueFileType == .transcribed {
-            jobStore.deleteCues(id: updatedJob.id, type: .translated)
+            jobStore.deleteSavedProjectCues(id: updatedJob.id, type: .translated)
         }
 
         if showFeedback {
@@ -1210,6 +1266,8 @@ struct PreviewExportView: View {
 
     private func markCueStale(cueID: UUID) {
         cuesChangedSinceExport = true
+        projectSaveStatus = nil
+        scheduleProjectAutosave()
         guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
 
         // Find the cue and check if it changed
@@ -1223,6 +1281,8 @@ struct PreviewExportView: View {
 
     private func markTranslationsStale() {
         cuesChangedSinceExport = true
+        projectSaveStatus = nil
+        scheduleProjectAutosave()
         guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
         // Check all cues and rebuild stale set
         staleCueIDs.removeAll()
@@ -1338,20 +1398,29 @@ struct PreviewExportView: View {
               orchestrator.cues.indices.contains(index + 1) else { return }
         let current = orchestrator.cues[index]
         let next = orchestrator.cues[index + 1]
-        let mergedText = [current.primaryText, next.primaryText].joined(separator: " ")
-        let mergedOriginal: String? = {
-            if let a = current.originalTranscription, let b = next.originalTranscription {
-                return [a, b].joined(separator: " ")
-            }
-            return current.originalTranscription ?? next.originalTranscription
-        }()
+
+        func mergeText(_ first: String, _ second: String) -> String {
+            [first, second]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+
+        func mergeOptionalText(_ first: String?, _ second: String?) -> String? {
+            let merged = [first, second]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            return merged.isEmpty ? nil : merged
+        }
+
         let merged = SubtitleCue(
             id: current.id,
             start: current.start,
             end: next.end,
-            primaryText: mergedText,
-            secondaryText: current.secondaryText ?? next.secondaryText,
-            originalTranscription: mergedOriginal,
+            primaryText: mergeText(current.primaryText, next.primaryText),
+            secondaryText: mergeOptionalText(current.secondaryText, next.secondaryText),
+            originalTranscription: mergeOptionalText(current.originalTranscription, next.originalTranscription),
             hasTranslationError: current.hasTranslationError || next.hasTranslationError
         )
         orchestrator.cues[index] = merged
@@ -2002,15 +2071,14 @@ struct PreviewExportView: View {
             orchestrator.translationComplete = true
         }
         cuesChangedSinceExport = true
+        projectSaveStatus = nil
         if appliedTranslation > 0 {
             snapshotTranslations()
         } else if wasTranslationComplete, appliedFixed > 0 {
             // Transcription changed without updated translations; surface stale warning.
             markTranslationsStale()
         }
-
-        saveProjectNow(showFeedback: false)
-
+        scheduleProjectAutosave()
         clipboardAlert = ClipboardAlert(
             title: String(localized: "Imported", bundle: .forLocale(locale)),
             message: String(format: String(localized: "Imported %d fixes and %d translations.", bundle: .forLocale(locale)), appliedFixed, appliedTranslation)
@@ -2310,5 +2378,48 @@ struct PreviewExportView: View {
         let asset = AVURLAsset(url: url)
         let duration = (try? await asset.load(.duration))?.seconds ?? 0
         return duration.isFinite && duration > 0 ? duration : 0
+    }
+}
+
+private struct EnclosingScrollViewResolver: UIViewRepresentable {
+    let onResolve: (UIScrollView) -> Void
+
+    func makeUIView(context: Context) -> ResolverView {
+        let view = ResolverView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateUIView(_ uiView: ResolverView, context: Context) {
+        uiView.onResolve = onResolve
+        uiView.resolveIfNeeded()
+    }
+
+    final class ResolverView: UIView {
+        var onResolve: ((UIScrollView) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            resolveIfNeeded()
+        }
+
+        override func didMoveToSuperview() {
+            super.didMoveToSuperview()
+            resolveIfNeeded()
+        }
+
+        func resolveIfNeeded() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                var current = self.superview
+                while let view = current {
+                    if let scrollView = view as? UIScrollView {
+                        self.onResolve?(scrollView)
+                        return
+                    }
+                    current = view.superview
+                }
+            }
+        }
     }
 }

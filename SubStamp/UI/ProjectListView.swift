@@ -5,6 +5,9 @@ struct ProjectListView: View {
 
     @State private var projects: [ProjectSummary] = []
     @State private var pendingDelete: ProjectSummary?
+    @State private var showClearAllConfirmation = false
+    @State private var totalManagedStorageBytes: Int64 = 0
+    @AppStorage(SetupPreferences.projectAutosaveKey) private var projectAutosaveEnabled = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
@@ -13,7 +16,9 @@ struct ProjectListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: AppSpacing.l) {
+                autoSaveCard
+
                 if projects.isEmpty {
                     emptyState
                 } else {
@@ -49,13 +54,71 @@ struct ProjectListView: View {
             presenting: pendingDelete
         ) { project in
             Button(String(localized: "Delete", bundle: .forLocale(locale)), role: .destructive) {
-                jobStore.deleteJob(id: project.id)
+                jobStore.deleteSavedProject(id: project.id)
                 reloadProjects()
             }
             Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
         } message: { _ in
             Text(String(localized: "This will remove the saved project and its local files.", bundle: .forLocale(locale)))
         }
+        .alert(Text(String(localized: "Clear All Projects?", bundle: .forLocale(locale))), isPresented: $showClearAllConfirmation) {
+            Button(String(localized: "Clear All", bundle: .forLocale(locale)), role: .destructive) {
+                jobStore.deleteAllSavedProjects()
+                reloadProjects()
+            }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
+        } message: {
+            Text(String(localized: "This will remove all saved projects, unfinished drafts, and cached local video files.", bundle: .forLocale(locale)))
+        }
+    }
+
+    private var autoSaveCard: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.s) {
+            Toggle(isOn: $projectAutosaveEnabled) {
+                Text(String(localized: "Auto-save projects", bundle: .forLocale(locale)))
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(AppColors.primaryText)
+            }
+            .onChange(of: projectAutosaveEnabled) { _, newValue in
+                SetupPreferences.saveProjectAutosave(newValue)
+            }
+
+                Text(String(localized: "When enabled, changes from Preview & Export are saved to Projects automatically.", bundle: .forLocale(locale)))
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.secondaryText)
+
+            Divider()
+
+            HStack {
+                Text(String(localized: "Total files size", bundle: .forLocale(locale)))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+                Spacer()
+                Text(ByteCountFormatter.string(fromByteCount: totalManagedStorageBytes, countStyle: .file))
+                    .font(AppTypography.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.primaryText)
+            }
+
+            Button(role: .destructive) {
+                showClearAllConfirmation = true
+            } label: {
+                Label(String(localized: "Clear All", bundle: .forLocale(locale)), systemImage: "trash")
+                    .font(AppTypography.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, AppSpacing.s)
+            }
+            .buttonStyle(.bordered)
+            .disabled(totalManagedStorageBytes <= 0)
+        }
+        .padding()
+        .background(AppColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+        .padding(.horizontal, AppSpacing.l)
+        .padding(.top, AppSpacing.l)
     }
 
     private var emptyState: some View {
@@ -104,6 +167,16 @@ struct ProjectListView: View {
             Text(projectDetail(project))
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.secondaryText)
+
+            HStack {
+                Text(String(localized: "Size", bundle: .forLocale(locale)))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+                Spacer()
+                Text(project.formattedDiskUsage)
+                    .font(AppTypography.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.primaryText)
+            }
 
             HStack(spacing: AppSpacing.s) {
                 Button {
@@ -177,5 +250,6 @@ struct ProjectListView: View {
 
     private func reloadProjects() {
         projects = jobStore.loadProjectSummaries()
+        totalManagedStorageBytes = jobStore.totalManagedFileDiskUsageBytes()
     }
 }

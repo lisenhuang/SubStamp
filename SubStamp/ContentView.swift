@@ -217,7 +217,7 @@ struct ContentView: View {
             metadata = await VideoMetadata.load(from: job.videoURL)
         }
 
-        if let saved = jobStore.loadBestSavedCues(id: job.id) {
+        if let saved = jobStore.loadBestSavedProjectCues(id: job.id) {
             orchestrator.cues = saved.cues
             orchestrator.transcriptionComplete = true
             orchestrator.translationComplete = (saved.type == .translated)

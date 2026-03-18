@@ -233,15 +233,24 @@
 
 /* プロジェクト */
 "Projects" = "プロジェクト";
+"Auto-save projects" = "プロジェクトを自動保存";
+"When enabled, changes from Preview & Export are saved to Projects automatically." = "有効にすると、「プレビューと書き出し」での変更がプロジェクト一覧に自動保存されます。";
+"Total files size" = "ファイル合計サイズ";
 "Save Project" = "プロジェクトを保存";
+"Auto-save is on. Changes in this task are saved to Projects automatically." = "自動保存がオンです。このタスクの変更はプロジェクト一覧に自動保存されます。";
+"This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "このタスクは「プロジェクトを保存」をタップしたときだけプロジェクト一覧に追加されます。自動では保存されません。";
 "Project saved." = "プロジェクトを保存しました。";
 "Delete Project?" = "このプロジェクトを削除しますか？";
 "This will remove the saved project and its local files." = "保存済みプロジェクトとローカルファイルが削除されます。";
+"Clear All Projects?" = "すべてのプロジェクトを削除しますか？";
+"This will remove all saved projects, unfinished drafts, and cached local video files." = "保存済みのすべてのプロジェクト、未完了の下書き、キャッシュされたローカル動画ファイルが削除されます。";
 "No saved projects yet." = "保存されたプロジェクトはまだありません。";
 "Save a project after transcription or editing to reopen it later." = "文字起こしや編集の後にプロジェクトを保存すると、あとで再度開けます。";
 "Video missing" = "動画ファイルが見つかりません";
 "Open" = "開く";
 "Delete" = "削除";
+"Clear All" = "すべて削除";
+"Size" = "サイズ";
 "%d cues" = "%d件の字幕";
 "Translated" = "翻訳済み";
 "Transcript only" = "文字起こしのみ";

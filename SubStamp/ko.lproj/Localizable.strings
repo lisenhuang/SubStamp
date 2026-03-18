@@ -233,15 +233,24 @@
 
 /* 프로젝트 */
 "Projects" = "프로젝트";
+"Auto-save projects" = "프로젝트 자동 저장";
+"When enabled, changes from Preview & Export are saved to Projects automatically." = "켜면 '미리보기 및 내보내기'의 변경 사항이 프로젝트 목록에 자동으로 저장됩니다.";
+"Total files size" = "전체 파일 크기";
 "Save Project" = "프로젝트 저장";
+"Auto-save is on. Changes in this task are saved to Projects automatically." = "자동 저장이 켜져 있어 이 작업의 변경 사항이 프로젝트 목록에 자동으로 저장됩니다.";
+"This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "이 작업은 '프로젝트 저장'을 눌렀을 때만 프로젝트 목록에 추가되며, 그곳에 자동 저장되지는 않습니다.";
 "Project saved." = "프로젝트가 저장되었습니다.";
 "Delete Project?" = "이 프로젝트를 삭제할까요?";
 "This will remove the saved project and its local files." = "저장된 프로젝트와 로컬 파일이 함께 삭제됩니다.";
+"Clear All Projects?" = "모든 프로젝트를 삭제할까요?";
+"This will remove all saved projects, unfinished drafts, and cached local video files." = "저장된 모든 프로젝트, 완료되지 않은 초안, 캐시된 로컬 동영상 파일이 함께 삭제됩니다.";
 "No saved projects yet." = "저장된 프로젝트가 아직 없습니다.";
 "Save a project after transcription or editing to reopen it later." = "전사나 편집 후 프로젝트를 저장하면 나중에 다시 열 수 있습니다.";
 "Video missing" = "동영상 파일 없음";
 "Open" = "열기";
 "Delete" = "삭제";
+"Clear All" = "모두 삭제";
+"Size" = "크기";
 "%d cues" = "자막 %d개";
 "Translated" = "번역됨";
 "Transcript only" = "전사만";

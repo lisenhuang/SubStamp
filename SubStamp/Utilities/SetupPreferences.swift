@@ -10,6 +10,7 @@ enum SetupPreferences {
     private static let subtitleStyleKey = "setup_subtitleStyle"
     private static let language1Key = "setup_language1"
     private static let language2Key = "setup_language2"
+    static let projectAutosaveKey = "projects_autoSave"
 
     static func loadTranscriptionLocale() -> String? {
         UserDefaults.standard.string(forKey: transcriptionKey)
@@ -82,5 +83,16 @@ enum SetupPreferences {
     static func saveLanguages(language1: String, language2: String?) {
         UserDefaults.standard.set(language1, forKey: language1Key)
         UserDefaults.standard.set(language2, forKey: language2Key)
+    }
+
+    static func loadProjectAutosave() -> Bool {
+        if UserDefaults.standard.object(forKey: projectAutosaveKey) == nil {
+            return false
+        }
+        return UserDefaults.standard.bool(forKey: projectAutosaveKey)
+    }
+
+    static func saveProjectAutosave(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: projectAutosaveKey)
     }
 }
