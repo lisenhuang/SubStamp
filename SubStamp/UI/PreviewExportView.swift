@@ -33,6 +33,7 @@ struct PreviewExportView: View {
     @State private var fullscreenPreviewVideoRect: CGRect = .zero
     @State private var arePreviewControlsVisible = true
     @State private var previewControlsHideTask: Task<Void, Never>?
+    @State private var cuePreviewStopTask: Task<Void, Never>?
     @State private var isScrubbingPreview = false
     @State private var scrubbedPlaybackTimeSeconds: Double?
     @State private var timeObserverToken: Any?
@@ -395,6 +396,7 @@ struct PreviewExportView: View {
         }
         .onDisappear {
             autosaveTask?.cancel()
+            cancelCuePreviewStopTask()
             if projectAutosaveEnabled, !orchestrator.isRunning {
                 saveProjectNow(showFeedback: false)
             }
@@ -1440,6 +1442,7 @@ struct PreviewExportView: View {
 
     private func previewCue(_ cue: SubtitleCue) {
         guard let player else { return }
+        cancelCuePreviewStopTask()
         player.seek(to: cue.start, toleranceBefore: .zero, toleranceAfter: .zero)
         playbackTimeSeconds = cue.start.seconds
         activeCueID = cue.id
@@ -1447,13 +1450,20 @@ struct PreviewExportView: View {
         isPlayingPreview = true
         showPreviewControls()
         let durationSeconds = max(0.2, cue.end.seconds - cue.start.seconds)
-        Task {
+        cuePreviewStopTask = Task {
             try? await Task.sleep(nanoseconds: UInt64(durationSeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 player.pause()
                 isPlayingPreview = false
+                cuePreviewStopTask = nil
             }
         }
+    }
+
+    private func cancelCuePreviewStopTask() {
+        cuePreviewStopTask?.cancel()
+        cuePreviewStopTask = nil
     }
 
     private func rebuildCueTimingIndex() {
@@ -1529,6 +1539,7 @@ struct PreviewExportView: View {
 
     private func togglePreviewPlayback() {
         guard let player else { return }
+        cancelCuePreviewStopTask()
         if player.timeControlStatus == .playing {
             player.pause()
             isPlayingPreview = false
@@ -1553,6 +1564,7 @@ struct PreviewExportView: View {
 
     private func seekPreview(to targetSeconds: Double) {
         guard let player else { return }
+        cancelCuePreviewStopTask()
         let boundedDuration = max(previewDurationSeconds, 0)
         let boundedTargetSeconds = min(max(targetSeconds, 0), boundedDuration)
         let targetTime = CMTime(seconds: boundedTargetSeconds, preferredTimescale: 600)
