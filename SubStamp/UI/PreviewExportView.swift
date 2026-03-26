@@ -49,6 +49,11 @@ struct PreviewExportView: View {
     @State private var autosaveTask: Task<Void, Never>?
     @State private var projectSaveStatus: String?
     @State private var previewScrollView: UIScrollView?
+    @StateObject private var purchaseManager = PurchaseManager()
+    @State private var showSubtitleExportPaywall = false
+    @State private var paywallUsedCount = 0
+    @State private var subtitleShareItem: ShareFileItem?
+    @State private var subtitleExportAfterUnlock = false
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -76,6 +81,11 @@ struct PreviewExportView: View {
         let id = UUID()
         let title: String
         let message: String
+    }
+
+    private struct ShareFileItem: Identifiable {
+        let id = UUID()
+        let url: URL
     }
 
     private enum ManualTranslationTrack: String, CaseIterable, Identifiable {
@@ -371,6 +381,19 @@ struct PreviewExportView: View {
         .sheet(item: $safariURLItem) { item in
             SafariView(url: item.url)
         }
+        .sheet(item: $subtitleShareItem) { item in
+            ActivityShareSheet(activityItems: [item.url]) { _ in
+                subtitleShareItem = nil
+            }
+        }
+        .sheet(isPresented: $showSubtitleExportPaywall) {
+            PurchasePaywallView(
+                purchaseManager: purchaseManager,
+                usedCount: paywallUsedCount,
+                freeLimit: SaveShareQuotaStore.freeLimit,
+                featureMessage: String(localized: "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format.", bundle: .forLocale(locale))
+            ) {}
+        }
         .onAppear {
             player = AVPlayer(url: videoURL)
             if let player {
@@ -393,6 +416,9 @@ struct PreviewExportView: View {
                 snapshotTranslations()
             }
             showPreviewControls()
+        }
+        .task {
+            await purchaseManager.prepareIfNeeded()
         }
         .onDisappear {
             autosaveTask?.cancel()
@@ -435,6 +461,12 @@ struct PreviewExportView: View {
                 scrollTrigger += 1
                 scheduleProjectAutosave()
             }
+        }
+        .onChange(of: showSubtitleExportPaywall) { _, isPresented in
+            guard !isPresented else { return }
+            defer { subtitleExportAfterUnlock = false }
+            guard subtitleExportAfterUnlock, purchaseManager.hasPremiumAccess else { return }
+            Task { await beginSubtitleExport(skipPurchasePreparation: true) }
         }
         .translationTask(config1) { session in
             session1 = session
@@ -1009,6 +1041,25 @@ struct PreviewExportView: View {
                 }
             }
 
+            if !orchestrator.isRunning, !orchestrator.cues.isEmpty {
+                Button {
+                    Task { await beginSubtitleExport() }
+                } label: {
+                    Label(String(localized: "Export Subtitle (.srt)", bundle: .forLocale(locale)), systemImage: "text.badge.plus")
+                        .font(AppTypography.bodyEmphasis)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, AppSpacing.m)
+                        .foregroundStyle(AppColors.primaryText)
+                        .background(AppColors.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                                .stroke(AppColors.cardBorder, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+
             if !orchestrator.isRunning, activeJob != nil, !orchestrator.cues.isEmpty {
                 Button {
                     saveProjectNow(showFeedback: true)
@@ -1098,6 +1149,88 @@ struct PreviewExportView: View {
     private func startExport() {
         guard let job else { return }
         orchestrator.startRenderExport(job: job)
+    }
+
+    @MainActor
+    private func beginSubtitleExport(skipPurchasePreparation: Bool = false) async {
+        if !skipPurchasePreparation {
+            await purchaseManager.prepareIfNeeded()
+        }
+
+        guard purchaseManager.hasPremiumAccess else {
+            paywallUsedCount = await SaveShareQuotaStore.shared.totalUsedCount()
+            subtitleExportAfterUnlock = true
+            showSubtitleExportPaywall = true
+            return
+        }
+
+        do {
+            let fileURL = try makeSubtitleExportFile()
+            subtitleShareItem = ShareFileItem(url: fileURL)
+        } catch {
+            clipboardAlert = ClipboardAlert(
+                title: String(localized: "Export failed", bundle: .forLocale(locale)),
+                message: String(localized: "Failed to create subtitle file.", bundle: .forLocale(locale))
+            )
+        }
+    }
+
+    private func makeSubtitleExportFile() throws -> URL {
+        let fileManager = FileManager.default
+        let rootDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("SubStampSubtitleExports", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+
+        let baseName = sanitizedSubtitleExportBaseName()
+        let fileURL = rootDirectory.appendingPathComponent("\(baseName).srt")
+        try generateSRTText().write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    private func sanitizedSubtitleExportBaseName() -> String {
+        let raw = videoURL.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = raw.isEmpty ? "SubStamp Subtitles" : raw
+        let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+        let scalarView = fallback.unicodeScalars.map { invalid.contains($0) ? "_" : Character($0) }
+        let sanitized = String(scalarView).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "SubStamp Subtitles" : sanitized
+    }
+
+    private func generateSRTText() -> String {
+        let includeSecondary = (job?.subtitleMode == .bilingual)
+            && orchestrator.cues.contains {
+                guard let secondary = $0.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+                return !secondary.isEmpty
+            }
+
+        var sections: [String] = []
+        var sequenceNumber = 1
+
+        for cue in orchestrator.cues {
+            let primary = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let secondary = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            var lines: [String] = []
+            if !primary.isEmpty {
+                lines.append(primary)
+            }
+            if includeSecondary, !secondary.isEmpty {
+                lines.append(secondary)
+            }
+            guard !lines.isEmpty else { continue }
+
+            sections.append(
+                """
+                \(sequenceNumber)
+                \(TimeFormatting.srtTimestamp(cue.start)) --> \(TimeFormatting.srtTimestamp(cue.end))
+                \(lines.joined(separator: "\n"))
+                """
+            )
+            sequenceNumber += 1
+        }
+
+        return sections.joined(separator: "\n\n")
     }
 
     private func scheduleProjectAutosave() {

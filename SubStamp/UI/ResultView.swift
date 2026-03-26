@@ -678,7 +678,7 @@ private enum KeychainStore {
     }
 }
 
-private struct ActivityShareSheet: UIViewControllerRepresentable {
+struct ActivityShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
     var completion: (Bool) -> Void
 
@@ -696,7 +696,7 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-private struct DocumentExportSheet: UIViewControllerRepresentable {
+struct DocumentExportSheet: UIViewControllerRepresentable {
     let fileURL: URL
     var completion: (Bool) -> Void
 
@@ -733,6 +733,7 @@ struct PurchasePaywallView: View {
     @ObservedObject var purchaseManager: PurchaseManager
     let usedCount: Int
     let freeLimit: Int
+    var featureMessage: String? = nil
     var onUnlocked: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -750,11 +751,17 @@ struct PurchasePaywallView: View {
                     .font(AppTypography.body)
                     .foregroundStyle(AppColors.secondaryText)
 
+                if let featureMessage, !featureMessage.isEmpty {
+                    Text(featureMessage)
+                        .font(AppTypography.body)
+                        .foregroundStyle(AppColors.secondaryText)
+                }
+
                 SubscriptionStoreView(productIDs: [PurchaseManager.weeklyProductID]) {
                     VStack(alignment: .leading, spacing: AppSpacing.xs) {
                         Text(String(localized: "Weekly Subscription", bundle: .forLocale(locale)))
                             .font(AppTypography.bodyEmphasis)
-                        Text(String(localized: "Unlimited exports, saving, and sharing. Cancel anytime.", bundle: .forLocale(locale)))
+                        Text(String(localized: "Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime.", bundle: .forLocale(locale)))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
                     }

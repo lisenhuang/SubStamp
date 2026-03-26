@@ -104,6 +104,9 @@
 "Translate" = "Translate";
 "Translating subtitles." = "Translating subtitles.";
 "Export Video" = "Export Video";
+"Export Subtitle (.srt)" = "Export Subtitle (.srt)";
+"Export failed" = "Export failed";
+"Failed to create subtitle file." = "Failed to create subtitle file.";
 "Done" = "Done";
 "Subtitle style" = "Subtitle style";
 "Font size" = "Font size";
@@ -210,7 +213,8 @@
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.";
 "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.";
 "Weekly Subscription" = "Weekly Subscription";
-"Unlimited exports, saving, and sharing. Cancel anytime." = "Unlimited exports, saving, and sharing. Cancel anytime.";
+"Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime.";
+"Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format.";
 "Loading purchase options..." = "Loading purchase options...";
 "Lifetime Unlock" = "Lifetime Unlock";
 "Restore Purchases" = "Restore Purchases";

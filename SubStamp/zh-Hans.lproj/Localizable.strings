@@ -103,6 +103,9 @@
 "Translate" = "翻译";
 "Translating subtitles." = "正在翻译字幕。";
 "Export Video" = "导出视频";
+"Export Subtitle (.srt)" = "导出字幕（.srt）";
+"Export failed" = "导出失败";
+"Failed to create subtitle file." = "无法创建字幕文件。";
 "Done" = "完成";
 "Subtitle style" = "字幕样式";
 "Font size" = "字体大小";
@@ -209,7 +212,8 @@
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "免费用户最多可对 %d 个不同视频进行保存到照片或分享。每个视频只计一次。升级到 Pro 后可无限保存与分享。";
 "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "免费用户最多可对 %d 个不同视频进行保存或分享。每个视频只计一次。升级到 Pro 后可无限保存与分享。";
 "Weekly Subscription" = "周订阅";
-"Unlimited exports, saving, and sharing. Cancel anytime." = "无限导出、保存与分享。随时取消。";
+"Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "无限导出视频、导出字幕文件、保存与分享。可随时取消。";
+"Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "字幕导出是付费功能。解锁 Pro 后即可导出并分享 .srt 字幕文件。";
 "Loading purchase options..." = "正在加载购买选项...";
 "Lifetime Unlock" = "永久解锁";
 "Restore Purchases" = "恢复购买";

@@ -103,6 +103,9 @@
 "Translate" = "翻訳";
 "Translating subtitles." = "字幕を翻訳中。";
 "Export Video" = "動画をエクスポート";
+"Export Subtitle (.srt)" = "字幕を書き出す（.srt）";
+"Export failed" = "書き出しに失敗しました";
+"Failed to create subtitle file." = "字幕ファイルを作成できませんでした。";
 "Done" = "完了";
 "Subtitle style" = "字幕スタイル";
 "Font size" = "フォントサイズ";
@@ -209,7 +212,8 @@
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "無料ユーザーは、最大 %d 本の異なる動画を写真に保存または共有できます。各動画は1回だけカウントされます。Pro にアップグレードすると保存と共有が無制限になります。";
 "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "無料ユーザーは最大 %d 本の異なる動画を保存または共有できます。各動画は1回だけカウントされます。Pro にアップグレードすると保存と共有が無制限になります。";
 "Weekly Subscription" = "週間サブスクリプション";
-"Unlimited exports, saving, and sharing. Cancel anytime." = "エクスポート、保存、共有が無制限。いつでもキャンセルできます。";
+"Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "動画の書き出し、字幕ファイルの書き出し、保存、共有が無制限。いつでもキャンセルできます。";
+"Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "字幕の書き出しは有料機能です。Pro をアンロックすると .srt 字幕ファイルを出力して共有できます。";
 "Loading purchase options..." = "購入オプションを読み込み中...";
 "Lifetime Unlock" = "買い切り（永久）";
 "Restore Purchases" = "購入を復元";

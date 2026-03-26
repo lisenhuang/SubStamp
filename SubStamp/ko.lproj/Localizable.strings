@@ -103,6 +103,9 @@
 "Translate" = "번역";
 "Translating subtitles." = "자막 번역 중.";
 "Export Video" = "동영상 내보내기";
+"Export Subtitle (.srt)" = "자막 내보내기 (.srt)";
+"Export failed" = "내보내기 실패";
+"Failed to create subtitle file." = "자막 파일을 만들지 못했습니다.";
 "Done" = "완료";
 "Subtitle style" = "자막 스타일";
 "Font size" = "글자 크기";
@@ -209,7 +212,8 @@
 "Free users can save to Photos or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "무료 사용자는 서로 다른 비디오 최대 %d개를 사진에 저장하거나 공유할 수 있습니다. 각 비디오는 한 번만 카운트됩니다. Pro로 업그레이드하면 저장 및 공유가 무제한입니다.";
 "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing." = "무료 사용자는 서로 다른 동영상을 최대 %d개까지 저장하거나 공유할 수 있습니다. 각 동영상은 한 번만 계산됩니다. Pro로 업그레이드하면 저장 및 공유를 무제한으로 이용할 수 있습니다.";
 "Weekly Subscription" = "주간 구독";
-"Unlimited exports, saving, and sharing. Cancel anytime." = "내보내기, 저장, 공유 무제한. 언제든 취소 가능.";
+"Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "동영상 내보내기, 자막 파일 내보내기, 저장, 공유를 무제한으로 이용할 수 있습니다. 언제든 취소할 수 있습니다.";
+"Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "자막 내보내기는 유료 기능입니다. Pro를 잠금 해제하면 .srt 자막 파일을 내보내고 공유할 수 있습니다.";
 "Loading purchase options..." = "구매 옵션을 불러오는 중...";
 "Lifetime Unlock" = "평생 이용권";
 "Restore Purchases" = "구매 복원";
