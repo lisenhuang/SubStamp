@@ -132,6 +132,7 @@
 "Copied" = "Copied";
 "OK" = "OK";
 "Copied as SRT to your clipboard." = "Copied as SRT to your clipboard.";
+"The pasted JSON format was fixed automatically." = "The pasted JSON format was fixed automatically.";
 
 /* ResultView - Step 4 */
 "Result" = "Result";

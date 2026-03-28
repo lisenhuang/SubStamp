@@ -131,6 +131,7 @@
 "Copied" = "已复制";
 "OK" = "好";
 "Copied as SRT to your clipboard." = "已将 SRT 格式字幕复制到剪贴板。";
+"The pasted JSON format was fixed automatically." = "已自动修复粘贴的 JSON 格式。";
 
 /* ResultView - Step 4 */
 "Result" = "结果";

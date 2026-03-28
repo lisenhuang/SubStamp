@@ -131,6 +131,7 @@
 "Copied" = "コピー完了";
 "OK" = "OK";
 "Copied as SRT to your clipboard." = "SRT形式でクリップボードにコピーしました。";
+"The pasted JSON format was fixed automatically." = "貼り付けた JSON の形式を自動修正しました。";
 
 /* ResultView - Step 4 */
 "Result" = "結果";

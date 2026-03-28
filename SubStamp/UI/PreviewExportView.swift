@@ -2041,9 +2041,9 @@ struct PreviewExportView: View {
             expectedTargetSingle = expectedSource
         }
 
-        let decoded: ManualFixTranslateOutput
+        let decodedResult: DecodedJSON<ManualFixTranslateOutput>
         do {
-            decoded = try decodeJSON(ManualFixTranslateOutput.self, from: raw)
+            decodedResult = try decodeJSON(ManualFixTranslateOutput.self, from: raw)
         } catch {
             let hasSmartQuotes = raw.contains("“")
                 || raw.contains("”")
@@ -2058,6 +2058,7 @@ struct PreviewExportView: View {
             )
             return
         }
+        let decoded = decodedResult.value
 
         if let source = decoded.source, !source.isEmpty {
             let pastedSource = normalizeLocaleIdentifier(source)
@@ -2223,9 +2224,17 @@ struct PreviewExportView: View {
             markTranslationsStale()
         }
         scheduleProjectAutosave()
+        let importedMessage = String(
+            format: String(localized: "Imported %d fixes and %d translations.", bundle: .forLocale(locale)),
+            appliedFixed,
+            appliedTranslation
+        )
+        let message = decodedResult.wasNormalized
+            ? importedMessage + " " + String(localized: "The pasted JSON format was fixed automatically.", bundle: .forLocale(locale))
+            : importedMessage
         clipboardAlert = ClipboardAlert(
             title: String(localized: "Imported", bundle: .forLocale(locale)),
-            message: String(format: String(localized: "Imported %d fixes and %d translations.", bundle: .forLocale(locale)), appliedFixed, appliedTranslation)
+            message: message
         )
     }
 
@@ -2245,7 +2254,12 @@ struct PreviewExportView: View {
             .lowercased()
     }
 
-    private func decodeJSON<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
+    private struct DecodedJSON<T> {
+        let value: T
+        let wasNormalized: Bool
+    }
+
+    private func decodeJSON<T: Decodable>(_ type: T.Type, from text: String) throws -> DecodedJSON<T> {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}") else {
             throw NSError(domain: "SubStamp", code: -1)
@@ -2253,34 +2267,23 @@ struct PreviewExportView: View {
         let json = String(trimmed[start...end])
 
         do {
-            return try JSONDecoder().decode(T.self, from: Data(json.utf8))
-        } catch {
-            // Common failure: AI output uses smart quotes or fullwidth punctuation, which isn't valid JSON.
+            let decoded = try JSONDecoder().decode(T.self, from: Data(json.utf8))
+            return DecodedJSON(value: decoded, wasNormalized: false)
+        } catch let firstError {
+            // Common failure: AI output uses smart quotes, trailing commas, raw newlines inside strings,
+            // or fullwidth punctuation. Normalize and try again before rejecting the paste.
             let normalized = normalizeLikelyJSON(json)
-            guard normalized != json else { throw error }
-            return try JSONDecoder().decode(T.self, from: Data(normalized.utf8))
+            guard normalized != json else { throw firstError }
+            let decoded = try JSONDecoder().decode(T.self, from: Data(normalized.utf8))
+            return DecodedJSON(value: decoded, wasNormalized: true)
         }
     }
 
     private func normalizeLikelyJSON(_ text: String) -> String {
-        // Fast path.
-        if !text.contains("“"),
-           !text.contains("”"),
-           !text.contains("‘"),
-           !text.contains("’"),
-           !text.contains("＂"),
-           !text.contains("："),
-           !text.contains("，"),
-           !text.contains("｛"),
-           !text.contains("｝"),
-           !text.contains("［"),
-           !text.contains("］") {
-            return text
-        }
-
         let scalars = Array(text.unicodeScalars)
         var out = String()
         out.unicodeScalars.reserveCapacity(scalars.count)
+        var changed = false
 
         func isWhitespace(_ scalar: UnicodeScalar) -> Bool {
             CharacterSet.whitespacesAndNewlines.contains(scalar)
@@ -2306,11 +2309,11 @@ struct PreviewExportView: View {
             return nil
         }
 
-        func isSmartQuote(_ scalar: UnicodeScalar) -> Bool {
+        func isStructuralQuoteCandidate(_ scalar: UnicodeScalar) -> Bool {
             switch scalar.value {
-            case 0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0xFF02:
-                return true
-            case 0x2018, 0x2019, 0x201A, 0xFF07:
+            case 0x0027, // '
+                0x2018, 0x2019, 0x201A, 0xFF07, // smart/fullwidth single quotes
+                0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0xFF02: // smart/fullwidth double quotes
                 return true
             default:
                 return false
@@ -2345,13 +2348,19 @@ struct PreviewExportView: View {
             let s = scalars[i]
             var r = s
 
-            if isSmartQuote(s) {
+            if s.value == 0xFEFF || s.value == 0x200B || s.value == 0x200C || s.value == 0x200D {
+                changed = true
+                continue
+            }
+
+            if isStructuralQuoteCandidate(s) {
                 let prev = prevNonWhitespaceScalar(before: i - 1)
                 let next = nextNonWhitespaceScalar(after: i + 1)
                 let prevIsContext = prev.map { openingContext.contains($0.value) } ?? true
                 let nextIsContext = next.map { closingContext.contains($0.value) } ?? true
-                if prevIsContext || nextIsContext {
+                if !inString || prevIsContext || nextIsContext {
                     r = UnicodeScalar(0x22)! // "
+                    if r != s { changed = true }
                 }
             }
 
@@ -2360,16 +2369,46 @@ struct PreviewExportView: View {
                 switch r.value {
                 case 0xFF5B: // ｛
                     r = UnicodeScalar(0x7B)! // {
+                    changed = true
                 case 0xFF5D: // ｝
                     r = UnicodeScalar(0x7D)! // }
+                    changed = true
                 case 0xFF3B: // ［
                     r = UnicodeScalar(0x5B)! // [
+                    changed = true
                 case 0xFF3D: // ］
                     r = UnicodeScalar(0x5D)! // ]
+                    changed = true
                 case 0xFF1A: // ：
                     r = UnicodeScalar(0x3A)! // :
+                    changed = true
                 case 0xFF0C: // ，
                     r = UnicodeScalar(0x2C)! // ,
+                    changed = true
+                case 0x3000: // IDEOGRAPHIC SPACE
+                    r = UnicodeScalar(0x20)! // regular space
+                    changed = true
+                default:
+                    break
+                }
+            } else {
+                // Raw control characters inside JSON strings are invalid. Escape the common cases.
+                switch r.value {
+                case 0x0A:
+                    out.append("\\n")
+                    backslashRun = 0
+                    changed = true
+                    continue
+                case 0x0D:
+                    out.append("\\r")
+                    backslashRun = 0
+                    changed = true
+                    continue
+                case 0x09:
+                    out.append("\\t")
+                    backslashRun = 0
+                    changed = true
+                    continue
                 default:
                     break
                 }
@@ -2383,6 +2422,59 @@ struct PreviewExportView: View {
             }
 
             if r.value == 0x5C { // backslash
+                backslashRun += 1
+            } else {
+                backslashRun = 0
+            }
+        }
+
+        let withoutTrailingCommas = removeTrailingCommasFromJSON(out)
+        if withoutTrailingCommas != out {
+            changed = true
+        }
+
+        return changed ? withoutTrailingCommas : text
+    }
+
+    private func removeTrailingCommasFromJSON(_ text: String) -> String {
+        let scalars = Array(text.unicodeScalars)
+        var out = String()
+        out.unicodeScalars.reserveCapacity(scalars.count)
+
+        func isWhitespace(_ scalar: UnicodeScalar) -> Bool {
+            CharacterSet.whitespacesAndNewlines.contains(scalar)
+        }
+
+        func nextNonWhitespaceScalar(after index: Int) -> UnicodeScalar? {
+            var i = index
+            while i < scalars.count {
+                let s = scalars[i]
+                if !isWhitespace(s) { return s }
+                i += 1
+            }
+            return nil
+        }
+
+        var inString = false
+        var backslashRun = 0
+
+        for i in 0..<scalars.count {
+            let scalar = scalars[i]
+
+            if !inString,
+               scalar.value == 0x2C, // ,
+               let next = nextNonWhitespaceScalar(after: i + 1),
+               next.value == 0x7D || next.value == 0x5D { // } or ]
+                continue
+            }
+
+            out.unicodeScalars.append(scalar)
+
+            if scalar.value == 0x22, backslashRun % 2 == 0 {
+                inString.toggle()
+            }
+
+            if scalar.value == 0x5C {
                 backslashRun += 1
             } else {
                 backslashRun = 0
