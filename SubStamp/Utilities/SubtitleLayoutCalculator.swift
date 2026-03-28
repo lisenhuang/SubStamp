@@ -34,7 +34,7 @@ enum SubtitleLayoutCalculator {
         let maxOuterWidth = renderSize.width * 0.86
         let maxTextWidth = max(1, maxOuterWidth - (padding * 2))
 
-        let primaryWeight: UIFont.Weight = .semibold
+        let primaryWeight: UIFont.Weight = .bold
         let primaryFont = UIFont.systemFont(ofSize: baseFontSize, weight: primaryWeight)
         let textColor = style.textColor.uiColor
         let primaryTextSize = measuredTextSize(
@@ -48,7 +48,7 @@ enum SubtitleLayoutCalculator {
             height: primaryTextSize.height + (padding * 2)
         )
 
-        let secondaryWeight: UIFont.Weight = (style.secondaryStyle == .subdued) ? .regular : .semibold
+        let secondaryWeight: UIFont.Weight = .bold
         let secondaryOpacity: CGFloat = (style.secondaryStyle == .subdued) ? 0.85 : 1
         let secondaryFont = UIFont.systemFont(ofSize: baseFontSize, weight: secondaryWeight)
         let secondaryTextSize: CGSize?
