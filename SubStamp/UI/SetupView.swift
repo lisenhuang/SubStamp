@@ -102,7 +102,13 @@ struct SetupView: View {
                 freeLimit: SaveShareQuotaStore.freeLimit
             ) {}
         }
+        .onAppear {
+            applyCachedLanguageOptions()
+            syncSubtitleSelectionsFromBindings()
+        }
         .task {
+            applyCachedLanguageOptions()
+            syncSubtitleSelectionsFromBindings()
             await purchaseManager.prepareEntitlementsIfNeeded()
             logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
             speechAvailable = SpeechTranscriber.isAvailable
@@ -164,6 +170,7 @@ struct SetupView: View {
             let installed = await SpeechTranscriber.installedLocales
             self.installedSpeechIDs = Set(installed.map { $0.identifier(.bcp47) })
             AppLog.append("[SETUP] Installed audio languages (\(installed.count)): \(installed.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
+            SetupPreferences.saveCachedSpeechLocales(speechLocales, installedIDs: installedSpeechIDs)
             
             // Normalize transcription locale to match a valid picker tag.
             // Locale.current.identifier can return values like "en_US@rg=nzzzzz" which
@@ -178,22 +185,7 @@ struct SetupView: View {
             await updateSubtitleTargets()
 
             // 2. Initialize from existing bindings (only after targets are known to avoid invalid Picker selections)
-            let desiredSubtitle1ID = language1Identifier == transcriptionLocaleIdentifier ? "transcript" : language1Identifier
-            selectedSubtitle1ID = mappedSubtitleSelection(desiredSubtitle1ID) ?? "transcript"
-
-            if let lang2 = language2Identifier {
-                subtitle2Enabled = true
-                let desiredSubtitle2ID = lang2 == transcriptionLocaleIdentifier ? "transcript" : lang2
-                if desiredSubtitle2ID == "transcript" {
-                    selectedSubtitle2ID = "transcript"
-                } else {
-                    selectedSubtitle2ID = mappedSubtitleSelection(lang2)
-                }
-                if selectedSubtitle2ID == nil { subtitle2Enabled = false }
-            } else {
-                subtitle2Enabled = false
-                selectedSubtitle2ID = nil
-            }
+            syncSubtitleSelectionsFromBindings()
 
             updateAssetManager()
         }
@@ -221,14 +213,20 @@ struct SetupView: View {
                 translationConfig = nil
                 shouldPrepareTranslation = false
             }
+            applyCachedSubtitleTargets()
+            syncSubtitleSelectionsFromBindings()
             Task {
                 await updateSubtitleTargets()
+                syncSubtitleSelectionsFromBindings()
                 updateAssetManager()
             }
         }
         .onChange(of: transcriptionLocaleIdentifier) { _, _ in
+            applyCachedSubtitleTargets()
+            syncSubtitleSelectionsFromBindings()
             Task {
                 await updateSubtitleTargets()
+                syncSubtitleSelectionsFromBindings()
                 updateAssetManager()
             }
         }
@@ -252,8 +250,11 @@ struct SetupView: View {
                     translationConfig = nil
                     shouldPrepareTranslation = false
                 }
+                applyCachedSubtitleTargets()
+                syncSubtitleSelectionsFromBindings()
                 Task {
                     await updateSubtitleTargets()
+                    syncSubtitleSelectionsFromBindings()
                     updateAssetManager()
                 }
             }
@@ -998,6 +999,64 @@ struct SetupView: View {
         }
         if let current = selectedSubtitle2ID, current != "transcript" && !subtitleTargets.contains(where: { $0.id == current }) {
             selectedSubtitle2ID = mappedSubtitleSelection(current)
+        }
+    }
+
+    private func applyCachedLanguageOptions() {
+        if supportedSpeechLocales.isEmpty {
+            let cachedSpeechLocales = SetupPreferences.loadCachedSpeechLocales()
+            if !cachedSpeechLocales.isEmpty {
+                supportedSpeechLocales = cachedSpeechLocales
+            }
+        }
+
+        if installedSpeechIDs.isEmpty {
+            let cachedInstalled = SetupPreferences.loadCachedInstalledSpeechIDs()
+            if !cachedInstalled.isEmpty {
+                installedSpeechIDs = cachedInstalled
+            }
+        }
+
+        applyCachedSubtitleTargets()
+    }
+
+    private func applyCachedSubtitleTargets() {
+        subtitleTargets = SetupPreferences.loadCachedSubtitleTargets(
+            for: transcriptionLocaleIdentifier,
+            provider: translationProvider
+        ) ?? []
+    }
+
+    private func syncSubtitleSelectionsFromBindings() {
+        let desiredSubtitle1ID = language1Identifier == transcriptionLocaleIdentifier ? "transcript" : language1Identifier
+        if desiredSubtitle1ID == "transcript" {
+            selectedSubtitle1ID = "transcript"
+        } else if let mapped = mappedSubtitleSelection(desiredSubtitle1ID) {
+            selectedSubtitle1ID = mapped
+        } else if subtitleTargets.isEmpty {
+            selectedSubtitle1ID = "transcript"
+        }
+
+        guard let lang2 = language2Identifier else {
+            subtitle2Enabled = false
+            selectedSubtitle2ID = nil
+            return
+        }
+
+        subtitle2Enabled = true
+        let desiredSubtitle2ID = lang2 == transcriptionLocaleIdentifier ? "transcript" : lang2
+        if desiredSubtitle2ID == "transcript" {
+            selectedSubtitle2ID = "transcript"
+            return
+        }
+
+        if let mapped = mappedSubtitleSelection(lang2) {
+            selectedSubtitle2ID = mapped
+        } else if subtitleTargets.isEmpty {
+            selectedSubtitle2ID = nil
+        } else {
+            selectedSubtitle2ID = nil
+            subtitle2Enabled = false
         }
     }
 

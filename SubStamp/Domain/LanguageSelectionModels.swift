@@ -8,7 +8,7 @@ enum TranslationMode: String, Codable {
     case pivot
 }
 
-struct TargetOption: Identifiable, Equatable {
+struct TargetOption: Identifiable, Equatable, Codable {
     let id: String // Minimal identifier (BCP-47)
     let displayName: String
     let mode: TranslationMode
@@ -68,14 +68,23 @@ final class LanguageSelectionLogic {
         if let cached = targetsCache[sourceID] {
             return cached
         }
+        if let persisted = SetupPreferences.loadCachedSubtitleTargets(
+            for: source.identifier,
+            provider: provider
+        ) {
+            targetsCache[sourceID] = persisted
+            return persisted
+        }
         
         if provider == .appleIntelligence {
             let options = computeAppleIntelligenceTargets(for: source)
             targetsCache[sourceID] = options
+            SetupPreferences.saveCachedSubtitleTargets(options, for: source.identifier, provider: provider)
             return options
         }
 
-        let supportedLanguages = await fetchSupportedLanguages()
+        let availability = LanguageAvailability()
+        let supportedLanguages = await availability.supportedLanguages
         let sourceLang = Locale.Language(identifier: source.identifier)
         let englishLang = Locale.Language(identifier: "en-US")
         
@@ -87,7 +96,7 @@ final class LanguageSelectionLogic {
             
             if targetID == sourceLang.minimalIdentifier { continue }
             
-            let directStatus = await checkStatus(from: sourceLang, to: target)
+            let directStatus = await availability.status(from: sourceLang, to: target)
             if directStatus == .installed || directStatus == .supported {
                 let option = TargetOption(
                     id: targetID,
@@ -100,8 +109,8 @@ final class LanguageSelectionLogic {
             }
             
             if targetID != englishLang.minimalIdentifier {
-                let leg1 = await checkStatus(from: sourceLang, to: englishLang)
-                let leg2 = await checkStatus(from: englishLang, to: target)
+                let leg1 = await availability.status(from: sourceLang, to: englishLang)
+                let leg2 = await availability.status(from: englishLang, to: target)
                 
                 if (leg1 == .installed || leg1 == .supported) && (leg2 == .installed || leg2 == .supported) {
                     let option = TargetOption(
@@ -119,6 +128,7 @@ final class LanguageSelectionLogic {
         
         let sortedOptions = options.sorted { $0.displayName < $1.displayName }
         targetsCache[sourceID] = sortedOptions
+        SetupPreferences.saveCachedSubtitleTargets(sortedOptions, for: source.identifier, provider: provider)
         return sortedOptions
     }
 
@@ -159,15 +169,5 @@ final class LanguageSelectionLogic {
     private func appleIntelligenceModelIfAvailable() -> SystemLanguageModel? {
         let model = SystemLanguageModel.default
         return model.isAvailable ? model : nil
-    }
-
-    private nonisolated func fetchSupportedLanguages() async -> [Locale.Language] {
-        let availability = LanguageAvailability()
-        return await availability.supportedLanguages
-    }
-    
-    private nonisolated func checkStatus(from source: Locale.Language, to target: Locale.Language) async -> LanguageAvailability.Status {
-        let availability = LanguageAvailability()
-        return await availability.status(from: source, to: target)
     }
 }
