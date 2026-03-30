@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var resumeJob: JobModel?
     @State private var showResumeAlert = false
     @State private var showProjectsSheet = false
+    @State private var previewOpenedFromProjects = false
 
     private let jobStore = JobStore()
 
@@ -62,6 +63,7 @@ struct ContentView: View {
                     fixTranscriptionWithAppleIntelligence: $fixTranscriptionWithAppleIntelligence,
                     onOpenProjects: { showProjectsSheet = true },
                     onContinue: {
+                        previewOpenedFromProjects = false
                         saveSetupSelections()
                         step = .videoAndTranscribe
                     }
@@ -89,7 +91,13 @@ struct ContentView: View {
                         orchestrator: orchestrator,
                         activeJob: $activeJob,
                         videoURL: videoURL,
-                        onBack: { step = .videoAndTranscribe },
+                        onBack: {
+                            if previewOpenedFromProjects {
+                                returnToProjects()
+                            } else {
+                                step = .videoAndTranscribe
+                            }
+                        },
                         onExportComplete: { url in
                             outputURL = url
                             step = .result
@@ -120,7 +128,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showProjectsSheet) {
             ProjectListView { job in
-                openProject(job)
+                openProject(job, openedFromProjects: true)
             }
         }
         .task {
@@ -169,6 +177,7 @@ struct ContentView: View {
 
     private func resetToSetup() {
         orchestrator.cancel()
+        previewOpenedFromProjects = false
         step = .setup
         selectedVideoURL = nil
         metadata = nil
@@ -188,13 +197,14 @@ struct ContentView: View {
 
     private func resumeIncompleteJob() {
         guard let job = resumeJob else { return }
-        openProject(job)
+        openProject(job, openedFromProjects: false)
     }
 
-    private func openProject(_ job: JobModel) {
+    private func openProject(_ job: JobModel, openedFromProjects: Bool) {
         let existingOutputURL = job.outputURL.flatMap { url in
             FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
+        previewOpenedFromProjects = openedFromProjects
         showResumeAlert = false
         resumeJob = nil
         activeJob = job
@@ -225,6 +235,12 @@ struct ContentView: View {
         } else {
             step = .videoAndTranscribe
         }
+    }
+
+    private func returnToProjects() {
+        previewOpenedFromProjects = false
+        step = .setup
+        showProjectsSheet = true
     }
 
     private func updateIdleTimerPolicy() {

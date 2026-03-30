@@ -47,7 +47,8 @@ struct PreviewExportView: View {
     @State private var isManualToolsExpanded: Bool = false
     @State private var safariURLItem: SafariURLItem?
     @State private var autosaveTask: Task<Void, Never>?
-    @State private var projectSaveStatus: String?
+    @State private var didJustSaveProject = false
+    @State private var projectSaveFeedbackTask: Task<Void, Never>?
     @State private var previewScrollView: UIScrollView?
     @StateObject private var purchaseManager = PurchaseManager()
     @State private var showSubtitleExportPaywall = false
@@ -439,7 +440,7 @@ struct PreviewExportView: View {
         .onChange(of: orchestrator.cues) { _, _ in
             guard !orchestrator.isRunning else { return }
             cuesChangedSinceExport = true
-            projectSaveStatus = nil
+            clearProjectSaveFeedback()
             scheduleProjectAutosave()
         }
         .onChange(of: orchestrator.outputURL) { _, newValue in
@@ -583,7 +584,7 @@ struct PreviewExportView: View {
                 try? jobStore.save(job: updated)
                 SetupPreferences.saveSubtitleStyle(newValue)
                 cuesChangedSinceExport = true
-                projectSaveStatus = nil
+                clearProjectSaveFeedback()
                 scheduleProjectAutosave()
             }
         )
@@ -970,7 +971,7 @@ struct PreviewExportView: View {
                         onOriginalEdited: { markCueStale(cueID: orchestrator.cues[index].id) },
                         onSubtitleEdited: {
                             cuesChangedSinceExport = true
-                            projectSaveStatus = nil
+                            clearProjectSaveFeedback()
                             scheduleProjectAutosave()
                         },
                         showRetranslateButton: staleCueIDs.contains(orchestrator.cues[index].id),
@@ -1064,7 +1065,12 @@ struct PreviewExportView: View {
                 Button {
                     saveProjectNow(showFeedback: true)
                 } label: {
-                    Label(String(localized: "Save Project", bundle: .forLocale(locale)), systemImage: "square.and.arrow.down.on.square")
+                    Label(
+                        didJustSaveProject
+                            ? String(localized: "Project saved.", bundle: .forLocale(locale))
+                            : String(localized: "Save Project", bundle: .forLocale(locale)),
+                        systemImage: didJustSaveProject ? "checkmark.circle.fill" : "square.and.arrow.down.on.square"
+                    )
                         .font(AppTypography.bodyEmphasis)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, AppSpacing.m)
@@ -1085,13 +1091,6 @@ struct PreviewExportView: View {
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                if let projectSaveStatus {
-                    Text(projectSaveStatus)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.secondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
         }
     }
@@ -1269,8 +1268,20 @@ struct PreviewExportView: View {
         }
 
         if showFeedback {
-            projectSaveStatus = String(localized: "Project saved.", bundle: .forLocale(locale))
+            projectSaveFeedbackTask?.cancel()
+            didJustSaveProject = true
+            projectSaveFeedbackTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled else { return }
+                didJustSaveProject = false
+            }
         }
+    }
+
+    private func clearProjectSaveFeedback() {
+        projectSaveFeedbackTask?.cancel()
+        projectSaveFeedbackTask = nil
+        didJustSaveProject = false
     }
 
     private func resolvedCueFileType() -> JobStore.CueFile {
@@ -1400,7 +1411,7 @@ struct PreviewExportView: View {
 
     private func markCueStale(cueID: UUID) {
         cuesChangedSinceExport = true
-        projectSaveStatus = nil
+        clearProjectSaveFeedback()
         scheduleProjectAutosave()
         guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
 
@@ -1415,7 +1426,7 @@ struct PreviewExportView: View {
 
     private func markTranslationsStale() {
         cuesChangedSinceExport = true
-        projectSaveStatus = nil
+        clearProjectSaveFeedback()
         scheduleProjectAutosave()
         guard orchestrator.translationComplete, !translationSnapshot.isEmpty else { return }
         // Check all cues and rebuild stale set
@@ -2216,7 +2227,7 @@ struct PreviewExportView: View {
             orchestrator.translationComplete = true
         }
         cuesChangedSinceExport = true
-        projectSaveStatus = nil
+        clearProjectSaveFeedback()
         if appliedTranslation > 0 {
             snapshotTranslations()
         } else if wasTranslationComplete, appliedFixed > 0 {
