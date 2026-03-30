@@ -6,7 +6,10 @@ struct ProjectListView: View {
     @State private var projects: [ProjectSummary] = []
     @State private var pendingDelete: ProjectSummary?
     @State private var showClearAllConfirmation = false
+    @State private var showClearNonProjectConfirmation = false
     @State private var totalManagedStorageBytes: Int64 = 0
+    @State private var totalSavedProjectStorageBytes: Int64 = 0
+    @State private var totalNonProjectStorageBytes: Int64 = 0
     @AppStorage(SetupPreferences.projectAutosaveKey) private var projectAutosaveEnabled = false
 
     @Environment(\.dismiss) private var dismiss
@@ -16,13 +19,13 @@ struct ProjectListView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: AppSpacing.l) {
-                autoSaveCard
+            ScrollView {
+                VStack(spacing: AppSpacing.l) {
+                    autoSaveCard
 
-                if projects.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
+                    if projects.isEmpty {
+                        emptyState
+                    } else {
                         VStack(spacing: AppSpacing.m) {
                             ForEach(projects) { project in
                                 projectCard(project)
@@ -31,6 +34,7 @@ struct ProjectListView: View {
                         .padding(AppSpacing.l)
                     }
                 }
+                .padding(.bottom, AppSpacing.l)
             }
             .background(AppColors.background.ignoresSafeArea())
             .navigationTitle(String(localized: "Projects", bundle: .forLocale(locale)))
@@ -70,6 +74,15 @@ struct ProjectListView: View {
         } message: {
             Text(String(localized: "This will remove all saved projects, unfinished drafts, and cached local video files.", bundle: .forLocale(locale)))
         }
+        .alert(Text(String(localized: "Clear Non-Project Files?", bundle: .forLocale(locale))), isPresented: $showClearNonProjectConfirmation) {
+            Button(String(localized: "Clear Other Files", bundle: .forLocale(locale)), role: .destructive) {
+                jobStore.deleteManagedFilesNotBelongingToSavedProjects()
+                reloadProjects()
+            }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
+        } message: {
+            Text(String(localized: "This will remove unfinished drafts and cached local files that are not referenced by saved projects.", bundle: .forLocale(locale)))
+        }
     }
 
     private var autoSaveCard: some View {
@@ -98,6 +111,37 @@ struct ProjectListView: View {
                     .font(AppTypography.caption.weight(.semibold))
                     .foregroundStyle(AppColors.primaryText)
             }
+
+            HStack {
+                Text(String(localized: "Saved projects size", bundle: .forLocale(locale)))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+                Spacer()
+                Text(ByteCountFormatter.string(fromByteCount: totalSavedProjectStorageBytes, countStyle: .file))
+                    .font(AppTypography.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.primaryText)
+            }
+
+            HStack {
+                Text(String(localized: "Other local files", bundle: .forLocale(locale)))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.secondaryText)
+                Spacer()
+                Text(ByteCountFormatter.string(fromByteCount: totalNonProjectStorageBytes, countStyle: .file))
+                    .font(AppTypography.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.primaryText)
+            }
+
+            Button(role: .destructive) {
+                showClearNonProjectConfirmation = true
+            } label: {
+                Label(String(localized: "Clear Other Files", bundle: .forLocale(locale)), systemImage: "trash.slash")
+                    .font(AppTypography.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, AppSpacing.s)
+            }
+            .buttonStyle(.bordered)
+            .disabled(totalNonProjectStorageBytes <= 0)
 
             Button(role: .destructive) {
                 showClearAllConfirmation = true
@@ -251,5 +295,7 @@ struct ProjectListView: View {
     private func reloadProjects() {
         projects = jobStore.loadProjectSummaries()
         totalManagedStorageBytes = jobStore.totalManagedFileDiskUsageBytes()
+        totalSavedProjectStorageBytes = jobStore.totalSavedProjectDiskUsageBytes()
+        totalNonProjectStorageBytes = jobStore.totalNonProjectManagedDiskUsageBytes()
     }
 }

@@ -67,10 +67,18 @@ final class JobStore {
     }
 
     func totalManagedFileDiskUsageBytes() -> Int64 {
-        let urls = directoryContents(at: jobsDirectory())
-            + directoryContents(at: uploadsDirectory())
-            + managedTemporaryFileURLs()
+        totalBytes(for: managedFileURLs())
+    }
+
+    func totalSavedProjectDiskUsageBytes() -> Int64 {
+        let urls = loadAllSavedJobs().flatMap { projectFileURLs(forSavedProject: $0) }
         return totalBytes(for: urls)
+    }
+
+    func totalNonProjectManagedDiskUsageBytes() -> Int64 {
+        let protectedPaths = protectedManagedPathsForSavedProjects()
+        let removable = managedFileURLs().filter { !protectedPaths.contains($0.standardizedFileURL.path) }
+        return totalBytes(for: removable)
     }
 
     func saveProjectSnapshot(_ job: JobModel) throws {
@@ -151,6 +159,13 @@ final class JobStore {
         clearDirectoryContents(at: jobsDirectory())
         clearDirectoryContents(at: uploadsDirectory())
         clearManagedTemporaryFiles()
+    }
+
+    func deleteManagedFilesNotBelongingToSavedProjects() {
+        let protectedPaths = protectedManagedPathsForSavedProjects()
+        clearDirectoryContents(at: jobsDirectory(), keepingPaths: protectedPaths)
+        clearDirectoryContents(at: uploadsDirectory(), keepingPaths: protectedPaths)
+        clearManagedTemporaryFiles(keepingPaths: protectedPaths)
     }
 
     func saveCues(_ cues: [SubtitleCue], id: UUID, type: CueFile) throws {
@@ -348,6 +363,20 @@ final class JobStore {
         return urls
     }
 
+    private func protectedManagedPathsForSavedProjects() -> Set<String> {
+        Set(
+            loadAllSavedJobs()
+                .flatMap { projectFileURLs(forSavedProject: $0) }
+                .map { $0.standardizedFileURL.path }
+        )
+    }
+
+    private func managedFileURLs() -> [URL] {
+        directoryContents(at: jobsDirectory())
+            + directoryContents(at: uploadsDirectory())
+            + managedTemporaryFileURLs()
+    }
+
     private func totalBytes(for urls: [URL]) -> Int64 {
         var seenPaths = Set<String>()
         return urls.reduce(into: Int64.zero) { total, url in
@@ -393,14 +422,20 @@ final class JobStore {
         try? fileManager.removeItem(at: url)
     }
 
-    private func clearDirectoryContents(at directory: URL) {
+    private func clearDirectoryContents(at directory: URL, keepingPaths: Set<String> = []) {
         for url in directoryContents(at: directory) {
+            if keepingPaths.contains(url.standardizedFileURL.path) {
+                continue
+            }
             try? fileManager.removeItem(at: url)
         }
     }
 
-    private func clearManagedTemporaryFiles() {
+    private func clearManagedTemporaryFiles(keepingPaths: Set<String> = []) {
         for url in managedTemporaryFileURLs() {
+            if keepingPaths.contains(url.standardizedFileURL.path) {
+                continue
+            }
             try? fileManager.removeItem(at: url)
         }
     }

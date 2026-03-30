@@ -242,6 +242,8 @@
 "Auto-save projects" = "Auto-save projects";
 "When enabled, changes from Preview & Export are saved to Projects automatically." = "When enabled, changes from Preview & Export are saved to Projects automatically.";
 "Total files size" = "Total files size";
+"Saved projects size" = "Saved projects size";
+"Other local files" = "Other local files";
 "Save Project" = "Save Project";
 "Auto-save is on. Changes in this task are saved to Projects automatically." = "Auto-save is on. Changes in this task are saved to Projects automatically.";
 "This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "This task is only added to Projects when you tap Save Project. It is not saved there automatically.";
@@ -249,12 +251,15 @@
 "Delete Project?" = "Delete Project?";
 "This will remove the saved project and its local files." = "This will remove the saved project and its local files.";
 "Clear All Projects?" = "Clear All Projects?";
+"Clear Non-Project Files?" = "Clear Non-Project Files?";
 "This will remove all saved projects, unfinished drafts, and cached local video files." = "This will remove all saved projects, unfinished drafts, and cached local video files.";
+"This will remove unfinished drafts and cached local files that are not referenced by saved projects." = "This will remove unfinished drafts and cached local files that are not referenced by saved projects.";
 "No saved projects yet." = "No saved projects yet.";
 "Save a project after transcription or editing to reopen it later." = "Save a project after transcription or editing to reopen it later.";
 "Video missing" = "Video missing";
 "Open" = "Open";
 "Delete" = "Delete";
+"Clear Other Files" = "Clear Other Files";
 "Clear All" = "Clear All";
 "Size" = "Size";
 "%d cues" = "%d cues";
