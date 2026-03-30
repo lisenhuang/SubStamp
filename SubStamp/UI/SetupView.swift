@@ -1259,13 +1259,16 @@ private struct SetupSelectionSheetView: View {
 
     private func selectorRow(title: String, isSelected: Bool) -> some View {
         HStack(spacing: AppSpacing.s) {
-            Text(title)
-                .foregroundStyle(AppColors.primaryText)
-            Spacer()
             if isSelected {
                 Image(systemName: "checkmark")
                     .foregroundStyle(AppColors.accent)
+            } else {
+                Color.clear
+                    .frame(width: 16, height: 16)
             }
+            Text(title)
+                .foregroundStyle(AppColors.primaryText)
+            Spacer()
         }
         .contentShape(Rectangle())
     }

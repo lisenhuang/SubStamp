@@ -110,6 +110,7 @@ private struct SettingsSheetView: View {
                 }
             }
         }
+        .preferredColorScheme(settingsManager.appearanceMode)
     }
 
     private func appearanceOption(title: String, value: ColorScheme?) -> some View {
