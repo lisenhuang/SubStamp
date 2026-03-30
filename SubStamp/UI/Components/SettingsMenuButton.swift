@@ -7,6 +7,7 @@ struct SettingsMenuButton: View {
     @State private var showPaywall = false
     @State private var paywallUsedCount = 0
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button {
@@ -20,7 +21,8 @@ struct SettingsMenuButton: View {
             SettingsSheetView(
                 purchaseManager: purchaseManager,
                 showPaywall: $showPaywall,
-                paywallUsedCount: $paywallUsedCount
+                paywallUsedCount: $paywallUsedCount,
+                effectiveColorScheme: settingsManager.appearanceMode ?? colorScheme
             )
             .environmentObject(settingsManager)
         }
@@ -39,6 +41,7 @@ private struct SettingsSheetView: View {
     @ObservedObject var purchaseManager: PurchaseManager
     @Binding var showPaywall: Bool
     @Binding var paywallUsedCount: Int
+    let effectiveColorScheme: ColorScheme
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
@@ -79,6 +82,8 @@ private struct SettingsSheetView: View {
                                         .foregroundStyle(AppColors.accent)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -110,7 +115,7 @@ private struct SettingsSheetView: View {
                 }
             }
         }
-        .preferredColorScheme(settingsManager.appearanceMode)
+        .preferredColorScheme(effectiveColorScheme)
     }
 
     private func appearanceOption(title: String, value: ColorScheme?) -> some View {
@@ -126,6 +131,8 @@ private struct SettingsSheetView: View {
                         .foregroundStyle(AppColors.accent)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
