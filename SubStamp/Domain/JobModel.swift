@@ -4,6 +4,7 @@ struct JobModel: Identifiable, Codable {
     var id: UUID
     var createdAt: Date
     var updatedAt: Date
+    var projectName: String?
     var videoURL: URL
     var transcriptionLocale: String
     var language1Locale: String
@@ -26,6 +27,7 @@ struct JobModel: Identifiable, Codable {
         id: UUID = UUID(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
+        projectName: String? = nil,
         videoURL: URL,
         transcriptionLocale: String,
         language1Locale: String? = nil,
@@ -47,6 +49,7 @@ struct JobModel: Identifiable, Codable {
         self.id = id
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.projectName = projectName
         self.videoURL = videoURL
         self.transcriptionLocale = transcriptionLocale
         self.language1Locale = language1Locale ?? transcriptionLocale
@@ -72,6 +75,7 @@ private extension JobModel {
         case id
         case createdAt
         case updatedAt
+        case projectName
         case videoURL
         case transcriptionLocale
         case language1Locale
@@ -98,6 +102,7 @@ extension JobModel {
         id = try container.decode(UUID.self, forKey: .id)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
         videoURL = try container.decode(URL.self, forKey: .videoURL)
         transcriptionLocale = try container.decode(String.self, forKey: .transcriptionLocale)
         // Default language1 to transcription locale for backward compatibility
@@ -123,6 +128,7 @@ extension JobModel {
         try container.encode(id, forKey: .id)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(projectName, forKey: .projectName)
         try container.encode(videoURL, forKey: .videoURL)
         try container.encode(transcriptionLocale, forKey: .transcriptionLocale)
         try container.encode(language1Locale, forKey: .language1Locale)

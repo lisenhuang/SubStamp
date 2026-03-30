@@ -247,6 +247,10 @@
 "Auto-save is on. Changes in this task are saved to Projects automatically." = "自動保存がオンです。このタスクの変更はプロジェクト一覧に自動保存されます。";
 "This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "このタスクは「プロジェクトを保存」をタップしたときだけプロジェクト一覧に追加されます。自動では保存されません。";
 "Project saved." = "プロジェクトを保存しました。";
+"Rename Project" = "プロジェクト名を変更";
+"Project name" = "プロジェクト名";
+"Leave the name empty to use the video file name." = "空欄にすると動画ファイル名を使用します。";
+"Save" = "保存";
 "Delete Project?" = "このプロジェクトを削除しますか？";
 "This will remove the saved project and its local files." = "保存済みプロジェクトとローカルファイルが削除されます。";
 "Clear All Projects?" = "すべてのプロジェクトを削除しますか？";

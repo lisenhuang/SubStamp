@@ -10,6 +10,10 @@ struct ProjectSummary: Identifiable {
     var id: UUID { job.id }
 
     var displayName: String {
+        if let projectName = job.projectName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !projectName.isEmpty {
+            return projectName
+        }
         let baseName = job.videoURL.deletingPathExtension().lastPathComponent
         return baseName.isEmpty ? job.videoURL.lastPathComponent : baseName
     }
@@ -204,6 +208,24 @@ final class JobStore {
 
     func deleteSavedProjectCues(id: UUID, type: CueFile) {
         try? fileManager.removeItem(at: savedCueURL(id: id, type: type))
+    }
+
+    func renameSavedProject(id: UUID, to projectName: String?) {
+        let normalizedName = projectName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+
+        if var savedJob = try? loadSavedJob(id: id) {
+            savedJob.projectName = normalizedName
+            savedJob.updatedAt = Date()
+            try? saveProjectSnapshot(savedJob)
+        }
+
+        if var draftJob = try? loadJob(id: id) {
+            draftJob.projectName = normalizedName
+            draftJob.updatedAt = Date()
+            try? save(job: draftJob)
+        }
     }
 
     private func jobsDirectory() -> URL {
@@ -447,5 +469,11 @@ final class JobStore {
     private func managedTemporaryFileURLs() -> [URL] {
         directoryContents(at: fileManager.temporaryDirectory)
             .filter { $0.lastPathComponent.lowercased().hasPrefix("substamp_") }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

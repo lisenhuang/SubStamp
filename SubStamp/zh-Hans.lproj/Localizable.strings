@@ -247,6 +247,10 @@
 "Auto-save is on. Changes in this task are saved to Projects automatically." = "已开启自动保存，此任务的更改会自动保存到“项目”列表。";
 "This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "只有点击“保存项目”后，此任务才会加入“项目”列表，不会自动保存到那里。";
 "Project saved." = "项目已保存。";
+"Rename Project" = "重命名项目";
+"Project name" = "项目名称";
+"Leave the name empty to use the video file name." = "名称留空时将使用视频文件名。";
+"Save" = "保存";
 "Delete Project?" = "删除此项目？";
 "This will remove the saved project and its local files." = "这将删除已保存的项目及其本地文件。";
 "Clear All Projects?" = "清空所有项目？";

@@ -247,6 +247,10 @@
 "Auto-save is on. Changes in this task are saved to Projects automatically." = "자동 저장이 켜져 있어 이 작업의 변경 사항이 프로젝트 목록에 자동으로 저장됩니다.";
 "This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "이 작업은 '프로젝트 저장'을 눌렀을 때만 프로젝트 목록에 추가되며, 그곳에 자동 저장되지는 않습니다.";
 "Project saved." = "프로젝트가 저장되었습니다.";
+"Rename Project" = "프로젝트 이름 변경";
+"Project name" = "프로젝트 이름";
+"Leave the name empty to use the video file name." = "비워 두면 동영상 파일 이름을 사용합니다.";
+"Save" = "저장";
 "Delete Project?" = "이 프로젝트를 삭제할까요?";
 "This will remove the saved project and its local files." = "저장된 프로젝트와 로컬 파일이 함께 삭제됩니다.";
 "Clear All Projects?" = "모든 프로젝트를 삭제할까요?";

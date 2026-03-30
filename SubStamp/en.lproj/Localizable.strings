@@ -248,6 +248,10 @@
 "Auto-save is on. Changes in this task are saved to Projects automatically." = "Auto-save is on. Changes in this task are saved to Projects automatically.";
 "This task is only added to Projects when you tap Save Project. It is not saved there automatically." = "This task is only added to Projects when you tap Save Project. It is not saved there automatically.";
 "Project saved." = "Project saved.";
+"Rename Project" = "Rename Project";
+"Project name" = "Project name";
+"Leave the name empty to use the video file name." = "Leave the name empty to use the video file name.";
+"Save" = "Save";
 "Delete Project?" = "Delete Project?";
 "This will remove the saved project and its local files." = "This will remove the saved project and its local files.";
 "Clear All Projects?" = "Clear All Projects?";

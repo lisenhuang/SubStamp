@@ -5,11 +5,13 @@ struct ProjectListView: View {
 
     @State private var projects: [ProjectSummary] = []
     @State private var pendingDelete: ProjectSummary?
+    @State private var pendingRename: ProjectSummary?
     @State private var showClearAllConfirmation = false
     @State private var showClearNonProjectConfirmation = false
     @State private var totalManagedStorageBytes: Int64 = 0
     @State private var totalSavedProjectStorageBytes: Int64 = 0
     @State private var totalNonProjectStorageBytes: Int64 = 0
+    @State private var renameText = ""
     @AppStorage(SetupPreferences.projectAutosaveKey) private var projectAutosaveEnabled = false
 
     @Environment(\.dismiss) private var dismiss
@@ -64,6 +66,33 @@ struct ProjectListView: View {
             Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
         } message: { _ in
             Text(String(localized: "This will remove the saved project and its local files.", bundle: .forLocale(locale)))
+        }
+        .alert(
+            Text(String(localized: "Rename Project", bundle: .forLocale(locale))),
+            isPresented: Binding(
+                get: { pendingRename != nil },
+                set: {
+                    if !$0 {
+                        pendingRename = nil
+                        renameText = ""
+                    }
+                }
+            ),
+            presenting: pendingRename
+        ) { project in
+            TextField(String(localized: "Project name", bundle: .forLocale(locale)), text: $renameText)
+            Button(String(localized: "Save", bundle: .forLocale(locale))) {
+                jobStore.renameSavedProject(id: project.id, to: renameText)
+                pendingRename = nil
+                renameText = ""
+                reloadProjects()
+            }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) {
+                pendingRename = nil
+                renameText = ""
+            }
+        } message: { _ in
+            Text(String(localized: "Leave the name empty to use the video file name.", bundle: .forLocale(locale)))
         }
         .alert(Text(String(localized: "Clear All Projects?", bundle: .forLocale(locale))), isPresented: $showClearAllConfirmation) {
             Button(String(localized: "Clear All", bundle: .forLocale(locale)), role: .destructive) {
@@ -189,10 +218,24 @@ struct ProjectListView: View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             HStack(alignment: .top, spacing: AppSpacing.s) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(project.displayName)
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(AppColors.primaryText)
-                        .lineLimit(2)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(project.displayName)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(AppColors.primaryText)
+                            .lineLimit(2)
+
+                        Button {
+                            pendingRename = project
+                            renameText = project.job.projectName ?? project.displayName
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AppColors.secondaryText)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(String(localized: "Rename Project", bundle: .forLocale(locale)))
+                    }
 
                     Text(projectSubtitle(project))
                         .font(AppTypography.caption)
