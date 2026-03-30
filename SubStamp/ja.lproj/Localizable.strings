@@ -259,3 +259,8 @@
 "%d cues" = "%d件の字幕";
 "Translated" = "翻訳済み";
 "Transcript only" = "文字起こしのみ";
+"Settings" = "設定";
+"Search" = "検索";
+"Choose Audio Language" = "音声言語を選択";
+"Choose Subtitle 1" = "字幕 1 を選択";
+"Choose Subtitle 2" = "字幕 2 を選択";

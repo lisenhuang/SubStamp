@@ -259,3 +259,8 @@
 "%d cues" = "%d 条字幕";
 "Translated" = "已翻译";
 "Transcript only" = "仅转录";
+"Settings" = "设置";
+"Search" = "搜索";
+"Choose Audio Language" = "选择音频语言";
+"Choose Subtitle 1" = "选择字幕 1";
+"Choose Subtitle 2" = "选择字幕 2";

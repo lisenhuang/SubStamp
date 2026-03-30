@@ -259,3 +259,8 @@
 "%d cues" = "자막 %d개";
 "Translated" = "번역됨";
 "Transcript only" = "전사만";
+"Settings" = "설정";
+"Search" = "검색";
+"Choose Audio Language" = "오디오 언어 선택";
+"Choose Subtitle 1" = "자막 1 선택";
+"Choose Subtitle 2" = "자막 2 선택";

@@ -35,6 +35,10 @@ struct SetupView: View {
     @StateObject private var purchaseManager = PurchaseManager()
     @State private var showPaywall = false
     @State private var paywallUsedCount = 0
+    @State private var isApplyingSelectionBindings = false
+    @State private var assetCheckTask: Task<Void, Never>?
+    @State private var subtitleTargetsTask: Task<Void, Never>?
+    @State private var activeSelectionSheet: SetupSelectionSheet?
     
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
@@ -102,13 +106,28 @@ struct SetupView: View {
                 freeLimit: SaveShareQuotaStore.freeLimit
             ) {}
         }
+        .sheet(item: $activeSelectionSheet) { sheet in
+            SetupSelectionSheetView(
+                sheet: sheet,
+                locale: locale,
+                supportedSpeechLocales: supportedSpeechLocales,
+                installedSpeechIDs: installedSpeechIDs,
+                subtitleTargets: subtitleTargets,
+                transcriptionLocaleIdentifier: $transcriptionLocaleIdentifier,
+                selectedSubtitle1ID: $selectedSubtitle1ID,
+                selectedSubtitle2ID: $selectedSubtitle2ID
+            )
+        }
         .onAppear {
             applyCachedLanguageOptions()
             syncSubtitleSelectionsFromBindings()
+            updateAssetManager()
+        }
+        .onDisappear {
+            assetCheckTask?.cancel()
+            subtitleTargetsTask?.cancel()
         }
         .task {
-            applyCachedLanguageOptions()
-            syncSubtitleSelectionsFromBindings()
             await purchaseManager.prepareEntitlementsIfNeeded()
             logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
             speechAvailable = SpeechTranscriber.isAvailable
@@ -182,12 +201,7 @@ struct SetupView: View {
                 language1Identifier = normalizedTranscription
             }
             
-            await updateSubtitleTargets()
-
-            // 2. Initialize from existing bindings (only after targets are known to avoid invalid Picker selections)
-            syncSubtitleSelectionsFromBindings()
-
-            updateAssetManager()
+            await refreshSubtitleTargets()
         }
         .translationTask(translationConfig) { session in
             guard shouldPrepareTranslation else { return }
@@ -215,28 +229,23 @@ struct SetupView: View {
             }
             applyCachedSubtitleTargets()
             syncSubtitleSelectionsFromBindings()
-            Task {
-                await updateSubtitleTargets()
-                syncSubtitleSelectionsFromBindings()
-                updateAssetManager()
-            }
+            scheduleSubtitleTargetsRefresh()
         }
         .onChange(of: transcriptionLocaleIdentifier) { _, _ in
             applyCachedSubtitleTargets()
             syncSubtitleSelectionsFromBindings()
-            Task {
-                await updateSubtitleTargets()
-                syncSubtitleSelectionsFromBindings()
-                updateAssetManager()
-            }
+            scheduleSubtitleTargetsRefresh()
         }
         .onChange(of: selectedSubtitle1ID) { _, _ in
+            guard !isApplyingSelectionBindings else { return }
             updateAssetManager()
         }
         .onChange(of: subtitle2Enabled) { _, _ in
+            guard !isApplyingSelectionBindings else { return }
             updateAssetManager()
         }
         .onChange(of: selectedSubtitle2ID) { _, _ in
+            guard !isApplyingSelectionBindings else { return }
             updateAssetManager()
         }
         .onChange(of: scenePhase) { _, newValue in
@@ -252,11 +261,7 @@ struct SetupView: View {
                 }
                 applyCachedSubtitleTargets()
                 syncSubtitleSelectionsFromBindings()
-                Task {
-                    await updateSubtitleTargets()
-                    syncSubtitleSelectionsFromBindings()
-                    updateAssetManager()
-                }
+                scheduleSubtitleTargetsRefresh()
             }
         }
     }
@@ -308,26 +313,12 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             Text("Audio language")
                 .font(AppTypography.bodyEmphasis)
-            
-            Picker(selection: $transcriptionLocaleIdentifier) {
-                Text(selectedAudioLocaleLabel()).tag(transcriptionLocaleIdentifier)
-                Divider()
-                ForEach(Array(supportedSpeechLocales.enumerated()), id: \.element.identifier) { index, locale in
-                    let installed = installedSpeechIDs.contains(locale.identifier(.bcp47))
-                    Text("\(index + 1). \(audioLocaleLabel(locale))\(installed ? " ✓" : "")")
-                        .tag(locale.identifier)
-                }
+            Button {
+                activeSelectionSheet = .audioLanguage
             } label: {
-                HStack {
-                    Text(selectedAudioLocaleLabel())
-                        .foregroundStyle(AppColors.primaryText)
-                    Spacer()
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(AppColors.secondaryText)
-                }
+                selectionFieldLabel(text: selectedAudioLocaleLabel())
             }
-            .pickerStyle(.menu)
+            .buttonStyle(.plain)
             
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -358,26 +349,12 @@ struct SetupView: View {
             VStack(alignment: .leading, spacing: AppSpacing.s) {
                 Text("Subtitle 1")
                     .font(AppTypography.bodyEmphasis)
-                
-                Picker(selection: $selectedSubtitle1ID) {
-                    Text(selectedSubtitle1Label()).tag(selectedSubtitle1ID)
-                    Divider()
-                    Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript")
-                    ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
-                        Text("\(index + 1). \(targetLabel(target))")
-                            .tag(target.id)
-                    }
+                Button {
+                    activeSelectionSheet = .subtitle1
                 } label: {
-                    HStack {
-                        Text(selectedSubtitle1Label())
-                            .foregroundStyle(AppColors.primaryText)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(AppColors.secondaryText)
-                    }
+                    selectionFieldLabel(text: selectedSubtitle1Label())
                 }
-                .pickerStyle(.menu)
+                .buttonStyle(.plain)
                 
                 if let option = subtitleTargets.first(where: { $0.id == selectedSubtitle1ID }),
                    option.mode == .pivot {
@@ -403,26 +380,12 @@ struct SetupView: View {
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.warning)
                     } else {
-                        Picker(selection: $selectedSubtitle2ID) {
-                            Text(selectedSubtitle2Label()).tag(selectedSubtitle2ID)
-                            Divider()
-                            Text("Select language").tag(nil as String?)
-                            Text("\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))").tag("transcript" as String?)
-                            ForEach(Array(subtitleTargets.enumerated()), id: \.element.id) { index, target in
-                                Text("\(index + 1). \(targetLabel(target))")
-                                    .tag(target.id as String?)
-                            }
+                        Button {
+                            activeSelectionSheet = .subtitle2
                         } label: {
-                            HStack {
-                                Text(selectedSubtitle2Label())
-                                    .foregroundStyle(AppColors.primaryText)
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.secondaryText)
-                            }
+                            selectionFieldLabel(text: selectedSubtitle2Label())
                         }
-                        .pickerStyle(.menu)
+                        .buttonStyle(.plain)
                         
                         if let selectedID = selectedSubtitle2ID,
                            let option = subtitleTargets.first(where: { $0.id == selectedID }),
@@ -989,9 +952,22 @@ struct SetupView: View {
         return parts.first(where: { isRegionSubtag($0) })
     }
 
-    private func updateSubtitleTargets() async {
-        let audioLocale = Locale(identifier: transcriptionLocaleIdentifier)
-        subtitleTargets = await selectionLogic.computeTargets(for: audioLocale, provider: translationProvider)
+    private func scheduleSubtitleTargetsRefresh() {
+        subtitleTargetsTask?.cancel()
+        subtitleTargetsTask = Task {
+            await refreshSubtitleTargets()
+        }
+    }
+
+    private func refreshSubtitleTargets() async {
+        let transcriptionID = transcriptionLocaleIdentifier
+        let provider = translationProvider
+        let audioLocale = Locale(identifier: transcriptionID)
+        let computedTargets = await selectionLogic.computeTargets(for: audioLocale, provider: provider)
+        guard !Task.isCancelled else { return }
+        guard transcriptionLocaleIdentifier == transcriptionID, translationProvider == provider else { return }
+
+        subtitleTargets = computedTargets
         
         // Validation
         if selectedSubtitle1ID != "transcript" && !subtitleTargets.contains(where: { $0.id == selectedSubtitle1ID }) {
@@ -1000,6 +976,10 @@ struct SetupView: View {
         if let current = selectedSubtitle2ID, current != "transcript" && !subtitleTargets.contains(where: { $0.id == current }) {
             selectedSubtitle2ID = mappedSubtitleSelection(current)
         }
+
+        // Only sync/apply after the target list is known and still current.
+        syncSubtitleSelectionsFromBindings()
+        updateAssetManager()
     }
 
     private func applyCachedLanguageOptions() {
@@ -1028,6 +1008,9 @@ struct SetupView: View {
     }
 
     private func syncSubtitleSelectionsFromBindings() {
+        isApplyingSelectionBindings = true
+        defer { isApplyingSelectionBindings = false }
+
         let desiredSubtitle1ID = language1Identifier == transcriptionLocaleIdentifier ? "transcript" : language1Identifier
         if desiredSubtitle1ID == "transcript" {
             selectedSubtitle1ID = "transcript"
@@ -1096,11 +1079,314 @@ struct SetupView: View {
             subtitle2: s2
         )
         assetManager.configure(with: config)
-        Task { await assetManager.check() }
+        assetCheckTask?.cancel()
+        assetCheckTask = Task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            await assetManager.check()
+        }
+    }
+
+    private func selectionFieldLabel(text: String) -> some View {
+        HStack {
+            Text(text)
+                .foregroundStyle(AppColors.primaryText)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: AppSpacing.s)
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(AppColors.secondaryText)
+        }
+        .padding(.horizontal, AppSpacing.m)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.secondaryBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
+                .stroke(AppColors.cardBorder, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
     }
 }
 
 // MARK: - Safari View Helpers
+
+private enum SetupSelectionSheet: String, Identifiable {
+    case audioLanguage
+    case subtitle1
+    case subtitle2
+
+    var id: String { rawValue }
+}
+
+private struct SetupSelectionSheetView: View {
+    let sheet: SetupSelectionSheet
+    let locale: Locale
+    let supportedSpeechLocales: [Locale]
+    let installedSpeechIDs: Set<String>
+    let subtitleTargets: [TargetOption]
+    @Binding var transcriptionLocaleIdentifier: String
+    @Binding var selectedSubtitle1ID: String
+    @Binding var selectedSubtitle2ID: String?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                switch sheet {
+                case .audioLanguage:
+                    ForEach(filteredAudioLocales, id: \.identifier) { localeOption in
+                        Button {
+                            transcriptionLocaleIdentifier = localeOption.identifier
+                            dismiss()
+                        } label: {
+                            selectorRow(
+                                title: audioLocaleLabel(localeOption),
+                                isSelected: localeOption.identifier == transcriptionLocaleIdentifier
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                case .subtitle1:
+                    Button {
+                        selectedSubtitle1ID = "transcript"
+                        dismiss()
+                    } label: {
+                        selectorRow(
+                            title: transcriptLabel,
+                            isSelected: selectedSubtitle1ID == "transcript"
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(filteredSubtitleTargets) { target in
+                        Button {
+                            selectedSubtitle1ID = target.id
+                            dismiss()
+                        } label: {
+                            selectorRow(
+                                title: targetLabel(target),
+                                isSelected: selectedSubtitle1ID == target.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                case .subtitle2:
+                    Button {
+                        selectedSubtitle2ID = nil
+                        dismiss()
+                    } label: {
+                        selectorRow(
+                            title: String(localized: "Select language", bundle: .forLocale(locale)),
+                            isSelected: selectedSubtitle2ID == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        selectedSubtitle2ID = "transcript"
+                        dismiss()
+                    } label: {
+                        selectorRow(
+                            title: transcriptLabel,
+                            isSelected: selectedSubtitle2ID == "transcript"
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(filteredSubtitleTargets) { target in
+                        Button {
+                            selectedSubtitle2ID = target.id
+                            dismiss()
+                        } label: {
+                            selectorRow(
+                                title: targetLabel(target),
+                                isSelected: selectedSubtitle2ID == target.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .searchable(text: $searchText, prompt: String(localized: "Search", bundle: .forLocale(locale)))
+            .navigationTitle(sheetTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(String(localized: "Close", bundle: .forLocale(locale))) {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var sheetTitle: String {
+        switch sheet {
+        case .audioLanguage:
+            return String(localized: "Choose Audio Language", bundle: .forLocale(locale))
+        case .subtitle1:
+            return String(localized: "Choose Subtitle 1", bundle: .forLocale(locale))
+        case .subtitle2:
+            return String(localized: "Choose Subtitle 2", bundle: .forLocale(locale))
+        }
+    }
+
+    private var transcriptLabel: String {
+        "\(flagPrefix(for: transcriptionLocaleIdentifier)) \(String(localized: "Transcript (Audio Language)", bundle: .forLocale(locale)))"
+    }
+
+    private var filteredAudioLocales: [Locale] {
+        guard !searchText.isEmpty else { return supportedSpeechLocales }
+        return supportedSpeechLocales.filter { localeOption in
+            let label = audioLocaleLabel(localeOption)
+            return label.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var filteredSubtitleTargets: [TargetOption] {
+        guard !searchText.isEmpty else { return subtitleTargets }
+        return subtitleTargets.filter { option in
+            targetLabel(option).localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private func selectorRow(title: String, isSelected: Bool) -> some View {
+        HStack(spacing: AppSpacing.s) {
+            Text(title)
+                .foregroundStyle(AppColors.primaryText)
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(AppColors.accent)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func audioLocaleLabel(_ localeOption: Locale) -> String {
+        let name = localeOption.localizedString(forIdentifier: localeOption.identifier) ?? localeOption.identifier
+        let flag = flagPrefix(for: localeOption.identifier(.bcp47))
+        let installed = installedSpeechIDs.contains(localeOption.identifier(.bcp47))
+        return "\(flag) \(name) (\(localeOption.identifier(.bcp47)))\(installed ? " ✓" : "")"
+    }
+
+    private func targetLabel(_ target: TargetOption) -> String {
+        let flag = flagPrefix(for: target.id)
+        var label = "\(flag) \(target.displayName) (\(target.id))"
+        if target.mode == .pivot {
+            label += " " + String(localized: "(via English)", bundle: .forLocale(locale))
+        }
+        return label
+    }
+
+    private func flagPrefix(for identifier: String) -> String {
+        guard let region = regionCode(from: identifier) else { return "🌐" }
+        if let flag = flagEmoji(forRegionCode: region) {
+            return flag
+        }
+        if isNumericRegion(region) {
+            return "🌎"
+        }
+        return "🏳️"
+    }
+
+    private func regionCode(from identifier: String) -> String? {
+        let components = identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .map(String.init)
+
+        guard !components.isEmpty else { return nil }
+
+        var candidateIndex = 1
+        if components.count > 2, isScriptSubtag(components[1]) {
+            candidateIndex = 2
+        }
+
+        if components.indices.contains(candidateIndex), isRegionSubtag(components[candidateIndex]) {
+            return components[candidateIndex].uppercased()
+        }
+
+        for component in components.dropFirst() {
+            if isRegionSubtag(component) {
+                return component.uppercased()
+            }
+        }
+
+        let locale = Locale(identifier: identifier)
+        if let region = locale.region?.identifier ?? locale.regionCode?.uppercased() {
+            return region
+        }
+
+        let languageCode = components[0].lowercased()
+        return defaultRegion(forLanguageCode: languageCode)
+    }
+
+    private func flagEmoji(forRegionCode regionCode: String) -> String? {
+        let code = regionCode.uppercased()
+        guard code.count == 2 else { return nil }
+        let scalars = code.unicodeScalars
+        guard scalars.allSatisfy({ $0.value >= 65 && $0.value <= 90 }) else { return nil }
+
+        let base: UInt32 = 0x1F1E6
+        let first = base + (scalars[scalars.startIndex].value - 65)
+        let second = base + (scalars[scalars.index(after: scalars.startIndex)].value - 65)
+        guard let s1 = UnicodeScalar(first), let s2 = UnicodeScalar(second) else { return nil }
+        return String(Character(s1)) + String(Character(s2))
+    }
+
+    private func isRegionSubtag(_ component: String) -> Bool {
+        if component.count == 2 {
+            return component.unicodeScalars.allSatisfy { scalar in
+                let v = scalar.value
+                return (v >= 65 && v <= 90) || (v >= 97 && v <= 122)
+            }
+        }
+        if component.count == 3 {
+            return component.unicodeScalars.allSatisfy { scalar in
+                let v = scalar.value
+                return v >= 48 && v <= 57
+            }
+        }
+        return false
+    }
+
+    private func isScriptSubtag(_ component: String) -> Bool {
+        guard component.count == 4 else { return false }
+        return component.unicodeScalars.allSatisfy { scalar in
+            let v = scalar.value
+            return (v >= 65 && v <= 90) || (v >= 97 && v <= 122)
+        }
+    }
+
+    private func isNumericRegion(_ regionCode: String) -> Bool {
+        guard regionCode.count == 3 else { return false }
+        return regionCode.unicodeScalars.allSatisfy { scalar in
+            let v = scalar.value
+            return v >= 48 && v <= 57
+        }
+    }
+
+    private func defaultRegion(forLanguageCode languageCode: String) -> String? {
+        let map: [String: String] = [
+            "ar": "SA", "ca": "ES", "cs": "CZ", "da": "DK", "de": "DE",
+            "el": "GR", "en": "US", "es": "ES", "fa": "IR", "fi": "FI",
+            "fr": "FR", "he": "IL", "hi": "IN", "hr": "HR", "hu": "HU",
+            "id": "ID", "it": "IT", "ja": "JP", "ko": "KR", "ms": "MY",
+            "nb": "NO", "nl": "NL", "nn": "NO", "no": "NO", "pl": "PL",
+            "pt": "BR", "ro": "RO", "ru": "RU", "sk": "SK", "sv": "SE",
+            "th": "TH", "tr": "TR", "uk": "UA", "vi": "VN", "zh": "CN"
+        ]
+        return map[languageCode]
+    }
+}
 
 struct SafariURLItem: Identifiable {
     let id = UUID()
