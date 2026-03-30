@@ -2309,12 +2309,82 @@ struct PreviewExportView: View {
             return nil
         }
 
+        func nextNonWhitespaceIndex(after index: Int) -> Int? {
+            var i = index
+            while i < scalars.count {
+                if !isWhitespace(scalars[i]) { return i }
+                i += 1
+            }
+            return nil
+        }
+
         func isStructuralQuoteCandidate(_ scalar: UnicodeScalar) -> Bool {
             switch scalar.value {
             case 0x0027, // '
                 0x2018, 0x2019, 0x201A, 0xFF07, // smart/fullwidth single quotes
                 0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0xFF02: // smart/fullwidth double quotes
                 return true
+            default:
+                return false
+            }
+        }
+
+        func isDoubleQuoteCandidate(_ scalar: UnicodeScalar) -> Bool {
+            switch scalar.value {
+            case 0x0022, // "
+                0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0xFF02:
+                return true
+            default:
+                return false
+            }
+        }
+
+        func isLikelyJSONValueStart(_ scalar: UnicodeScalar) -> Bool {
+            switch scalar.value {
+            case 0x0022, // "
+                0x007B, // {
+                0x005B, // [
+                0x002D, // -
+                0x0074, // t
+                0x0066, // f
+                0x006E, // n
+                0xFF5B, // ｛
+                0xFF3B, // ［
+                0xFF02: // ＂
+                return true
+            case 0x0030...0x0039: // 0-9
+                return true
+            default:
+                return isStructuralQuoteCandidate(scalar)
+            }
+        }
+
+        func canTerminateJSONString(at quoteIndex: Int) -> Bool {
+            guard let nextIndex = nextNonWhitespaceIndex(after: quoteIndex + 1) else {
+                return true
+            }
+
+            switch scalars[nextIndex].value {
+            case 0x003A, 0xFF1A: // : or ：
+                guard let valueIndex = nextNonWhitespaceIndex(after: nextIndex + 1) else {
+                    return false
+                }
+                return isLikelyJSONValueStart(scalars[valueIndex])
+
+            case 0x002C, 0xFF0C: // , or ，
+                guard let followingIndex = nextNonWhitespaceIndex(after: nextIndex + 1) else {
+                    return false
+                }
+                switch scalars[followingIndex].value {
+                case 0x007D, 0x005D, 0xFF5D, 0xFF3D: // } ] ｝ ］
+                    return true
+                default:
+                    return isLikelyJSONValueStart(scalars[followingIndex])
+                }
+
+            case 0x007D, 0x005D, 0xFF5D, 0xFF3D: // } ] ｝ ］
+                return true
+
             default:
                 return false
             }
@@ -2392,6 +2462,20 @@ struct PreviewExportView: View {
                     break
                 }
             } else {
+                if isDoubleQuoteCandidate(r), backslashRun % 2 == 0 {
+                    if canTerminateJSONString(at: i) {
+                        if r.value != 0x22 {
+                            r = UnicodeScalar(0x22)!
+                            changed = true
+                        }
+                    } else {
+                        out.append("\\\"")
+                        backslashRun = 0
+                        changed = true
+                        continue
+                    }
+                }
+
                 // Raw control characters inside JSON strings are invalid. Escape the common cases.
                 switch r.value {
                 case 0x0A:
