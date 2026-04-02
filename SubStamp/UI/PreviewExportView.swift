@@ -69,6 +69,7 @@ struct PreviewExportView: View {
     @Environment(\.locale) private var locale
 
     private let jobStore = JobStore()
+    private let isRunningOnMac = ProcessInfo.processInfo.isiOSAppOnMac
 
     private var job: JobModel? { activeJob }
 
@@ -243,9 +244,16 @@ struct PreviewExportView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 ZStack {
-                    PlayerSurfaceView(player: player) { rect in
-                        inlinePreviewVideoRect = rect
-                    }
+                    PlayerSurfaceView(
+                        player: player,
+                        onVideoRectChange: { rect in
+                            inlinePreviewVideoRect = rect
+                        },
+                        keyboardControlsEnabled: isRunningOnMac && !isTextFieldFocused,
+                        onTogglePlayback: { togglePreviewPlayback() },
+                        onSeekBackward: { seekPreview(by: -10) },
+                        onSeekForward: { seekPreview(by: 10) }
+                    )
 
                     if let cue = currentOverlayCue {
                         VideoSubtitleOverlayView(
@@ -355,9 +363,16 @@ struct PreviewExportView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                PlayerSurfaceView(player: player) { rect in
-                    fullscreenPreviewVideoRect = rect
-                }
+                PlayerSurfaceView(
+                    player: player,
+                    onVideoRectChange: { rect in
+                        fullscreenPreviewVideoRect = rect
+                    },
+                    keyboardControlsEnabled: isRunningOnMac && !isTextFieldFocused,
+                    onTogglePlayback: { togglePreviewPlayback() },
+                    onSeekBackward: { seekPreview(by: -10) },
+                    onSeekForward: { seekPreview(by: 10) }
+                )
                 .ignoresSafeArea()
 
                 if let cue = currentOverlayCue {
