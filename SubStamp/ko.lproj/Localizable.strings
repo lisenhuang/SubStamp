@@ -215,6 +215,8 @@
 "Weekly Subscription" = "주간 구독";
 "Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "동영상 내보내기, 자막 파일 내보내기, 저장, 공유를 무제한으로 이용할 수 있습니다. 언제든 취소할 수 있습니다.";
 "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "자막 내보내기는 유료 기능입니다. Pro를 잠금 해제하면 .srt 자막 파일을 내보내고 공유할 수 있습니다.";
+"Subtitle translation is a premium feature. Unlock Pro to translate subtitles." = "자막 번역은 유료 기능입니다. Pro를 잠금 해제하면 자막을 번역할 수 있습니다.";
+"Copying AI translation prompts is a premium feature. Unlock Pro to use manual prompt translation tools." = "AI 번역 프롬프트 복사는 유료 기능입니다. Pro를 잠금 해제하면 수동 프롬프트 번역 도구를 사용할 수 있습니다.";
 "Loading purchase options..." = "구매 옵션을 불러오는 중...";
 "Lifetime Unlock" = "평생 이용권";
 "Restore Purchases" = "구매 복원";

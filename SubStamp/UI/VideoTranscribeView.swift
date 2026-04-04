@@ -27,6 +27,7 @@ struct VideoTranscribeView: View {
     @State private var isImportingFromFiles = false
     @State private var videoError: String?
     @State private var showBackToSetupConfirmation = false
+    @State private var selectedVideoProjectName: String?
 
     @Environment(\.locale) private var locale
 
@@ -323,6 +324,7 @@ struct VideoTranscribeView: View {
                     return
                 }
                 selectedVideoURL = imported.url
+                selectedVideoProjectName = imported.projectName
                 metadata = await VideoMetadata.load(from: imported.url)
             } catch {
                 videoError = String(localized: "Could not load video. Try another clip.", bundle: .forLocale(locale))
@@ -342,6 +344,7 @@ struct VideoTranscribeView: View {
             do {
                 let imported = try ImportedVideo.importFromFileURL(url)
                 selectedVideoURL = imported.url
+                selectedVideoProjectName = imported.projectName
                 metadata = await VideoMetadata.load(from: imported.url)
             } catch {
                 videoError = String(localized: "Could not load video. Try another clip.", bundle: .forLocale(locale))
@@ -356,6 +359,11 @@ struct VideoTranscribeView: View {
         let job: JobModel = {
             if var existing = activeJob {
                 existing.videoURL = selectedVideoURL
+                if let projectName = selectedVideoProjectName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !projectName.isEmpty,
+                   (existing.projectName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                    existing.projectName = projectName
+                }
                 existing.transcriptionLocale = transcriptionLocale
                 existing.language1Locale = language1Locale
                 existing.subtitle1Mode = subtitle1Mode
@@ -376,6 +384,7 @@ struct VideoTranscribeView: View {
             }
 
             return JobModel(
+                projectName: selectedVideoProjectName,
                 videoURL: selectedVideoURL,
                 transcriptionLocale: transcriptionLocale,
                 language1Locale: language1Locale,
@@ -405,6 +414,7 @@ struct VideoTranscribeView: View {
 /// Used to load a video from PhotosPickerItem; `URL.self` does not work for library videos.
 struct ImportedVideo: Transferable {
     let url: URL
+    let projectName: String
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
             try copyReceivedVideo(received)
@@ -442,6 +452,8 @@ struct ImportedVideo: Transferable {
             try FileManager.default.removeItem(at: dest)
         }
         try FileManager.default.copyItem(at: sourceURL, to: dest)
-        return Self(url: dest)
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let projectName = baseName.isEmpty ? sourceURL.lastPathComponent : baseName
+        return Self(url: dest, projectName: projectName)
     }
 }

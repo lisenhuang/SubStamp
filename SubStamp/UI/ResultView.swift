@@ -733,6 +733,7 @@ struct PurchasePaywallView: View {
     @ObservedObject var purchaseManager: PurchaseManager
     let usedCount: Int
     let freeLimit: Int
+    var introMessage: String? = nil
     var featureMessage: String? = nil
     var onUnlocked: () -> Void
 
@@ -747,7 +748,7 @@ struct PurchasePaywallView: View {
             VStack(alignment: .leading, spacing: AppSpacing.m) {
                 Text(String(localized: "Unlock Pro", bundle: .forLocale(locale)))
                     .font(AppTypography.title)
-                Text(String(format: String(localized: "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
+                Text(introMessage ?? String(format: String(localized: "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
                     .font(AppTypography.body)
                     .foregroundStyle(AppColors.secondaryText)
 

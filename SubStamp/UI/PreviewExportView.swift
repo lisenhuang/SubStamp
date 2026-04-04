@@ -51,10 +51,12 @@ struct PreviewExportView: View {
     @State private var projectSaveFeedbackTask: Task<Void, Never>?
     @State private var previewScrollView: UIScrollView?
     @StateObject private var purchaseManager = PurchaseManager()
-    @State private var showSubtitleExportPaywall = false
+    @State private var showPremiumFeaturePaywall = false
     @State private var paywallUsedCount = 0
     @State private var subtitleShareItem: ShareFileItem?
-    @State private var subtitleExportAfterUnlock = false
+    @State private var premiumIntroMessage: String?
+    @State private var premiumFeatureMessage: String?
+    @State private var pendingPremiumAction: PendingPremiumAction?
 
     // Stale translation detection
     @State private var translationSnapshot: [UUID: String] = [:]
@@ -88,6 +90,12 @@ struct PreviewExportView: View {
     private struct ShareFileItem: Identifiable {
         let id = UUID()
         let url: URL
+    }
+
+    private enum PendingPremiumAction {
+        case subtitleExport
+        case translate
+        case copyPrompt
     }
 
     private enum ManualTranslationTrack: String, CaseIterable, Identifiable {
@@ -402,12 +410,13 @@ struct PreviewExportView: View {
                 subtitleShareItem = nil
             }
         }
-        .sheet(isPresented: $showSubtitleExportPaywall) {
+        .sheet(isPresented: $showPremiumFeaturePaywall) {
             PurchasePaywallView(
                 purchaseManager: purchaseManager,
                 usedCount: paywallUsedCount,
                 freeLimit: SaveShareQuotaStore.freeLimit,
-                featureMessage: String(localized: "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format.", bundle: .forLocale(locale))
+                introMessage: premiumIntroMessage,
+                featureMessage: premiumFeatureMessage
             ) {}
         }
         .onAppear {
@@ -478,11 +487,21 @@ struct PreviewExportView: View {
                 scheduleProjectAutosave()
             }
         }
-        .onChange(of: showSubtitleExportPaywall) { _, isPresented in
+        .onChange(of: showPremiumFeaturePaywall) { _, isPresented in
             guard !isPresented else { return }
-            defer { subtitleExportAfterUnlock = false }
-            guard subtitleExportAfterUnlock, purchaseManager.hasPremiumAccess else { return }
-            Task { await beginSubtitleExport(skipPurchasePreparation: true) }
+            let pendingAction = pendingPremiumAction
+            pendingPremiumAction = nil
+            premiumIntroMessage = nil
+            premiumFeatureMessage = nil
+            guard purchaseManager.hasPremiumAccess, let pendingAction else { return }
+            switch pendingAction {
+            case .subtitleExport:
+                Task { await beginSubtitleExport(skipPurchasePreparation: true) }
+            case .translate:
+                startTranslationNow()
+            case .copyPrompt:
+                copyManualTranslationPromptToClipboardNow()
+            }
         }
         .translationTask(config1) { session in
             session1 = session
@@ -564,7 +583,7 @@ struct PreviewExportView: View {
                     .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(AppColors.error)
                 PrimaryButton(title: "Retry", systemImage: "arrow.clockwise") {
-                    startTranslation()
+                    Task { await beginTranslation() }
                 }
             }
         } else if showTranslateButton {
@@ -578,7 +597,7 @@ struct PreviewExportView: View {
                     title: "Translate",
                     systemImage: "globe"
                 ) {
-                    startTranslation()
+                    Task { await beginTranslation() }
                 }
             }
         }
@@ -905,7 +924,7 @@ struct PreviewExportView: View {
                     VStack(alignment: .leading, spacing: AppSpacing.s) {
                         HStack(spacing: AppSpacing.s) {
                             Button {
-                                copyManualTranslationPromptToClipboard()
+                                Task { await beginManualPromptCopy() }
                             } label: {
                                 Group {
                                     if didCopyManualPrompt {
@@ -1139,7 +1158,7 @@ struct PreviewExportView: View {
 
     // MARK: - Actions
 
-    private func startTranslation() {
+    private func startTranslationNow() {
         guard let job else { return }
         translationsAreStale = false
         orchestrator.startTranslation(
@@ -1160,6 +1179,19 @@ struct PreviewExportView: View {
         }
     }
 
+    @MainActor
+    private func beginTranslation() async {
+        await purchaseManager.prepareIfNeeded()
+        guard purchaseManager.hasPremiumAccess else {
+            await presentPremiumPaywall(
+                for: .translate,
+                introMessage: String(localized: "Subtitle translation is a premium feature. Unlock Pro to translate subtitles.", bundle: .forLocale(locale))
+            )
+            return
+        }
+        startTranslationNow()
+    }
+
     private func startExport() {
         guard let job else { return }
         orchestrator.startRenderExport(job: job)
@@ -1172,9 +1204,10 @@ struct PreviewExportView: View {
         }
 
         guard purchaseManager.hasPremiumAccess else {
-            paywallUsedCount = await SaveShareQuotaStore.shared.totalUsedCount()
-            subtitleExportAfterUnlock = true
-            showSubtitleExportPaywall = true
+            await presentPremiumPaywall(
+                for: .subtitleExport,
+                featureMessage: String(localized: "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format.", bundle: .forLocale(locale))
+            )
             return
         }
 
@@ -1187,6 +1220,19 @@ struct PreviewExportView: View {
                 message: String(localized: "Failed to create subtitle file.", bundle: .forLocale(locale))
             )
         }
+    }
+
+    @MainActor
+    private func presentPremiumPaywall(
+        for action: PendingPremiumAction,
+        introMessage: String? = nil,
+        featureMessage: String? = nil
+    ) async {
+        paywallUsedCount = await SaveShareQuotaStore.shared.totalUsedCount()
+        pendingPremiumAction = action
+        premiumIntroMessage = introMessage
+        premiumFeatureMessage = featureMessage
+        showPremiumFeaturePaywall = true
     }
 
     private func makeSubtitleExportFile() throws -> URL {
@@ -1797,7 +1843,20 @@ struct PreviewExportView: View {
         }
     }
 
-    private func copyManualTranslationPromptToClipboard() {
+    @MainActor
+    private func beginManualPromptCopy() async {
+        await purchaseManager.prepareIfNeeded()
+        guard purchaseManager.hasPremiumAccess else {
+            await presentPremiumPaywall(
+                for: .copyPrompt,
+                introMessage: String(localized: "Copying AI translation prompts is a premium feature. Unlock Pro to use manual prompt translation tools.", bundle: .forLocale(locale))
+            )
+            return
+        }
+        copyManualTranslationPromptToClipboardNow()
+    }
+
+    private func copyManualTranslationPromptToClipboardNow() {
         guard let job else { return }
 
         let isBothMode = needsTranslation && manualTranslationTracks.count == 2

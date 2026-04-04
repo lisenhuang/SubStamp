@@ -215,6 +215,8 @@
 "Weekly Subscription" = "週間サブスクリプション";
 "Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "動画の書き出し、字幕ファイルの書き出し、保存、共有が無制限。いつでもキャンセルできます。";
 "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "字幕の書き出しは有料機能です。Pro をアンロックすると .srt 字幕ファイルを出力して共有できます。";
+"Subtitle translation is a premium feature. Unlock Pro to translate subtitles." = "字幕翻訳は有料機能です。Pro をアンロックすると字幕を翻訳できます。";
+"Copying AI translation prompts is a premium feature. Unlock Pro to use manual prompt translation tools." = "AI翻訳プロンプトのコピーは有料機能です。Pro をアンロックすると手動プロンプト翻訳ツールを利用できます。";
 "Loading purchase options..." = "購入オプションを読み込み中...";
 "Lifetime Unlock" = "買い切り（永久）";
 "Restore Purchases" = "購入を復元";

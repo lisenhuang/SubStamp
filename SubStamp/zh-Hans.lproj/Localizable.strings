@@ -215,6 +215,8 @@
 "Weekly Subscription" = "周订阅";
 "Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime." = "无限导出视频、导出字幕文件、保存与分享。可随时取消。";
 "Subtitle export is a premium feature. Unlock Pro to export and share subtitle files in .srt format." = "字幕导出是付费功能。解锁 Pro 后即可导出并分享 .srt 字幕文件。";
+"Subtitle translation is a premium feature. Unlock Pro to translate subtitles." = "字幕翻译是付费功能。解锁 Pro 后即可翻译字幕。";
+"Copying AI translation prompts is a premium feature. Unlock Pro to use manual prompt translation tools." = "复制 AI 翻译提示词是付费功能。解锁 Pro 后即可使用手动提示词翻译工具。";
 "Loading purchase options..." = "正在加载购买选项...";
 "Lifetime Unlock" = "永久解锁";
 "Restore Purchases" = "恢复购买";
