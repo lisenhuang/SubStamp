@@ -146,18 +146,27 @@ final class TranscriptionService {
             for try await result in transcriber.results {
                 resultCount += 1
                 let rawText = String(result.text.characters)
-                let cleaned = SubtitleTextCleaner.clean(rawText)
                 if resultCount <= 5 || resultCount.isMultiple(of: resultLogInterval) {
                     AppLog.append("[RESULT #\(resultCount)] Raw: '\(rawText.prefix(50))...' at \(result.range.start.seconds)s-\(result.range.end.seconds)s")
                 }
+
+                let runCues = cuesFromAttributedRuns(result.text)
+                if !runCues.isEmpty {
+                    cues.append(contentsOf: runCues)
+                    let cueEnd = runCues.last?.end.seconds ?? result.range.end.seconds
+                    let progress = duration.seconds > 0 ? min(1.0, cueEnd / duration.seconds) : 0
+                    progressHandler(progress, cues.count)
+                    continue
+                }
+
+                let cleaned = SubtitleTextCleaner.clean(rawText)
                 guard !cleaned.isEmpty else {
                     continue
                 }
                 let timeRange = result.range
                 let start = timeRange.start
                 let end = timeRange.end
-                let formattedText = cleaned
-                let cue = SubtitleCue(start: start, end: end, primaryText: formattedText)
+                let cue = SubtitleCue(start: start, end: end, primaryText: cleaned)
                 cues.append(cue)
 
                 let progress = duration.seconds > 0 ? min(1.0, end.seconds / duration.seconds) : 0
@@ -192,6 +201,76 @@ final class TranscriptionService {
         AppLog.append("Transcription completed: \(cues.count) cues")
         let processed = postProcess(cues: cues)
         return Result(cues: processed, duration: duration)
+    }
+
+    private func cuesFromAttributedRuns(_ text: AttributedString) -> [SubtitleCue] {
+        let sentenceEnders: Set<Character> = ["。", "！", "？", ".", "!", "?"]
+        var cues: [SubtitleCue] = []
+        var buffer = ""
+        var bufferStart: CMTime?
+        var bufferEnd: CMTime?
+        var foundAnyTiming = false
+
+        for run in text.runs {
+            guard let timeRange = run[AttributeScopes.SpeechAttributes.TimeRangeAttribute.self] else {
+                continue
+            }
+
+            foundAnyTiming = true
+            let segment = String(text[run.range].characters)
+            guard !segment.isEmpty else {
+                continue
+            }
+
+            buffer += segment
+
+            let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let start = timeRange.start
+                let end = CMTimeRangeGetEnd(timeRange)
+                if start.seconds.isFinite && end.seconds.isFinite {
+                    if bufferStart == nil {
+                        bufferStart = start
+                    }
+                    bufferEnd = end
+                }
+            }
+
+            let shouldSplit = trimmed.last.map { sentenceEnders.contains($0) } ?? false
+            if shouldSplit {
+                flushBufferedCue(into: &cues, buffer: &buffer, start: &bufferStart, end: &bufferEnd)
+            }
+        }
+
+        flushBufferedCue(into: &cues, buffer: &buffer, start: &bufferStart, end: &bufferEnd)
+        return foundAnyTiming ? cues : []
+    }
+
+    private func flushBufferedCue(
+        into cues: inout [SubtitleCue],
+        buffer: inout String,
+        start: inout CMTime?,
+        end: inout CMTime?
+    ) {
+        let cleaned = SubtitleTextCleaner.clean(buffer)
+        defer {
+            buffer = ""
+            start = nil
+            end = nil
+        }
+
+        guard !cleaned.isEmpty, let cueStart = start, let cueEnd = end else {
+            return
+        }
+
+        let normalizedEnd = max(cueStart.seconds, cueEnd.seconds)
+        cues.append(
+            SubtitleCue(
+                start: cueStart,
+                end: CMTime(seconds: normalizedEnd, preferredTimescale: 600),
+                primaryText: cleaned
+            )
+        )
     }
     
     /// Find the best matching locale from supported locales
