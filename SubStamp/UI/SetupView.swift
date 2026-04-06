@@ -555,8 +555,16 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
             Text("Model readiness")
                 .font(AppTypography.bodyEmphasis)
-            AssetStatusCard(title: "Speech assets", state: assetManager.speechAssetsState)
-            AssetStatusCard(title: translationProvider == .appleIntelligence ? "AI" : "Translation model", state: assetManager.translationAssetsState)
+            AssetStatusCard(
+                title: "Speech assets",
+                state: assetManager.speechAssetsState,
+                description: assetStateDescription(assetManager.speechAssetsState)
+            )
+            AssetStatusCard(
+                title: translationProvider == .appleIntelligence ? "AI" : "Translation model",
+                state: assetManager.translationAssetsState,
+                description: assetStateDescription(assetManager.translationAssetsState)
+            )
             
             if let warning = assetManager.lowStorageWarning {
                 Text(warning)
@@ -569,6 +577,13 @@ struct SetupView: View {
                     .foregroundStyle(AppColors.error)
             }
         }
+    }
+
+    private func assetStateDescription(_ state: AssetState) -> String? {
+        if case let .failed(message) = state, !message.isEmpty {
+            return message
+        }
+        return nil
     }
 
     private var downloadAssetsButton: some View {

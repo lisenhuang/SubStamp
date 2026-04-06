@@ -184,20 +184,46 @@ final class AssetReadinessManager: ObservableObject {
 
     func downloadSpeechAssets() async {
         guard let config = config else { return }
+        let requestedLocale = config.audioLocale
+        let requestedBCP47 = requestedLocale.identifier(.bcp47)
+        let requestedLanguage = requestedLocale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
+        let installedBefore = await SpeechTranscriber.installedLocales
+        let supportedBefore = await SpeechTranscriber.supportedLocales
+
+        AppLog.append("[ASSET][speech] download(start) locale=\(requestedLocale.identifier) bcp47=\(requestedBCP47) lang=\(requestedLanguage)")
+        AppLog.append("[ASSET][speech] download(precheck) installedCount=\(installedBefore.count) supportedCount=\(supportedBefore.count)")
+        AppLog.append("[ASSET][speech] download(precheck) installed=\(installedBefore.map { $0.identifier }.joined(separator: ", "))")
+
         let transcriber = SpeechTranscriber(
-            locale: config.audioLocale,
+            locale: requestedLocale,
             transcriptionOptions: [],
             reportingOptions: [],
             attributeOptions: [.audioTimeRange]
         )
         speechAssetsState = .downloading(progress: 0)
         do {
+            AppLog.append("[ASSET][speech] download(request) creating AssetInventory request for locale=\(requestedLocale.identifier)")
             if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                AppLog.append("[ASSET][speech] download(request) request-created locale=\(requestedLocale.identifier)")
+                AppLog.append("[ASSET][speech] download(install) begin locale=\(requestedLocale.identifier)")
                 try await downloader.downloadAndInstall()
+                AppLog.append("[ASSET][speech] download(install) success locale=\(requestedLocale.identifier)")
+            } else {
+                AppLog.append("[ASSET][speech] download(request) no-install-request locale=\(requestedLocale.identifier) (already installed or unavailable)")
             }
-            await checkSpeechAssets(for: config.audioLocale)
+            await checkSpeechAssets(for: requestedLocale)
+            let installedAfter = await SpeechTranscriber.installedLocales
+            AppLog.append("[ASSET][speech] download(postcheck) installedCount=\(installedAfter.count) state=\(speechAssetsState.logDescription)")
+            AppLog.append("[ASSET][speech] download(postcheck) installed=\(installedAfter.map { $0.identifier }.joined(separator: ", "))")
         } catch {
-            lastError = .assetInstallFailed(locale: config.audioLocale.identifier)
+            let nsError = error as NSError
+            AppLog.append("[ASSET][speech] download(failed) locale=\(requestedLocale.identifier) domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)")
+            AppLog.append("[ASSET][speech] download(failed) reason=\(nsError.localizedFailureReason ?? "nil") suggestion=\(nsError.localizedRecoverySuggestion ?? "nil")")
+            AppLog.append("[ASSET][speech] download(failed) userInfoKeys=\(nsError.userInfo.keys.map { String(describing: $0) }.sorted().joined(separator: ", "))")
+            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                AppLog.append("[ASSET][speech] download(failed) underlying=\(underlying.domain)(\(underlying.code)) \(underlying.localizedDescription)")
+            }
+            lastError = .assetInstallFailed(locale: requestedLocale.identifier)
             speechAssetsState = .failed(message: error.localizedDescription)
         }
     }
@@ -225,10 +251,12 @@ final class AssetReadinessManager: ObservableObject {
     private func checkSpeechAssets(for locale: Locale) async {
         let requestedBCP47 = locale.identifier(.bcp47)
         let installed = await SpeechTranscriber.installedLocales
+        AppLog.append("[ASSET][speech] check locale=\(locale.identifier) bcp47=\(requestedBCP47) installedCount=\(installed.count)")
         
         // 1. Check for exact BCP47 match in installed locales
         if installed.contains(where: { $0.identifier(.bcp47) == requestedBCP47 }) {
             speechAssetsState = .ready
+            AppLog.append("[ASSET][speech] check result=ready exactMatch locale=\(locale.identifier)")
             return
         }
         
@@ -236,6 +264,7 @@ final class AssetReadinessManager: ObservableObject {
         let requestedLang = locale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
         if installed.contains(where: { $0.language.languageCode?.identifier == requestedLang }) {
             speechAssetsState = .ready
+            AppLog.append("[ASSET][speech] check result=ready baseLanguageMatch locale=\(locale.identifier) lang=\(requestedLang)")
             return
         }
         
@@ -246,8 +275,10 @@ final class AssetReadinessManager: ObservableObject {
             $0.language.languageCode?.identifier == requestedLang 
         }) {
             speechAssetsState = .notInstalled
+            AppLog.append("[ASSET][speech] check result=notInstalled locale=\(locale.identifier) lang=\(requestedLang)")
         } else {
             speechAssetsState = .failed(message: "Language not supported on this device.")
+            AppLog.append("[ASSET][speech] check result=failed unsupported locale=\(locale.identifier) lang=\(requestedLang)")
         }
     }
 
@@ -283,6 +314,21 @@ final class AssetReadinessManager: ObservableObject {
             lowStorageWarning = "Low storage detected. Downloads may fail."
         } else {
             lowStorageWarning = nil
+        }
+    }
+}
+
+private extension AssetState {
+    var logDescription: String {
+        switch self {
+        case .notInstalled:
+            return "notInstalled"
+        case .ready:
+            return "ready"
+        case .downloading(let progress):
+            return "downloading(\(progress))"
+        case .failed(let message):
+            return "failed(\(message))"
         }
     }
 }
