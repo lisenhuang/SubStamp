@@ -84,7 +84,11 @@ final class AssetReadinessManager: ObservableObject {
         
         if neededTargets.isEmpty {
             if config.translationProvider == .appleIntelligence && config.fixTranscriptionWithAppleIntelligence {
-                await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: [])
+                if #available(iOS 26.0, *) {
+                    await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: [])
+                } else {
+                    translationAssetsState = .failed(message: "AI unavailable.")
+                }
             } else {
                 translationAssetsState = .ready
             }
@@ -95,10 +99,16 @@ final class AssetReadinessManager: ObservableObject {
         case .translationFramework:
             await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
         case .appleIntelligence:
-            await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: neededTargets)
+            if #available(iOS 26.0, *) {
+                await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: neededTargets)
+            } else {
+                // Apple Intelligence requires iOS 26. Fall back to showing as unavailable.
+                translationAssetsState = .failed(message: "AI unavailable.")
+            }
         }
     }
 
+    @available(iOS 26.0, *)
     private func checkAppleIntelligenceAvailability(source: Locale, targets: [Locale.Language]) async {
         let model = SystemLanguageModel.default
 
@@ -185,46 +195,55 @@ final class AssetReadinessManager: ObservableObject {
     func downloadSpeechAssets() async {
         guard let config = config else { return }
         let requestedLocale = config.audioLocale
-        let requestedBCP47 = requestedLocale.identifier(.bcp47)
-        let requestedLanguage = requestedLocale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
-        let installedBefore = await SpeechTranscriber.installedLocales
-        let supportedBefore = await SpeechTranscriber.supportedLocales
 
-        AppLog.append("[ASSET][speech] download(start) locale=\(requestedLocale.identifier) bcp47=\(requestedBCP47) lang=\(requestedLanguage)")
-        AppLog.append("[ASSET][speech] download(precheck) installedCount=\(installedBefore.count) supportedCount=\(supportedBefore.count)")
-        AppLog.append("[ASSET][speech] download(precheck) installed=\(installedBefore.map { $0.identifier }.joined(separator: ", "))")
+        if #available(iOS 26.0, *) {
+            let requestedBCP47 = requestedLocale.identifier(.bcp47)
+            let requestedLanguage = requestedLocale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
+            let installedBefore = await SpeechTranscriber.installedLocales
+            let supportedBefore = await SpeechTranscriber.supportedLocales
 
-        let transcriber = SpeechTranscriber(
-            locale: requestedLocale,
-            transcriptionOptions: [],
-            reportingOptions: [],
-            attributeOptions: [.audioTimeRange]
-        )
-        speechAssetsState = .downloading(progress: 0)
-        do {
-            AppLog.append("[ASSET][speech] download(request) creating AssetInventory request for locale=\(requestedLocale.identifier)")
-            if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                AppLog.append("[ASSET][speech] download(request) request-created locale=\(requestedLocale.identifier)")
-                AppLog.append("[ASSET][speech] download(install) begin locale=\(requestedLocale.identifier)")
-                try await downloader.downloadAndInstall()
-                AppLog.append("[ASSET][speech] download(install) success locale=\(requestedLocale.identifier)")
-            } else {
-                AppLog.append("[ASSET][speech] download(request) no-install-request locale=\(requestedLocale.identifier) (already installed or unavailable)")
+            AppLog.append("[ASSET][speech] download(start) locale=\(requestedLocale.identifier) bcp47=\(requestedBCP47) lang=\(requestedLanguage)")
+            AppLog.append("[ASSET][speech] download(precheck) installedCount=\(installedBefore.count) supportedCount=\(supportedBefore.count)")
+            AppLog.append("[ASSET][speech] download(precheck) installed=\(installedBefore.map { $0.identifier }.joined(separator: ", "))")
+
+            let transcriber = SpeechTranscriber(
+                locale: requestedLocale,
+                transcriptionOptions: [],
+                reportingOptions: [],
+                attributeOptions: [.audioTimeRange]
+            )
+            speechAssetsState = .downloading(progress: 0)
+            do {
+                AppLog.append("[ASSET][speech] download(request) creating AssetInventory request for locale=\(requestedLocale.identifier)")
+                if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                    AppLog.append("[ASSET][speech] download(request) request-created locale=\(requestedLocale.identifier)")
+                    AppLog.append("[ASSET][speech] download(install) begin locale=\(requestedLocale.identifier)")
+                    try await downloader.downloadAndInstall()
+                    AppLog.append("[ASSET][speech] download(install) success locale=\(requestedLocale.identifier)")
+                } else {
+                    AppLog.append("[ASSET][speech] download(request) no-install-request locale=\(requestedLocale.identifier) (already installed or unavailable)")
+                }
+                await checkSpeechAssets(for: requestedLocale)
+                let installedAfter = await SpeechTranscriber.installedLocales
+                AppLog.append("[ASSET][speech] download(postcheck) installedCount=\(installedAfter.count) state=\(speechAssetsState.logDescription)")
+                AppLog.append("[ASSET][speech] download(postcheck) installed=\(installedAfter.map { $0.identifier }.joined(separator: ", "))")
+            } catch {
+                let nsError = error as NSError
+                AppLog.append("[ASSET][speech] download(failed) locale=\(requestedLocale.identifier) domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)")
+                AppLog.append("[ASSET][speech] download(failed) reason=\(nsError.localizedFailureReason ?? "nil") suggestion=\(nsError.localizedRecoverySuggestion ?? "nil")")
+                AppLog.append("[ASSET][speech] download(failed) userInfoKeys=\(nsError.userInfo.keys.map { String(describing: $0) }.sorted().joined(separator: ", "))")
+                if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                    AppLog.append("[ASSET][speech] download(failed) underlying=\(underlying.domain)(\(underlying.code)) \(underlying.localizedDescription)")
+                }
+                lastError = .assetInstallFailed(locale: requestedLocale.identifier)
+                speechAssetsState = .failed(message: error.localizedDescription)
             }
+        } else {
+            // iOS 18–25: SFSpeechRecognizer downloads models automatically on first use.
+            // Just re-check the locale availability and mark as ready if supported.
+            AppLog.append("[ASSET][speech] download(legacy) SFSpeechRecognizer path locale=\(requestedLocale.identifier)")
+            speechAssetsState = .downloading(progress: 0.5)
             await checkSpeechAssets(for: requestedLocale)
-            let installedAfter = await SpeechTranscriber.installedLocales
-            AppLog.append("[ASSET][speech] download(postcheck) installedCount=\(installedAfter.count) state=\(speechAssetsState.logDescription)")
-            AppLog.append("[ASSET][speech] download(postcheck) installed=\(installedAfter.map { $0.identifier }.joined(separator: ", "))")
-        } catch {
-            let nsError = error as NSError
-            AppLog.append("[ASSET][speech] download(failed) locale=\(requestedLocale.identifier) domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)")
-            AppLog.append("[ASSET][speech] download(failed) reason=\(nsError.localizedFailureReason ?? "nil") suggestion=\(nsError.localizedRecoverySuggestion ?? "nil")")
-            AppLog.append("[ASSET][speech] download(failed) userInfoKeys=\(nsError.userInfo.keys.map { String(describing: $0) }.sorted().joined(separator: ", "))")
-            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-                AppLog.append("[ASSET][speech] download(failed) underlying=\(underlying.domain)(\(underlying.code)) \(underlying.localizedDescription)")
-            }
-            lastError = .assetInstallFailed(locale: requestedLocale.identifier)
-            speechAssetsState = .failed(message: error.localizedDescription)
         }
     }
 
@@ -249,36 +268,58 @@ final class AssetReadinessManager: ObservableObject {
     }
 
     private func checkSpeechAssets(for locale: Locale) async {
-        let requestedBCP47 = locale.identifier(.bcp47)
-        let installed = await SpeechTranscriber.installedLocales
-        AppLog.append("[ASSET][speech] check locale=\(locale.identifier) bcp47=\(requestedBCP47) installedCount=\(installed.count)")
-        
-        // 1. Check for exact BCP47 match in installed locales
-        if installed.contains(where: { $0.identifier(.bcp47) == requestedBCP47 }) {
-            speechAssetsState = .ready
-            AppLog.append("[ASSET][speech] check result=ready exactMatch locale=\(locale.identifier)")
-            return
-        }
-        
-        // 2. Fallback: check if the base language is installed (e.g., "en" matches "en-US")
-        let requestedLang = locale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
-        if installed.contains(where: { $0.language.languageCode?.identifier == requestedLang }) {
-            speechAssetsState = .ready
-            AppLog.append("[ASSET][speech] check result=ready baseLanguageMatch locale=\(locale.identifier) lang=\(requestedLang)")
-            return
-        }
-        
-        // 3. Not found in installed, check if it's at least supported/downloadable
-        let supported = await SpeechTranscriber.supportedLocales
-        if supported.contains(where: { 
-            $0.identifier(.bcp47) == requestedBCP47 || 
-            $0.language.languageCode?.identifier == requestedLang 
-        }) {
-            speechAssetsState = .notInstalled
-            AppLog.append("[ASSET][speech] check result=notInstalled locale=\(locale.identifier) lang=\(requestedLang)")
+        if #available(iOS 26.0, *) {
+            let requestedBCP47 = locale.identifier(.bcp47)
+            let installed = await SpeechTranscriber.installedLocales
+            AppLog.append("[ASSET][speech] check locale=\(locale.identifier) bcp47=\(requestedBCP47) installedCount=\(installed.count)")
+
+            if installed.contains(where: { $0.identifier(.bcp47) == requestedBCP47 }) {
+                speechAssetsState = .ready
+                AppLog.append("[ASSET][speech] check result=ready exactMatch locale=\(locale.identifier)")
+                return
+            }
+
+            let requestedLang = locale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
+            if installed.contains(where: { $0.language.languageCode?.identifier == requestedLang }) {
+                speechAssetsState = .ready
+                AppLog.append("[ASSET][speech] check result=ready baseLanguageMatch locale=\(locale.identifier) lang=\(requestedLang)")
+                return
+            }
+
+            let supported = await SpeechTranscriber.supportedLocales
+            if supported.contains(where: {
+                $0.identifier(.bcp47) == requestedBCP47 ||
+                $0.language.languageCode?.identifier == requestedLang
+            }) {
+                speechAssetsState = .notInstalled
+                AppLog.append("[ASSET][speech] check result=notInstalled locale=\(locale.identifier) lang=\(requestedLang)")
+            } else {
+                speechAssetsState = .failed(message: "Language not supported on this device.")
+                AppLog.append("[ASSET][speech] check result=failed unsupported locale=\(locale.identifier) lang=\(requestedLang)")
+            }
         } else {
-            speechAssetsState = .failed(message: "Language not supported on this device.")
-            AppLog.append("[ASSET][speech] check result=failed unsupported locale=\(locale.identifier) lang=\(requestedLang)")
+            // iOS 18–25: use SFSpeechRecognizer to determine locale support.
+            // SFSpeechRecognizer manages model downloads automatically on first use,
+            // so if the locale is in supportedLocales we treat it as ready.
+            let legacySupported = SFSpeechRecognizer.supportedLocales()
+            let requestedBCP47 = locale.identifier(.bcp47)
+            let requestedLang = locale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
+            AppLog.append("[ASSET][speech] check(legacy) locale=\(locale.identifier) supportedCount=\(legacySupported.count)")
+
+            let isSupported = legacySupported.contains(where: {
+                $0.identifier == locale.identifier ||
+                $0.identifier == requestedBCP47 ||
+                ($0.language.languageCode?.identifier == requestedLang)
+            })
+
+            if isSupported {
+                // Mark as ready — SFSpeechRecognizer on-demand downloads happen transparently
+                speechAssetsState = .ready
+                AppLog.append("[ASSET][speech] check(legacy) result=ready locale=\(locale.identifier)")
+            } else {
+                speechAssetsState = .failed(message: "Language not supported on this device.")
+                AppLog.append("[ASSET][speech] check(legacy) result=failed unsupported locale=\(locale.identifier)")
+            }
         }
     }
 

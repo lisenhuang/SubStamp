@@ -1,6 +1,6 @@
 import Foundation
-@preconcurrency import Translation
 import FoundationModels
+@preconcurrency import Translation
 import Speech
 
 enum TranslationMode: String, Codable, Sendable {
@@ -146,15 +146,22 @@ final class LanguageSelectionLogic {
 
     private func computeAppleIntelligenceTargets(for source: Locale) -> [TargetOption] {
         // Apple Intelligence uses the system language model; only show supported languages (direct mode only).
-        // If Apple Intelligence is unavailable, we return an empty list and SetupView will fall back.
-        guard let model = appleIntelligenceModelIfAvailable() else {
+        // Requires iOS 26.0+. On older OS versions, return [] so SetupView falls back gracefully.
+        guard #available(iOS 26.0, *) else {
 #if DEBUG
-            let prefix = "[AI-DETECT]"
-            let defaultModel = SystemLanguageModel.default
-            AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) unavailable isAvailable=\(defaultModel.isAvailable) availability=\(defaultModel.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(defaultModel.supportsLocale(source))")
+            AppLog.append("[AI-DETECT] computeTargets(provider=appleIntelligence) unavailable: iOS 26 required")
 #endif
             return []
         }
+
+        let model = SystemLanguageModel.default
+        guard model.isAvailable else {
+#if DEBUG
+            AppLog.append("[AI-DETECT] computeTargets(provider=appleIntelligence) unavailable isAvailable=false availability=\(model.availability) source=\(source.identifier(.bcp47))")
+#endif
+            return []
+        }
+
         let sourceLang = Locale.Language(identifier: source.identifier)
 
         let options: [TargetOption] = model.supportedLanguages
@@ -176,10 +183,5 @@ final class LanguageSelectionLogic {
         AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) isAvailable=true availability=\(model.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(model.supportsLocale(source)) supportedCount=\(supportedCount) options=\(options.count) sample=\(sample)")
 #endif
         return options
-    }
-
-    private func appleIntelligenceModelIfAvailable() -> SystemLanguageModel? {
-        let model = SystemLanguageModel.default
-        return model.isAvailable ? model : nil
     }
 }

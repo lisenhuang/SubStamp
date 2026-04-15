@@ -1,6 +1,7 @@
 import BackgroundTasks
 import Foundation
 
+@available(iOS 26.0, *)
 final class BackgroundTaskManager {
     static let shared = BackgroundTaskManager()
 

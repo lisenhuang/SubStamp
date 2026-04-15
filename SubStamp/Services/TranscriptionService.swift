@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Speech
 
+@available(iOS 26.0, *)
 final class TranscriptionService {
     struct Result {
         let cues: [SubtitleCue]

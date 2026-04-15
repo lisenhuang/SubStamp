@@ -10,8 +10,6 @@ final class PipelineOrchestrator: ObservableObject {
     nonisolated private static let transcriptionProgressJobIDKey = "jobID"
 
     private let translationService = TranslationService()
-    private let appleIntelligenceTranslationService = AppleIntelligenceTranslationService()
-    private let appleIntelligenceTranscriptionRepairService = AppleIntelligenceTranscriptionRepairService()
     private let subtitleRenderer = SubtitleRenderer()
     private let exportService = ExportService()
     private let jobStore = JobStore()
@@ -80,7 +78,9 @@ final class PipelineOrchestrator: ObservableObject {
         frameworkSession1 = nil
         frameworkSession2 = nil
         frameworkSession3 = nil
-        BackgroundTaskManager.shared.end(success: false)
+        if #available(iOS 26.0, *) {
+            BackgroundTaskManager.shared.end(success: false)
+        }
     }
 
     // MARK: - New Phase Methods (Step 2/3/4 wizard)
@@ -158,24 +158,48 @@ final class PipelineOrchestrator: ObservableObject {
             }
             defer { NotificationCenter.default.removeObserver(observer) }
 
-            let transcriptionResult = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
-                let service = TranscriptionService()
-                let detachedAsset = AVAsset(url: videoURL)
-                return try await service.transcribe(
-                    asset: detachedAsset,
-                    locale: Locale(identifier: localeID),
-                    timeRange: range
-                ) { progress, _ in
-                    NotificationCenter.default.post(
-                        name: Self.transcriptionProgressNotification,
-                        object: nil,
-                        userInfo: [
-                            Self.transcriptionProgressValueKey: progress * transcriptionWeight,
-                            Self.transcriptionProgressJobIDKey: jobID
-                        ]
-                    )
-                }
-            }.value
+            let transcriptionResult: (cues: [SubtitleCue], duration: CMTime)
+            if #available(iOS 26.0, *) {
+                let result = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
+                    let service = TranscriptionService()
+                    let detachedAsset = AVAsset(url: videoURL)
+                    return try await service.transcribe(
+                        asset: detachedAsset,
+                        locale: Locale(identifier: localeID),
+                        timeRange: range
+                    ) { progress, _ in
+                        NotificationCenter.default.post(
+                            name: Self.transcriptionProgressNotification,
+                            object: nil,
+                            userInfo: [
+                                Self.transcriptionProgressValueKey: progress * transcriptionWeight,
+                                Self.transcriptionProgressJobIDKey: jobID
+                            ]
+                        )
+                    }
+                }.value
+                transcriptionResult = (cues: result.cues, duration: result.duration)
+            } else {
+                let result = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
+                    let service = LegacyTranscriptionService()
+                    let detachedAsset = AVAsset(url: videoURL)
+                    return try await service.transcribe(
+                        asset: detachedAsset,
+                        locale: Locale(identifier: localeID),
+                        timeRange: range
+                    ) { progress, _ in
+                        NotificationCenter.default.post(
+                            name: Self.transcriptionProgressNotification,
+                            object: nil,
+                            userInfo: [
+                                Self.transcriptionProgressValueKey: progress * transcriptionWeight,
+                                Self.transcriptionProgressJobIDKey: jobID
+                            ]
+                        )
+                    }
+                }.value
+                transcriptionResult = (cues: result.cues, duration: result.duration)
+            }
 
             try Task.checkCancellation()
 
@@ -183,28 +207,31 @@ final class PipelineOrchestrator: ObservableObject {
             try jobStore.saveCues(cues, id: job.id, type: .transcribed)
 
             if shouldFixTranscription {
+                if #available(iOS 26.0, *) {
+                    let repairService = AppleIntelligenceTranscriptionRepairService()
 #if DEBUG
-                AppLog.append("[AI-TRANSCRIPT] repair(start) cues=\(cues.count) locale=\(job.transcriptionLocale)")
+                    AppLog.append("[AI-TRANSCRIPT] repair(start) cues=\(cues.count) locale=\(job.transcriptionLocale)")
 #endif
-                do {
-                    try Task.checkCancellation()
-                    cues = try await appleIntelligenceTranscriptionRepairService.repair(
-                        cues: cues,
-                        locale: Locale(identifier: job.transcriptionLocale)
-                    ) { [weak self] completed, total in
-                        let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                        self?.updateStageProgress(.transcribing, value: transcriptionWeight + frac * (1.0 - transcriptionWeight))
+                    do {
+                        try Task.checkCancellation()
+                        cues = try await repairService.repair(
+                            cues: cues,
+                            locale: Locale(identifier: job.transcriptionLocale)
+                        ) { [weak self] completed, total in
+                            let frac = total == 0 ? 0 : (Double(completed) / Double(total))
+                            self?.updateStageProgress(.transcribing, value: transcriptionWeight + frac * (1.0 - transcriptionWeight))
+                        }
+                        try jobStore.saveCues(cues, id: job.id, type: .transcribed)
+#if DEBUG
+                        AppLog.append("[AI-TRANSCRIPT] repair(done)")
+#endif
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+#if DEBUG
+                        AppLog.append("[AI-TRANSCRIPT] repair(failed): \(error.localizedDescription)")
+#endif
                     }
-                    try jobStore.saveCues(cues, id: job.id, type: .transcribed)
-#if DEBUG
-                    AppLog.append("[AI-TRANSCRIPT] repair(done)")
-#endif
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-#if DEBUG
-                    AppLog.append("[AI-TRANSCRIPT] repair(failed): \(error.localizedDescription)")
-#endif
                 }
             }
 
@@ -288,7 +315,13 @@ final class PipelineOrchestrator: ObservableObject {
         case .translationFramework:
             return try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
         case .appleIntelligence:
-            return try await performAppleIntelligenceTranslations(job: job, sourceCues: sourceCues)
+            if #available(iOS 26.0, *) {
+                let aiService = AppleIntelligenceTranslationService()
+                return try await performAppleIntelligenceTranslations(job: job, sourceCues: sourceCues, service: aiService)
+            } else {
+                // Apple Intelligence not available on this OS version; fall back to Translation Framework
+                return try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
+            }
         }
     }
 
@@ -521,7 +554,8 @@ final class PipelineOrchestrator: ObservableObject {
         return status == .installed || status == .supported
     }
 
-    private func performAppleIntelligenceTranslations(job: JobModel, sourceCues: [SubtitleCue]) async throws -> [SubtitleCue] {
+    @available(iOS 26.0, *)
+    private func performAppleIntelligenceTranslations(job: JobModel, sourceCues: [SubtitleCue], service: AppleIntelligenceTranslationService) async throws -> [SubtitleCue] {
         let baseLocaleIdentifier = job.transcriptionLocale
         let sourceLocale = Locale(identifier: baseLocaleIdentifier)
 
@@ -551,7 +585,7 @@ final class PipelineOrchestrator: ObservableObject {
         if translationTargets.isEmpty {
             translatedByTarget = [:]
         } else {
-            translatedByTarget = try await appleIntelligenceTranslationService.translate(
+            translatedByTarget = try await service.translate(
                 cues: sourceCues,
                 source: sourceLocale,
                 targets: translationTargets

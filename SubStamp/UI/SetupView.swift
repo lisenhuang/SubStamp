@@ -129,22 +129,28 @@ struct SetupView: View {
         }
         .task {
             await purchaseManager.prepareEntitlementsIfNeeded()
-            logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
-            speechAvailable = SpeechTranscriber.isAvailable
-            
-            let model = SystemLanguageModel.default
-            appleIntelligenceAvailable = model.isAvailable
-            
-            // Check if device is capable even if AI is not enabled
-            switch model.availability {
-            case .available:
-                deviceSupportsAppleIntelligence = true
-            case .unavailable(let reason):
-                // Device supports AI if reason is NOT deviceNotEligible
-                deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
+
+            if #available(iOS 26.0, *) {
+                logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
+                speechAvailable = SpeechTranscriber.isAvailable
+
+                let model = SystemLanguageModel.default
+                appleIntelligenceAvailable = model.isAvailable
+
+                switch model.availability {
+                case .available:
+                    deviceSupportsAppleIntelligence = true
+                case .unavailable(let reason):
+                    deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
+                }
+
+                logAppleIntelligenceDiagnostics(context: "SetupView.task(initial-check)")
+            } else {
+                // iOS 18–25: SpeechTranscriber/SystemLanguageModel not available
+                speechAvailable = SFSpeechRecognizer()?.isAvailable ?? true
+                appleIntelligenceAvailable = false
+                deviceSupportsAppleIntelligence = false
             }
-            
-            logAppleIntelligenceDiagnostics(context: "SetupView.task(initial-check)")
 
             if !deviceSupportsAppleIntelligence {
                 translationProvider = .translationFramework
@@ -156,45 +162,58 @@ struct SetupView: View {
             }
 
             // Retry once shortly after launch in case the system model is still initializing.
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                let retryModel = SystemLanguageModel.default
-                let retryAvailable = retryModel.isAvailable
-                if retryAvailable != appleIntelligenceAvailable {
-                    appleIntelligenceAvailable = retryAvailable
-                    
-                    // Update device support status
-                    switch retryModel.availability {
-                    case .available:
-                        deviceSupportsAppleIntelligence = true
-                    case .unavailable(let reason):
-                        deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
+            if #available(iOS 26.0, *) {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    let retryModel = SystemLanguageModel.default
+                    let retryAvailable = retryModel.isAvailable
+                    if retryAvailable != appleIntelligenceAvailable {
+                        appleIntelligenceAvailable = retryAvailable
+
+                        switch retryModel.availability {
+                        case .available:
+                            deviceSupportsAppleIntelligence = true
+                        case .unavailable(let reason):
+                            deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
+                        }
+
+                        logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-changed)")
+                    } else {
+                        logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-unchanged)")
                     }
-                    
-                    logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-changed)")
-                } else {
-                    logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-unchanged)")
                 }
             }
             
             // 1. Fetch Speech locales
-            let speechLocales = await SpeechTranscriber.supportedLocales.sorted { 
-                let name1 = $0.localizedString(forIdentifier: $0.identifier) ?? $0.identifier
-                let name2 = $1.localizedString(forIdentifier: $1.identifier) ?? $1.identifier
-                return name1 < name2
+            if #available(iOS 26.0, *) {
+                let speechLocales = await SpeechTranscriber.supportedLocales.sorted { 
+                    let name1 = $0.localizedString(forIdentifier: $0.identifier) ?? $0.identifier
+                    let name2 = $1.localizedString(forIdentifier: $1.identifier) ?? $1.identifier
+                    return name1 < name2
+                }
+                self.supportedSpeechLocales = speechLocales
+                AppLog.append("[SETUP] Available audio languages (\(speechLocales.count)): \(speechLocales.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
+                
+                let installed = await SpeechTranscriber.installedLocales
+                self.installedSpeechIDs = Set(installed.map { $0.identifier(.bcp47) })
+                AppLog.append("[SETUP] Installed audio languages (\(installed.count)): \(installed.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
+                SetupPreferences.saveCachedSpeechLocales(speechLocales, installedIDs: installedSpeechIDs)
+            } else {
+                // iOS 18–25: use SFSpeechRecognizer.supportedLocales()
+                let sfLocales = SFSpeechRecognizer.supportedLocales().sorted {
+                    let name1 = $0.localizedString(forIdentifier: $0.identifier) ?? $0.identifier
+                    let name2 = $1.localizedString(forIdentifier: $1.identifier) ?? $1.identifier
+                    return name1 < name2
+                }
+                self.supportedSpeechLocales = sfLocales
+                // SFSpeechRecognizer downloads on demand; treat all supported as installed
+                self.installedSpeechIDs = Set(sfLocales.map { $0.identifier(.bcp47) })
+                AppLog.append("[SETUP] Legacy audio languages (\(sfLocales.count))")
+                SetupPreferences.saveCachedSpeechLocales(sfLocales, installedIDs: installedSpeechIDs)
             }
-            self.supportedSpeechLocales = speechLocales
-            AppLog.append("[SETUP] Available audio languages (\(speechLocales.count)): \(speechLocales.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
-            
-            let installed = await SpeechTranscriber.installedLocales
-            self.installedSpeechIDs = Set(installed.map { $0.identifier(.bcp47) })
-            AppLog.append("[SETUP] Installed audio languages (\(installed.count)): \(installed.map { $0.identifier(.bcp47) }.joined(separator: ", "))")
-            SetupPreferences.saveCachedSpeechLocales(speechLocales, installedIDs: installedSpeechIDs)
             
             // Normalize transcription locale to match a valid picker tag.
-            // Locale.current.identifier can return values like "en_US@rg=nzzzzz" which
-            // won't match any SpeechTranscriber locale identifier (e.g. "en_US").
-            let normalizedTranscription = bestMatchingSpeechLocale(for: transcriptionLocaleIdentifier, in: speechLocales)
+            let normalizedTranscription = bestMatchingSpeechLocale(for: transcriptionLocaleIdentifier, in: supportedSpeechLocales)
             if normalizedTranscription != transcriptionLocaleIdentifier {
                 AppLog.append("[SETUP] Normalized audio locale: \(transcriptionLocaleIdentifier) -> \(normalizedTranscription)")
                 transcriptionLocaleIdentifier = normalizedTranscription
@@ -211,8 +230,12 @@ struct SetupView: View {
             }
         }
         .onChange(of: translationProvider) { _, newValue in
-            appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
-            logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
+            if #available(iOS 26.0, *) {
+                appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+                logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
+            } else {
+                appleIntelligenceAvailable = false
+            }
             if newValue == .appleIntelligence {
                 fixTranscriptionWithAppleIntelligence = SetupPreferences.loadFixTranscriptionWithAppleIntelligence()
             } else {
@@ -251,8 +274,12 @@ struct SetupView: View {
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
                 Task { await purchaseManager.refreshEntitlements() }
-                appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
-                logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
+                if #available(iOS 26.0, *) {
+                    appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
+                    logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
+                } else {
+                    appleIntelligenceAvailable = false
+                }
                 if !appleIntelligenceAvailable {
                     translationProvider = .translationFramework
                     fixTranscriptionWithAppleIntelligence = false
@@ -268,6 +295,10 @@ struct SetupView: View {
 
     private func logAppleIntelligenceDiagnostics(context: String) {
 #if DEBUG
+        guard #available(iOS 26.0, *) else {
+            AppLog.append("[AI-DETECT] \(context) (iOS < 26, skipped)")
+            return
+        }
         let prefix = "[AI-DETECT]"
         let model = SystemLanguageModel.default
         let availability = describeAppleIntelligenceAvailability(model.availability)
@@ -288,6 +319,7 @@ struct SetupView: View {
     }
 
 #if DEBUG
+    @available(iOS 26.0, *)
     private func describeAppleIntelligenceAvailability(_ availability: SystemLanguageModel.Availability) -> String {
         switch availability {
         case .available:
