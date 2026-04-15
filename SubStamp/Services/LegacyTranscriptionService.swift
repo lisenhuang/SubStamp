@@ -66,8 +66,11 @@ final class LegacyTranscriptionService {
                 duration: CMTime(seconds: chunkEnd - chunkStart, preferredTimescale: 600)
             )
 
-            // Extract audio chunk as WAV
-            let chunkURL = try await extractAudioAsWav(from: asset, timeRange: cmRange)
+            // Extract audio chunk as WAV (runs off main thread)
+            let assetURL = (asset as! AVURLAsset).url
+            let chunkURL = try await Task.detached(priority: .userInitiated) {
+                try await self.extractAudioAsWav(from: assetURL, timeRange: cmRange)
+            }.value
             defer { try? FileManager.default.removeItem(at: chunkURL) }
 
             let chunkCues = try await recognizeAudioFile(
@@ -198,11 +201,12 @@ final class LegacyTranscriptionService {
     // MARK: - Audio Extraction
     // Extracted from asset as 16 kHz mono PCM WAV — identical to TranscriptionService's helper.
 
-    private func extractAudioAsWav(from asset: AVAsset, timeRange: CMTimeRange?) async throws -> URL {
+    nonisolated private func extractAudioAsWav(from assetURL: URL, timeRange: CMTimeRange?) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("substamp_legacy_\(UUID().uuidString)")
             .appendingPathExtension("wav")
 
+        let asset = AVAsset(url: assetURL)
         guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
             throw SubStampError.noAudioTrack
         }
