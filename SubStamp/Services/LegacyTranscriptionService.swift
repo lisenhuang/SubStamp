@@ -100,7 +100,7 @@ final class LegacyTranscriptionService {
 
     private func requestAuthorization() async throws {
         let status = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
+            SFSpeechRecognizer.requestAuthorization { @Sendable status in
                 continuation.resume(returning: status)
             }
         }
@@ -128,30 +128,44 @@ final class LegacyTranscriptionService {
         request.addsPunctuation = true
         request.shouldReportPartialResults = false
 
-        return try await withCheckedThrowingContinuation { continuation in
-            var hasResumed = false
-            recognizer.recognitionTask(with: request) { result, error in
-                guard !hasResumed else { return }
+        let segmentsData: [(timestamp: Double, duration: Double, substring: String)] = try await withCheckedThrowingContinuation { continuation in
+            class ContinuationState: @unchecked Sendable {
+                var hasResumed = false
+                let lock = NSLock()
+            }
+            let state = ContinuationState()
+            
+            recognizer.recognitionTask(with: request) { @Sendable result, error in
+                state.lock.lock()
+                guard !state.hasResumed else { 
+                    state.lock.unlock()
+                    return 
+                }
+                
                 if let error = error {
-                    hasResumed = true
+                    state.hasResumed = true
+                    state.lock.unlock()
                     continuation.resume(throwing: error)
                     return
                 }
+                
                 if let result = result, result.isFinal {
-                    hasResumed = true
-                    let cues = self.buildCues(
-                        from: result.bestTranscription.segments,
-                        timeOffsetSeconds: timeOffsetSeconds
-                    )
-                    continuation.resume(returning: cues)
+                    state.hasResumed = true
+                    state.lock.unlock()
+                    let mapped = result.bestTranscription.segments.map { (timestamp: $0.timestamp, duration: $0.duration, substring: $0.substring) }
+                    continuation.resume(returning: mapped)
+                } else {
+                    state.lock.unlock()
                 }
             }
         }
+        
+        return self.buildCues(from: segmentsData, timeOffsetSeconds: timeOffsetSeconds)
     }
 
     // MARK: - Cue Building
 
-    private func buildCues(from segments: [SFTranscriptionSegment], timeOffsetSeconds: Double) -> [SubtitleCue] {
+    private func buildCues(from segments: [(timestamp: Double, duration: Double, substring: String)], timeOffsetSeconds: Double) -> [SubtitleCue] {
         let sentenceEnders: Set<Character> = [".", "!", "?", "。", "！", "？", "…"]
         var cues: [SubtitleCue] = []
         var buffer = ""
@@ -218,7 +232,7 @@ final class LegacyTranscriptionService {
             commonFormat: .pcmFormatInt16,
             sampleRate: sampleRate,
             channels: channelCount,
-            interleaved: false
+            interleaved: true
         ) else {
             throw SubStampError.exportFailed(underlying: NSError(
                 domain: "SubStamp", code: -1,
@@ -258,7 +272,12 @@ final class LegacyTranscriptionService {
 
         let audioFile: AVAudioFile
         do {
-            audioFile = try AVAudioFile(forWriting: outputURL, settings: audioFormat.settings)
+            audioFile = try AVAudioFile(
+                forWriting: outputURL,
+                settings: audioFormat.settings,
+                commonFormat: .pcmFormatInt16,
+                interleaved: true
+            )
         } catch {
             throw SubStampError.exportFailed(underlying: error)
         }
