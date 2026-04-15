@@ -46,6 +46,10 @@ private struct SettingsSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
 
+    @State private var devTapCount = 0
+    @State private var lastTapDate = Date.distantPast
+    @State private var showDevSettings = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -105,7 +109,6 @@ private struct SettingsSheetView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(String(localized: "Settings", bundle: .forLocale(locale)))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -113,6 +116,32 @@ private struct SettingsSheetView: View {
                         dismiss()
                     }
                 }
+                ToolbarItem(placement: .principal) {
+                    if #available(iOS 26.0, *) {
+                        // Real system check — Dev page access must never use the mock
+                        Text(String(localized: "Settings", bundle: .forLocale(locale)))
+                            .font(AppTypography.bodyEmphasis)
+                            .onTapGesture {
+                                let now = Date()
+                                if now.timeIntervalSince(lastTapDate) > 2.0 {
+                                    devTapCount = 1
+                                } else {
+                                    devTapCount += 1
+                                }
+                                lastTapDate = now
+                                if devTapCount >= 16 {
+                                    devTapCount = 0
+                                    showDevSettings = true
+                                }
+                            }
+                    } else {
+                        Text(String(localized: "Settings", bundle: .forLocale(locale)))
+                            .font(AppTypography.bodyEmphasis)
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showDevSettings) {
+                DevSettingsView()
             }
         }
         .preferredColorScheme(effectiveColorScheme)

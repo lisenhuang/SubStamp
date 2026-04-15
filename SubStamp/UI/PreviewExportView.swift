@@ -1399,7 +1399,7 @@ struct PreviewExportView: View {
                 let sourceLocale = Locale(identifier: job.transcriptionLocale)
 
                 // Use Apple Intelligence if selected, otherwise use Translation Framework
-                if #available(iOS 26.0, *), job.translationProvider == .appleIntelligence {
+                if #available(iOS 26.0, *), DevSettings.useModernAPIs, job.translationProvider == .appleIntelligence {
                     // Apple Intelligence with built-in fallback to Translation Framework
                     let aiService = AppleIntelligenceTranslationService()
 

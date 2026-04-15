@@ -78,7 +78,7 @@ final class PipelineOrchestrator: ObservableObject {
         frameworkSession1 = nil
         frameworkSession2 = nil
         frameworkSession3 = nil
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), DevSettings.useModernAPIs {
             BackgroundTaskManager.shared.end(success: false)
         }
     }
@@ -159,7 +159,7 @@ final class PipelineOrchestrator: ObservableObject {
             defer { NotificationCenter.default.removeObserver(observer) }
 
             let transcriptionResult: (cues: [SubtitleCue], duration: CMTime)
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 let result = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
                     let service = TranscriptionService()
                     let detachedAsset = AVAsset(url: videoURL)
@@ -180,24 +180,23 @@ final class PipelineOrchestrator: ObservableObject {
                 }.value
                 transcriptionResult = (cues: result.cues, duration: result.duration)
             } else {
-                let result = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
-                    let service = LegacyTranscriptionService()
-                    let detachedAsset = AVAsset(url: videoURL)
-                    return try await service.transcribe(
-                        asset: detachedAsset,
-                        locale: Locale(identifier: localeID),
-                        timeRange: range
-                    ) { progress, _ in
-                        NotificationCenter.default.post(
-                            name: Self.transcriptionProgressNotification,
-                            object: nil,
-                            userInfo: [
-                                Self.transcriptionProgressValueKey: progress * transcriptionWeight,
-                                Self.transcriptionProgressJobIDKey: jobID
-                            ]
-                        )
-                    }
-                }.value
+                // SFSpeechRecognizer requires the main thread for both init and recognitionTask.
+                // Call directly on the main actor instead of Task.detached.
+                let service = LegacyTranscriptionService()
+                let result = try await service.transcribe(
+                    asset: asset,
+                    locale: Locale(identifier: job.transcriptionLocale),
+                    timeRange: range
+                ) { [jobID = job.id] progress, _ in
+                    NotificationCenter.default.post(
+                        name: Self.transcriptionProgressNotification,
+                        object: nil,
+                        userInfo: [
+                            Self.transcriptionProgressValueKey: progress * transcriptionWeight,
+                            Self.transcriptionProgressJobIDKey: jobID
+                        ]
+                    )
+                }
                 transcriptionResult = (cues: result.cues, duration: result.duration)
             }
 
@@ -207,7 +206,7 @@ final class PipelineOrchestrator: ObservableObject {
             try jobStore.saveCues(cues, id: job.id, type: .transcribed)
 
             if shouldFixTranscription {
-                if #available(iOS 26.0, *) {
+                if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                     let repairService = AppleIntelligenceTranscriptionRepairService()
 #if DEBUG
                     AppLog.append("[AI-TRANSCRIPT] repair(start) cues=\(cues.count) locale=\(job.transcriptionLocale)")
@@ -315,7 +314,7 @@ final class PipelineOrchestrator: ObservableObject {
         case .translationFramework:
             return try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
         case .appleIntelligence:
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 let aiService = AppleIntelligenceTranslationService()
                 return try await performAppleIntelligenceTranslations(job: job, sourceCues: sourceCues, service: aiService)
             } else {

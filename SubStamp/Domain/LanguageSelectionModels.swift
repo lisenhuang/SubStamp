@@ -147,7 +147,7 @@ final class LanguageSelectionLogic {
     private func computeAppleIntelligenceTargets(for source: Locale) -> [TargetOption] {
         // Apple Intelligence uses the system language model; only show supported languages (direct mode only).
         // Requires iOS 26.0+. On older OS versions, return [] so SetupView falls back gracefully.
-        guard #available(iOS 26.0, *) else {
+        guard #available(iOS 26.0, *), DevSettings.useModernAPIs else {
 #if DEBUG
             AppLog.append("[AI-DETECT] computeTargets(provider=appleIntelligence) unavailable: iOS 26 required")
 #endif

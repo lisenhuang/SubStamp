@@ -84,7 +84,7 @@ final class AssetReadinessManager: ObservableObject {
         
         if neededTargets.isEmpty {
             if config.translationProvider == .appleIntelligence && config.fixTranscriptionWithAppleIntelligence {
-                if #available(iOS 26.0, *) {
+                if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                     await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: [])
                 } else {
                     translationAssetsState = .failed(message: "AI unavailable.")
@@ -99,7 +99,7 @@ final class AssetReadinessManager: ObservableObject {
         case .translationFramework:
             await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
         case .appleIntelligence:
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: neededTargets)
             } else {
                 // Apple Intelligence requires iOS 26. Fall back to showing as unavailable.
@@ -196,7 +196,7 @@ final class AssetReadinessManager: ObservableObject {
         guard let config = config else { return }
         let requestedLocale = config.audioLocale
 
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), DevSettings.useModernAPIs {
             let requestedBCP47 = requestedLocale.identifier(.bcp47)
             let requestedLanguage = requestedLocale.language.languageCode?.identifier ?? String(requestedBCP47.prefix(2))
             let installedBefore = await SpeechTranscriber.installedLocales
@@ -268,7 +268,7 @@ final class AssetReadinessManager: ObservableObject {
     }
 
     private func checkSpeechAssets(for locale: Locale) async {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), DevSettings.useModernAPIs {
             let requestedBCP47 = locale.identifier(.bcp47)
             let installed = await SpeechTranscriber.installedLocales
             AppLog.append("[ASSET][speech] check locale=\(locale.identifier) bcp47=\(requestedBCP47) installedCount=\(installed.count)")

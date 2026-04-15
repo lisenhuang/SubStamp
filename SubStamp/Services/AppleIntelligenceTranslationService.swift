@@ -45,8 +45,6 @@ final class AppleIntelligenceTranslationService {
         source: Locale,
         target: Locale.Language
     ) async -> String? {
-        guard #available(iOS 17.4, *) else { return nil }
-        
         do {
             let session = TranslationSession(installedSource: source.language, target: target)
             let response = try await session.translate(text)

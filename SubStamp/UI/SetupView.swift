@@ -130,7 +130,7 @@ struct SetupView: View {
         .task {
             await purchaseManager.prepareEntitlementsIfNeeded()
 
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
                 speechAvailable = SpeechTranscriber.isAvailable
 
@@ -162,7 +162,7 @@ struct SetupView: View {
             }
 
             // Retry once shortly after launch in case the system model is still initializing.
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     let retryModel = SystemLanguageModel.default
@@ -185,7 +185,7 @@ struct SetupView: View {
             }
             
             // 1. Fetch Speech locales
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 let speechLocales = await SpeechTranscriber.supportedLocales.sorted { 
                     let name1 = $0.localizedString(forIdentifier: $0.identifier) ?? $0.identifier
                     let name2 = $1.localizedString(forIdentifier: $1.identifier) ?? $1.identifier
@@ -230,7 +230,7 @@ struct SetupView: View {
             }
         }
         .onChange(of: translationProvider) { _, newValue in
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
                 logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
             } else {
@@ -274,7 +274,7 @@ struct SetupView: View {
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
                 Task { await purchaseManager.refreshEntitlements() }
-                if #available(iOS 26.0, *) {
+                if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                     appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
                     logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
                 } else {
@@ -295,8 +295,8 @@ struct SetupView: View {
 
     private func logAppleIntelligenceDiagnostics(context: String) {
 #if DEBUG
-        guard #available(iOS 26.0, *) else {
-            AppLog.append("[AI-DETECT] \(context) (iOS < 26, skipped)")
+        guard #available(iOS 26.0, *), DevSettings.useModernAPIs else {
+            AppLog.append("[AI-DETECT] \(context) (iOS < 26 or legacy mode, skipped)")
             return
         }
         let prefix = "[AI-DETECT]"

@@ -4,6 +4,11 @@ import Speech
 
 /// SFSpeechRecognizer-based transcription service for iOS 18–25.
 /// Used as a fallback when the iOS 26+ SpeechTranscriber/SpeechAnalyzer APIs are unavailable.
+///
+/// @MainActor: SFSpeechRecognizer requires initialization and recognitionTask to be called
+/// on the main thread. extractAudioAsWav is marked nonisolated so its blocking I/O loop
+/// runs on the cooperative thread pool instead of blocking the main thread.
+@MainActor
 final class LegacyTranscriptionService {
 
     struct Result {
@@ -117,9 +122,7 @@ final class LegacyTranscriptionService {
         // SpeechTranscriber on iOS 26 is always on-device, but SFSpeechRecognizer
         // has limited on-device locale coverage on older OS versions.
         request.requiresOnDeviceRecognition = false
-        if #available(iOS 16.0, *) {
-            request.addsPunctuation = true
-        }
+        request.addsPunctuation = true
         request.shouldReportPartialResults = false
 
         return try await withCheckedThrowingContinuation { continuation in
