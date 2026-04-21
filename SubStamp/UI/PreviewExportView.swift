@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import SafariServices
 import SwiftUI
 import Translation
 import UIKit
@@ -1396,63 +1397,35 @@ struct PreviewExportView: View {
                     hasTranslationError: false
                 )
 
-                let sourceLocale = Locale(identifier: job.transcriptionLocale)
+                // Use Translation Framework with pivot support
+                let translationService = TranslationService()
 
-                // Use Apple Intelligence if selected, otherwise use Translation Framework
-                if #available(iOS 26.0, *), DevSettings.useModernAPIs, job.translationProvider == .appleIntelligence {
-                    // Apple Intelligence with built-in fallback to Translation Framework
-                    let aiService = AppleIntelligenceTranslationService()
-
-                    // Translate subtitle 1 if needed
-                    if job.language1Locale != job.transcriptionLocale {
-                        let target1 = Locale.Language(identifier: job.language1Locale)
-                        let result = try await aiService.translate(cues: [sourceCue], source: sourceLocale, target: target1) { _, _ in }
-                        if let translated = result.first?.secondaryText, !translated.isEmpty {
-                            orchestrator.cues[index].primaryText = translated
+                // Pivot step: translate to English first if needed
+                if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
+                    if let pivotSession = session1 {
+                        let pivotResult = try await translationService.translate(cues: [sourceCue], session: pivotSession) { _, _ in }
+                        if let pivotText = pivotResult.first?.secondaryText, !pivotText.isEmpty {
+                            sourceCue.primaryText = pivotText
                         }
                     }
+                }
 
-                    // Translate subtitle 2 if needed
-                    if job.subtitleMode == .bilingual,
-                       let targetLocale = job.translationTargetLocale,
-                       targetLocale != job.transcriptionLocale {
-                        let target2 = Locale.Language(identifier: targetLocale)
-                        let result = try await aiService.translate(cues: [sourceCue], source: sourceLocale, target: target2) { _, _ in }
-                        if let translated = result.first?.secondaryText, !translated.isEmpty {
-                            orchestrator.cues[index].secondaryText = translated
-                        }
+                // Translate for subtitle 1 if needed
+                if job.language1Locale != job.transcriptionLocale, let session2 = session2 {
+                    let result = try await translationService.translate(cues: [sourceCue], session: session2) { _, _ in }
+                    if let translated = result.first?.secondaryText, !translated.isEmpty {
+                        orchestrator.cues[index].primaryText = translated
                     }
-                } else {
-                    // Use Translation Framework with pivot support
-                    let translationService = TranslationService()
+                }
 
-                    // Pivot step: translate to English first if needed
-                    if job.subtitle1Mode == .pivot || job.subtitle2Mode == .pivot {
-                        if let pivotSession = session1 {
-                            let pivotResult = try await translationService.translate(cues: [sourceCue], session: pivotSession) { _, _ in }
-                            if let pivotText = pivotResult.first?.secondaryText, !pivotText.isEmpty {
-                                sourceCue.primaryText = pivotText
-                            }
-                        }
-                    }
-
-                    // Translate for subtitle 1 if needed
-                    if job.language1Locale != job.transcriptionLocale, let session2 = session2 {
-                        let result = try await translationService.translate(cues: [sourceCue], session: session2) { _, _ in }
-                        if let translated = result.first?.secondaryText, !translated.isEmpty {
-                            orchestrator.cues[index].primaryText = translated
-                        }
-                    }
-
-                    // Translate for subtitle 2 if needed
-                    if job.subtitleMode == .bilingual,
-                       let targetLocale = job.translationTargetLocale,
-                       targetLocale != job.transcriptionLocale,
-                       let session3 = session3 {
-                        let result = try await translationService.translate(cues: [sourceCue], session: session3) { _, _ in }
-                        if let translated = result.first?.secondaryText, !translated.isEmpty {
-                            orchestrator.cues[index].secondaryText = translated
-                        }
+                // Translate for subtitle 2 if needed
+                if job.subtitleMode == .bilingual,
+                   let targetLocale = job.translationTargetLocale,
+                   targetLocale != job.transcriptionLocale,
+                   let session3 = session3 {
+                    let result = try await translationService.translate(cues: [sourceCue], session: session3) { _, _ in }
+                    if let translated = result.first?.secondaryText, !translated.isEmpty {
+                        orchestrator.cues[index].secondaryText = translated
                     }
                 }
 
@@ -2784,6 +2757,21 @@ struct PreviewExportView: View {
         let duration = (try? await asset.load(.duration))?.seconds ?? 0
         return duration.isFinite && duration > 0 ? duration : 0
     }
+}
+
+private struct SafariURLItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 private struct EnclosingScrollViewResolver: UIViewRepresentable {

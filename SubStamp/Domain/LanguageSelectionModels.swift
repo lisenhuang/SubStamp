@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 @preconcurrency import Translation
 import Speech
 
@@ -24,8 +23,6 @@ struct SelectionModel {
 /// Final selection config object for the pipeline
 struct LanguageSelectionConfig {
     let audioLocale: Locale
-    let translationProvider: TranslationProvider
-    let fixTranscriptionWithAppleIntelligence: Bool
     let subtitle1: SubtitleTrackConfig
     let subtitle2: SubtitleTrackConfig?
     
@@ -63,24 +60,16 @@ final class LanguageSelectionLogic {
     private var targetsCache: [String: [TargetOption]] = [:]
     
     /// Computes valid translation targets for a given source audio locale.
-    func computeTargets(for source: Locale, provider: TranslationProvider) async -> [TargetOption] {
-        let sourceID = "\(provider.rawValue)|\(source.identifier(.bcp47))"
+    func computeTargets(for source: Locale) async -> [TargetOption] {
+        let sourceID = source.identifier(.bcp47)
         if let cached = targetsCache[sourceID] {
             return cached
         }
         if let persisted = SetupPreferences.loadCachedSubtitleTargets(
-            for: source.identifier,
-            provider: provider
+            for: source.identifier
         ) {
             targetsCache[sourceID] = persisted
             return persisted
-        }
-        
-        if provider == .appleIntelligence {
-            let options = computeAppleIntelligenceTargets(for: source)
-            targetsCache[sourceID] = options
-            SetupPreferences.saveCachedSubtitleTargets(options, for: source.identifier, provider: provider)
-            return options
         }
 
         let sortedOptions = await Self.computeFrameworkTargets(
@@ -88,7 +77,7 @@ final class LanguageSelectionLogic {
             displayLocaleIdentifier: Locale.current.identifier
         )
         targetsCache[sourceID] = sortedOptions
-        SetupPreferences.saveCachedSubtitleTargets(sortedOptions, for: source.identifier, provider: provider)
+        SetupPreferences.saveCachedSubtitleTargets(sortedOptions, for: source.identifier)
         return sortedOptions
     }
 
@@ -142,46 +131,5 @@ final class LanguageSelectionLogic {
 
             return options.sorted { $0.displayName < $1.displayName }
         }.value
-    }
-
-    private func computeAppleIntelligenceTargets(for source: Locale) -> [TargetOption] {
-        // Apple Intelligence uses the system language model; only show supported languages (direct mode only).
-        // Requires iOS 26.0+. On older OS versions, return [] so SetupView falls back gracefully.
-        guard #available(iOS 26.0, *), DevSettings.useModernAPIs else {
-#if DEBUG
-            AppLog.append("[AI-DETECT] computeTargets(provider=appleIntelligence) unavailable: iOS 26 required")
-#endif
-            return []
-        }
-
-        let model = SystemLanguageModel.default
-        guard model.isAvailable else {
-#if DEBUG
-            AppLog.append("[AI-DETECT] computeTargets(provider=appleIntelligence) unavailable isAvailable=false availability=\(model.availability) source=\(source.identifier(.bcp47))")
-#endif
-            return []
-        }
-
-        let sourceLang = Locale.Language(identifier: source.identifier)
-
-        let options: [TargetOption] = model.supportedLanguages
-            .filter { $0.minimalIdentifier != sourceLang.minimalIdentifier }
-            .map { language in
-                let id = language.minimalIdentifier
-                return TargetOption(
-                    id: id,
-                    displayName: Locale.current.localizedString(forIdentifier: id) ?? id,
-                    mode: .direct
-                )
-            }
-            .sorted { $0.displayName < $1.displayName }
-
-#if DEBUG
-        let prefix = "[AI-DETECT]"
-        let supportedCount = model.supportedLanguages.count
-        let sample = model.supportedLanguages.map { $0.minimalIdentifier }.prefix(12).joined(separator: ", ")
-        AppLog.append("\(prefix) computeTargets(provider=appleIntelligence) isAvailable=true availability=\(model.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(model.supportsLocale(source)) supportedCount=\(supportedCount) options=\(options.count) sample=\(sample)")
-#endif
-        return options
     }
 }

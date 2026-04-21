@@ -51,9 +51,14 @@ enum ExportPreset: String, Codable, CaseIterable, Identifiable {
 
 enum TranslationProvider: String, Codable, CaseIterable, Identifiable {
     case translationFramework
-    case appleIntelligence
 
     var id: String { rawValue }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = TranslationProvider(rawValue: rawValue) ?? .translationFramework
+    }
 }
 
 enum SubtitleFontSize: String, Codable, CaseIterable, Identifiable {

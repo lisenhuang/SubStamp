@@ -11,8 +11,6 @@ enum SetupPreferences {
     private static let transcriptionKey = "setup_transcriptionLocale"
     private static let subtitleModeKey = "setup_subtitleMode"
     private static let translationTargetKey = "setup_translationTarget"
-    private static let translationProviderKey = "setup_translationProvider"
-    private static let fixTranscriptionWithAppleIntelligenceKey = "setup_fixTranscriptionWithAppleIntelligence"
     private static let subtitleStyleKey = "setup_subtitleStyle"
     private static let language1Key = "setup_language1"
     private static let language2Key = "setup_language2"
@@ -33,33 +31,14 @@ enum SetupPreferences {
         UserDefaults.standard.string(forKey: translationTargetKey)
     }
 
-    static func loadTranslationProvider() -> TranslationProvider? {
-        guard let raw = UserDefaults.standard.string(forKey: translationProviderKey) else { return nil }
-        return TranslationProvider(rawValue: raw)
-    }
-
-    static func loadFixTranscriptionWithAppleIntelligence() -> Bool {
-        if UserDefaults.standard.object(forKey: fixTranscriptionWithAppleIntelligenceKey) == nil {
-            // Default OFF: only enable if the user explicitly opts in.
-            return false
-        }
-        return UserDefaults.standard.bool(forKey: fixTranscriptionWithAppleIntelligenceKey)
-    }
-
     static func save(
         transcriptionLocale: String,
         subtitleMode: SubtitleMode,
-        translationTarget: String?,
-        translationProvider: TranslationProvider,
-        fixTranscriptionWithAppleIntelligence: Bool
+        translationTarget: String?
     ) {
         UserDefaults.standard.set(transcriptionLocale, forKey: transcriptionKey)
         UserDefaults.standard.set(subtitleMode.rawValue, forKey: subtitleModeKey)
         UserDefaults.standard.set(translationTarget, forKey: translationTargetKey)
-        UserDefaults.standard.set(translationProvider.rawValue, forKey: translationProviderKey)
-        if translationProvider == .appleIntelligence {
-            UserDefaults.standard.set(fixTranscriptionWithAppleIntelligence, forKey: fixTranscriptionWithAppleIntelligenceKey)
-        }
     }
     
     // MARK: - Subtitle Style Persistence
@@ -122,25 +101,21 @@ enum SetupPreferences {
     }
 
     static func loadCachedSubtitleTargets(
-        for transcriptionLocaleIdentifier: String,
-        provider: TranslationProvider
+        for transcriptionLocaleIdentifier: String
     ) -> [TargetOption]? {
         let cache = loadLanguageCache()
         return cache.subtitleTargetsByContext[subtitleTargetCacheKey(
-            transcriptionLocaleIdentifier: transcriptionLocaleIdentifier,
-            provider: provider
+            transcriptionLocaleIdentifier: transcriptionLocaleIdentifier
         )]
     }
 
     static func saveCachedSubtitleTargets(
         _ targets: [TargetOption],
-        for transcriptionLocaleIdentifier: String,
-        provider: TranslationProvider
+        for transcriptionLocaleIdentifier: String
     ) {
         var cache = loadLanguageCache()
         cache.subtitleTargetsByContext[subtitleTargetCacheKey(
-            transcriptionLocaleIdentifier: transcriptionLocaleIdentifier,
-            provider: provider
+            transcriptionLocaleIdentifier: transcriptionLocaleIdentifier
         )] = targets
         saveLanguageCache(cache)
     }
@@ -167,10 +142,9 @@ enum SetupPreferences {
     }
 
     private static func subtitleTargetCacheKey(
-        transcriptionLocaleIdentifier: String,
-        provider: TranslationProvider
+        transcriptionLocaleIdentifier: String
     ) -> String {
         let locale = Locale(identifier: transcriptionLocaleIdentifier)
-        return "\(provider.rawValue)|\(locale.identifier(.bcp47))"
+        return locale.identifier(.bcp47)
     }
 }

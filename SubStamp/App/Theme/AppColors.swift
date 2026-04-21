@@ -10,7 +10,6 @@ enum AppColors {
     static let secondaryText = Color.secondary
 
     static let accent = Color.accentColor
-    static let appleIntelligence = Color(.systemPurple)
     static let success = Color.green
     static let warning = Color.orange
     static let error = Color.red

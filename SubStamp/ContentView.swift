@@ -19,8 +19,6 @@ struct ContentView: View {
     @State private var subtitle1Mode: TranslationMode? = nil
     @State private var language2Locale: String?
     @State private var subtitle2Mode: TranslationMode?
-    @State private var translationProvider: TranslationProvider = .translationFramework
-    @State private var fixTranscriptionWithAppleIntelligence = false
     @State private var isTestClip = false
 
     @State private var selectedVideoURL: URL?
@@ -59,8 +57,6 @@ struct ContentView: View {
                     language2Identifier: $language2Locale,
                     subtitle1Mode: $subtitle1Mode,
                     subtitle2Mode: $subtitle2Mode,
-                    translationProvider: $translationProvider,
-                    fixTranscriptionWithAppleIntelligence: $fixTranscriptionWithAppleIntelligence,
                     onOpenProjects: { showProjectsSheet = true },
                     onContinue: {
                         previewOpenedFromProjects = false
@@ -80,8 +76,6 @@ struct ContentView: View {
                     subtitle1Mode: subtitle1Mode,
                     language2Locale: language2Locale,
                     subtitle2Mode: subtitle2Mode,
-                    translationProvider: translationProvider,
-                    fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
                     onBack: { resetToSetup() },
                     onNext: { step = .previewAndExport }
                 )
@@ -157,20 +151,13 @@ struct ContentView: View {
         transcriptionLocaleIdentifier = SetupPreferences.loadTranscriptionLocale() ?? Self.sanitizedCurrentLocaleIdentifier()
         language1Locale = SetupPreferences.loadLanguage1() ?? transcriptionLocaleIdentifier
         language2Locale = SetupPreferences.loadLanguage2()
-        translationProvider = SetupPreferences.loadTranslationProvider() ?? .translationFramework
-        fixTranscriptionWithAppleIntelligence = SetupPreferences.loadFixTranscriptionWithAppleIntelligence()
-        if translationProvider != .appleIntelligence {
-            fixTranscriptionWithAppleIntelligence = false
-        }
     }
 
     private func saveSetupSelections() {
         SetupPreferences.save(
             transcriptionLocale: transcriptionLocaleIdentifier,
             subtitleMode: language2Locale == nil ? .single : .bilingual,
-            translationTarget: language2Locale,
-            translationProvider: translationProvider,
-            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence
+            translationTarget: language2Locale
         )
         SetupPreferences.saveLanguages(language1: language1Locale, language2: language2Locale)
     }
@@ -214,8 +201,6 @@ struct ContentView: View {
         subtitle1Mode = job.subtitle1Mode
         language2Locale = job.translationTargetLocale
         subtitle2Mode = job.subtitle2Mode
-        translationProvider = job.translationProvider
-        fixTranscriptionWithAppleIntelligence = job.fixTranscriptionWithAppleIntelligence
         outputURL = existingOutputURL
         orchestrator.cancel()
         orchestrator.resetStages()

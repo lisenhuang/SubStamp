@@ -1,7 +1,5 @@
-import FoundationModels
 import Speech
 import SwiftUI
-import SafariServices
 @preconcurrency import Translation
 
 struct SetupView: View {
@@ -11,8 +9,6 @@ struct SetupView: View {
     @Binding var language2Identifier: String?
     @Binding var subtitle1Mode: TranslationMode?
     @Binding var subtitle2Mode: TranslationMode?
-    @Binding var translationProvider: TranslationProvider
-    @Binding var fixTranscriptionWithAppleIntelligence: Bool
     var onOpenProjects: () -> Void
     var onContinue: () -> Void
 
@@ -28,10 +24,6 @@ struct SetupView: View {
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var shouldPrepareTranslation = false
     @State private var speechAvailable = true
-    @State private var appleIntelligenceAvailable = false
-    @State private var deviceSupportsAppleIntelligence = false
-    @State private var showAINotEnabledAlert = false
-    @State private var safariURL: URL?
     @StateObject private var purchaseManager = PurchaseManager()
     @State private var showPaywall = false
     @State private var paywallUsedCount = 0
@@ -87,8 +79,6 @@ struct SetupView: View {
 
                 audioLanguageCard
                 subtitleSelectionCard
-                translationProviderCard
-                transcriptionFixCard
                 readinessCard
 
                 if !assetManager.isReadyToProceed {
@@ -131,57 +121,10 @@ struct SetupView: View {
             await purchaseManager.prepareEntitlementsIfNeeded()
 
             if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                logAppleIntelligenceDiagnostics(context: "SetupView.task(start)")
                 speechAvailable = SpeechTranscriber.isAvailable
-
-                let model = SystemLanguageModel.default
-                appleIntelligenceAvailable = model.isAvailable
-
-                switch model.availability {
-                case .available:
-                    deviceSupportsAppleIntelligence = true
-                case .unavailable(let reason):
-                    deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
-                }
-
-                logAppleIntelligenceDiagnostics(context: "SetupView.task(initial-check)")
             } else {
-                // iOS 18–25: SpeechTranscriber/SystemLanguageModel not available
+                // iOS 18–25: SpeechTranscriber not available
                 speechAvailable = SFSpeechRecognizer()?.isAvailable ?? true
-                appleIntelligenceAvailable = false
-                deviceSupportsAppleIntelligence = false
-            }
-
-            if !deviceSupportsAppleIntelligence {
-                translationProvider = .translationFramework
-                fixTranscriptionWithAppleIntelligence = false
-            }
-
-            if translationProvider != .appleIntelligence {
-                fixTranscriptionWithAppleIntelligence = false
-            }
-
-            // Retry once shortly after launch in case the system model is still initializing.
-            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    let retryModel = SystemLanguageModel.default
-                    let retryAvailable = retryModel.isAvailable
-                    if retryAvailable != appleIntelligenceAvailable {
-                        appleIntelligenceAvailable = retryAvailable
-
-                        switch retryModel.availability {
-                        case .available:
-                            deviceSupportsAppleIntelligence = true
-                        case .unavailable(let reason):
-                            deviceSupportsAppleIntelligence = (reason != .deviceNotEligible)
-                        }
-
-                        logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-changed)")
-                    } else {
-                        logAppleIntelligenceDiagnostics(context: "SetupView.task(retry-unchanged)")
-                    }
-                }
             }
             
             // 1. Fetch Speech locales
@@ -229,31 +172,6 @@ struct SetupView: View {
                 shouldPrepareTranslation = false
             }
         }
-        .onChange(of: translationProvider) { _, newValue in
-            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
-                logAppleIntelligenceDiagnostics(context: "translationProvider changed -> \(newValue.rawValue)")
-            } else {
-                appleIntelligenceAvailable = false
-            }
-            if newValue == .appleIntelligence {
-                fixTranscriptionWithAppleIntelligence = SetupPreferences.loadFixTranscriptionWithAppleIntelligence()
-            } else {
-                fixTranscriptionWithAppleIntelligence = false
-            }
-            if newValue == .appleIntelligence, !appleIntelligenceAvailable {
-                translationProvider = .translationFramework
-                fixTranscriptionWithAppleIntelligence = false
-                return
-            }
-            if newValue == .appleIntelligence {
-                translationConfig = nil
-                shouldPrepareTranslation = false
-            }
-            applyCachedSubtitleTargets()
-            syncSubtitleSelectionsFromBindings()
-            scheduleSubtitleTargetsRefresh()
-        }
         .onChange(of: transcriptionLocaleIdentifier) { _, _ in
             applyCachedSubtitleTargets()
             syncSubtitleSelectionsFromBindings()
@@ -274,72 +192,12 @@ struct SetupView: View {
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
                 Task { await purchaseManager.refreshEntitlements() }
-                if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                    appleIntelligenceAvailable = SystemLanguageModel.default.isAvailable
-                    logAppleIntelligenceDiagnostics(context: "scenePhase -> active")
-                } else {
-                    appleIntelligenceAvailable = false
-                }
-                if !appleIntelligenceAvailable {
-                    translationProvider = .translationFramework
-                    fixTranscriptionWithAppleIntelligence = false
-                    translationConfig = nil
-                    shouldPrepareTranslation = false
-                }
                 applyCachedSubtitleTargets()
                 syncSubtitleSelectionsFromBindings()
                 scheduleSubtitleTargetsRefresh()
             }
         }
     }
-
-    private func logAppleIntelligenceDiagnostics(context: String) {
-#if DEBUG
-        guard #available(iOS 26.0, *), DevSettings.useModernAPIs else {
-            AppLog.append("[AI-DETECT] \(context) (iOS < 26 or legacy mode, skipped)")
-            return
-        }
-        let prefix = "[AI-DETECT]"
-        let model = SystemLanguageModel.default
-        let availability = describeAppleIntelligenceAvailability(model.availability)
-        let supportsCurrentLocale = model.supportsLocale(Locale.current)
-
-        let supported = model.supportedLanguages.map { $0.minimalIdentifier }
-        let supportedSample = supported.prefix(12).joined(separator: ", ")
-
-        let preferred = Locale.preferredLanguages.prefix(5).joined(separator: ", ")
-        let currentLocale = Locale.current.identifier
-
-        AppLog.append("\(prefix) \(context)")
-        AppLog.append("\(prefix) isAvailable=\(model.isAvailable) availability=\(availability) supportsLocale(current)=\(supportsCurrentLocale)")
-        AppLog.append("\(prefix) supportedCount=\(supported.count) sample=\(supportedSample)")
-        AppLog.append("\(prefix) currentLocale=\(currentLocale) preferred=\(preferred)")
-        AppLog.append("\(prefix) selectedProvider=\(translationProvider.rawValue) fixTranscription=\(fixTranscriptionWithAppleIntelligence) transcription=\(transcriptionLocaleIdentifier) s1=\(selectedSubtitle1ID) s2=\(selectedSubtitle2ID ?? "nil")")
-#endif
-    }
-
-#if DEBUG
-    @available(iOS 26.0, *)
-    private func describeAppleIntelligenceAvailability(_ availability: SystemLanguageModel.Availability) -> String {
-        switch availability {
-        case .available:
-            return "available"
-        case .unavailable(let reason):
-            switch reason {
-            case .deviceNotEligible:
-                return "unavailable(deviceNotEligible)"
-            case .appleIntelligenceNotEnabled:
-                return "unavailable(appleIntelligenceNotEnabled)"
-            case .modelNotReady:
-                return "unavailable(modelNotReady)"
-            @unknown default:
-                return "unavailable(unknown)"
-            }
-        @unknown default:
-            return "unknown"
-        }
-    }
-#endif
 
     private var audioLanguageCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.s) {
@@ -438,142 +296,6 @@ struct SetupView: View {
         )
     }
 
-    @ViewBuilder
-    private var translationProviderCard: some View {
-        if deviceSupportsAppleIntelligence {
-            VStack(alignment: .leading, spacing: AppSpacing.s) {
-                Text("Translation engine")
-                    .font(AppTypography.bodyEmphasis)
-
-                translationEnginePicker
-
-                Text("AI uses the on-device system model. Framework uses TranslationSession and may require downloading language assets.")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.secondaryText)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(AppColors.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                    .stroke(AppColors.cardBorder, lineWidth: 1)
-            )
-        }
-    }
-
-    private var translationEnginePicker: some View {
-        HStack(spacing: 0) {
-            translationEngineOption(
-                isSelected: translationProvider == .translationFramework,
-                action: { translationProvider = .translationFramework }
-            ) {
-                Text("Framework")
-                    .font(AppTypography.bodyEmphasis)
-                    .foregroundStyle(translationProvider == .translationFramework ? AppColors.primaryText : AppColors.secondaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            translationEngineOption(
-                isSelected: translationProvider == .appleIntelligence,
-                action: {
-                    if appleIntelligenceAvailable {
-                        translationProvider = .appleIntelligence
-                    } else {
-                        // AI not enabled, show alert
-                        showAINotEnabledAlert = true
-                    }
-                }
-            ) {
-                Text("AI")
-                    .font(AppTypography.bodyEmphasis)
-                    .foregroundStyle(appleIntelligenceGradient)
-                    .shadow(color: .purple.opacity(0.25), radius: 12, x: 0, y: 0)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-        }
-        .padding(2)
-        .background(AppColors.secondaryBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
-                .stroke(AppColors.cardBorder, lineWidth: 1)
-        )
-        .accessibilityLabel("Translation engine")
-        .alert(Text(String(localized: "AI Not Enabled", bundle: .forLocale(locale))), isPresented: $showAINotEnabledAlert) {
-            Button(String(localized: "Open Settings Guide", bundle: .forLocale(locale))) {
-                safariURL = URL(string: "https://support.apple.com/guide/iphone/iphc28624b81/ios#:~:text=of%20iOS.-,Turn%20on%20Apple%20Intelligence,-If%20Apple%20Intelligence")
-            }
-            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
-        } message: {
-            Text(String(localized: "To use AI translation, you need to enable AI in your iPhone settings. Tap 'Open Settings Guide' to learn how.", bundle: .forLocale(locale)))
-        }
-        .sheet(item: Binding(
-            get: { safariURL.map { SafariURLItem(url: $0) } },
-            set: { safariURL = $0?.url }
-        )) { item in
-            SafariView(url: item.url)
-        }
-    }
-
-    private var appleIntelligenceGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 1.0, green: 0.31, blue: 0.85), // pink-ish
-                Color(red: 0.54, green: 0.36, blue: 1.0), // purple-ish
-                Color(red: 0.18, green: 0.48, blue: 1.0), // blue-ish
-                Color(red: 1.0, green: 0.54, blue: 0.24)  // orange-ish
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    private func translationEngineOption<Content: View>(
-        isSelected: Bool,
-        action: @escaping () -> Void,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        Button(action: action) {
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius - 2)
-                .fill(isSelected ? AppColors.cardBackground : Color.clear)
-        )
-    }
-
-    @ViewBuilder
-    private var transcriptionFixCard: some View {
-        if appleIntelligenceAvailable && translationProvider == .appleIntelligence {
-            VStack(alignment: .leading, spacing: AppSpacing.s) {
-                Text("Transcription quality")
-                    .font(AppTypography.bodyEmphasis)
-
-                Toggle("Fix transcription mistakes (AI)", isOn: $fixTranscriptionWithAppleIntelligence)
-                    .font(AppTypography.caption)
-
-                Text("Optional. Proofreads the transcript to correct obvious speech-to-text mistakes while preserving cue alignment (same number/order). You can review/edit before export.")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.secondaryText)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(AppColors.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius)
-                    .stroke(AppColors.cardBorder, lineWidth: 1)
-            )
-        }
-    }
-
     private var pivotWarning: some View {
         HStack(spacing: 4) {
             Image(systemName: "exclamationmark.triangle")
@@ -593,7 +315,7 @@ struct SetupView: View {
                 description: assetStateDescription(assetManager.speechAssetsState)
             )
             AssetStatusCard(
-                title: translationProvider == .appleIntelligence ? "AI" : "Translation model",
+                title: "Translation model",
                 state: assetManager.translationAssetsState,
                 description: assetStateDescription(assetManager.translationAssetsState)
             )
@@ -626,17 +348,11 @@ struct SetupView: View {
         ) {
             Task {
                 await assetManager.downloadSpeechAssets()
-
-                if translationProvider == .appleIntelligence {
-                    await assetManager.check()
-                    return
-                }
                 
                 guard let config = assetManager.config else { return }
                 
                 let availability = LanguageAvailability()
                 let sourceLang = Locale.Language(identifier: config.audioLocale.identifier)
-                let englishLang = Locale.Language(identifier: "en-US")
                 
                 let tracks: [LanguageSelectionConfig.SubtitleTrackConfig] = [config.subtitle1, config.subtitle2].compactMap { $0 }
                 
@@ -1008,11 +724,10 @@ struct SetupView: View {
 
     private func refreshSubtitleTargets() async {
         let transcriptionID = transcriptionLocaleIdentifier
-        let provider = translationProvider
         let audioLocale = Locale(identifier: transcriptionID)
-        let computedTargets = await selectionLogic.computeTargets(for: audioLocale, provider: provider)
+        let computedTargets = await selectionLogic.computeTargets(for: audioLocale)
         guard !Task.isCancelled else { return }
-        guard transcriptionLocaleIdentifier == transcriptionID, translationProvider == provider else { return }
+        guard transcriptionLocaleIdentifier == transcriptionID else { return }
 
         subtitleTargets = computedTargets
         
@@ -1049,8 +764,7 @@ struct SetupView: View {
 
     private func applyCachedSubtitleTargets() {
         subtitleTargets = SetupPreferences.loadCachedSubtitleTargets(
-            for: transcriptionLocaleIdentifier,
-            provider: translationProvider
+            for: transcriptionLocaleIdentifier
         ) ?? []
     }
 
@@ -1120,8 +834,6 @@ struct SetupView: View {
         
         let config = LanguageSelectionConfig(
             audioLocale: audioLocale,
-            translationProvider: translationProvider,
-            fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
             subtitle1: s1,
             subtitle2: s2
         )
@@ -1157,7 +869,7 @@ struct SetupView: View {
     }
 }
 
-// MARK: - Safari View Helpers
+// MARK: - Selection Sheet Helpers
 
 private enum SetupSelectionSheet: String, Identifiable {
     case audioLanguage
@@ -1435,22 +1147,5 @@ private struct SetupSelectionSheetView: View {
             "th": "TH", "tr": "TR", "uk": "UA", "vi": "VN", "zh": "CN"
         ]
         return map[languageCode]
-    }
-}
-
-struct SafariURLItem: Identifiable {
-    let id = UUID()
-    let url: URL
-}
-
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-    
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
-    }
-    
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {
-        // No updates needed
     }
 }

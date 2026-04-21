@@ -144,8 +144,7 @@ final class PipelineOrchestrator: ObservableObject {
 
             let asset = AVAsset(url: job.videoURL)
             let range = timeRange(for: job, asset: asset)
-            let shouldFixTranscription = job.translationProvider == .appleIntelligence && job.fixTranscriptionWithAppleIntelligence
-            let transcriptionWeight = shouldFixTranscription ? 0.8 : 1.0
+            let transcriptionWeight = 1.0
             let observer = NotificationCenter.default.addObserver(
                 forName: Self.transcriptionProgressNotification,
                 object: nil,
@@ -204,35 +203,6 @@ final class PipelineOrchestrator: ObservableObject {
 
             cues = transcriptionResult.cues
             try jobStore.saveCues(cues, id: job.id, type: .transcribed)
-
-            if shouldFixTranscription {
-                if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                    let repairService = AppleIntelligenceTranscriptionRepairService()
-#if DEBUG
-                    AppLog.append("[AI-TRANSCRIPT] repair(start) cues=\(cues.count) locale=\(job.transcriptionLocale)")
-#endif
-                    do {
-                        try Task.checkCancellation()
-                        cues = try await repairService.repair(
-                            cues: cues,
-                            locale: Locale(identifier: job.transcriptionLocale)
-                        ) { [weak self] completed, total in
-                            let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                            self?.updateStageProgress(.transcribing, value: transcriptionWeight + frac * (1.0 - transcriptionWeight))
-                        }
-                        try jobStore.saveCues(cues, id: job.id, type: .transcribed)
-#if DEBUG
-                        AppLog.append("[AI-TRANSCRIPT] repair(done)")
-#endif
-                    } catch is CancellationError {
-                        throw CancellationError()
-                    } catch {
-#if DEBUG
-                        AppLog.append("[AI-TRANSCRIPT] repair(failed): \(error.localizedDescription)")
-#endif
-                    }
-                }
-            }
 
             try Task.checkCancellation()
 
@@ -310,18 +280,7 @@ final class PipelineOrchestrator: ObservableObject {
     }
 
     private func performTranslations(job: JobModel, sourceCues: [SubtitleCue]) async throws -> [SubtitleCue] {
-        switch job.translationProvider {
-        case .translationFramework:
-            return try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
-        case .appleIntelligence:
-            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                let aiService = AppleIntelligenceTranslationService()
-                return try await performAppleIntelligenceTranslations(job: job, sourceCues: sourceCues, service: aiService)
-            } else {
-                // Apple Intelligence not available on this OS version; fall back to Translation Framework
-                return try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
-            }
-        }
+        try await performFrameworkTranslations(job: job, sourceCues: sourceCues)
     }
 
     private func performFrameworkTranslations(job: JobModel, sourceCues: [SubtitleCue]) async throws -> [SubtitleCue] {
@@ -425,203 +384,6 @@ final class PipelineOrchestrator: ObservableObject {
             next.secondaryText = nil
             return next
         }
-    }
-
-    private func applyFrameworkFallbackIfNeeded(
-        job: JobModel,
-        aiOutput: [SubtitleCue],
-        sourceCues: [SubtitleCue],
-        sourceLanguage: Locale.Language,
-        pivotLanguage: Locale.Language?,
-        targetLanguage: Locale.Language,
-        firstLegSession: TranslationSession?,
-        secondLegSession: TranslationSession?,
-        label: String
-    ) async -> [SubtitleCue] {
-        let failedIDs = cuesNeedingFrameworkFallback(aiOutput)
-        guard !failedIDs.isEmpty else { return aiOutput }
-
-        guard let secondLegSession else {
-#if DEBUG
-            AppLog.append("[AI-FALLBACK] skip label=\(label) reason=noFrameworkSession failed=\(failedIDs.count)")
-#endif
-            return aiOutput
-        }
-
-        if let pivotLanguage, firstLegSession == nil {
-#if DEBUG
-            AppLog.append("[AI-FALLBACK] skip label=\(label) reason=missingPivotSession failed=\(failedIDs.count)")
-#endif
-            return aiOutput
-        }
-
-        let canTranslate = await canUseFrameworkFallback(
-            source: sourceLanguage,
-            pivot: pivotLanguage,
-            target: targetLanguage
-        )
-        guard canTranslate else {
-#if DEBUG
-            let pivotID = pivotLanguage?.minimalIdentifier ?? "nil"
-            AppLog.append("[AI-FALLBACK] skip label=\(label) reason=frameworkUnsupported source=\(sourceLanguage.minimalIdentifier) pivot=\(pivotID) target=\(targetLanguage.minimalIdentifier) failed=\(failedIDs.count)")
-#endif
-            return aiOutput
-        }
-
-        let sourceByID = Dictionary(uniqueKeysWithValues: sourceCues.map { ($0.id, $0) })
-        let subset = failedIDs.compactMap { sourceByID[$0] }
-        guard !subset.isEmpty else { return aiOutput }
-
-#if DEBUG
-        AppLog.append("[AI-FALLBACK] start label=\(label) failed=\(subset.count) mode=\(pivotLanguage == nil ? "direct" : "pivot")")
-#endif
-
-        let translatedSubset: [SubtitleCue]
-        do {
-            if let pivotLanguage, let firstLegSession {
-                let mid = try await translationService.translate(cues: subset, session: firstLegSession) { _, _ in }
-                let pivoted = mapTranslationOutputToPrimary(mid, fallbackToSourceTextOnFailure: true)
-                translatedSubset = try await translationService.translate(cues: pivoted, session: secondLegSession) { _, _ in }
-            } else {
-                translatedSubset = try await translationService.translate(cues: subset, session: secondLegSession) { _, _ in }
-            }
-        } catch {
-#if DEBUG
-            AppLog.append("[AI-FALLBACK] failed label=\(label) error=\(error.localizedDescription)")
-#endif
-            return aiOutput
-        }
-
-        let fallbackByID: [UUID: String] = Dictionary(uniqueKeysWithValues: translatedSubset.compactMap { cue in
-            guard cue.hasTranslationError == false,
-                  let text = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !text.isEmpty else { return nil }
-            return (cue.id, text)
-        })
-
-        if fallbackByID.isEmpty {
-#if DEBUG
-            AppLog.append("[AI-FALLBACK] done label=\(label) fixed=0")
-#endif
-            return aiOutput
-        }
-
-        var output = aiOutput
-        var fixed = 0
-        for index in output.indices {
-            let cueID = output[index].id
-            guard failedIDs.contains(cueID), let text = fallbackByID[cueID] else { continue }
-            output[index].secondaryText = SubtitleTextCleaner.clean(text)
-            output[index].hasTranslationError = false
-            fixed += 1
-        }
-
-#if DEBUG
-        AppLog.append("[AI-FALLBACK] done label=\(label) fixed=\(fixed)/\(failedIDs.count)")
-#endif
-
-        return output
-    }
-
-    private func cuesNeedingFrameworkFallback(_ cues: [SubtitleCue]) -> Set<UUID> {
-        Set(cues.compactMap { cue in
-            let original = cue.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !original.isEmpty else { return nil }
-            if cue.hasTranslationError { return cue.id }
-            let translated = cue.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if translated == nil || translated?.isEmpty == true { return cue.id }
-            return nil
-        })
-    }
-
-    private func canUseFrameworkFallback(
-        source: Locale.Language,
-        pivot: Locale.Language?,
-        target: Locale.Language
-    ) async -> Bool {
-        let availability = LanguageAvailability()
-
-        if let pivot {
-            let status1 = await availability.status(from: source, to: pivot)
-            let status2 = await availability.status(from: pivot, to: target)
-            let ok1 = (status1 == .installed || status1 == .supported)
-            let ok2 = (status2 == .installed || status2 == .supported)
-            return ok1 && ok2
-        }
-
-        let status = await availability.status(from: source, to: target)
-        return status == .installed || status == .supported
-    }
-
-    @available(iOS 26.0, *)
-    private func performAppleIntelligenceTranslations(job: JobModel, sourceCues: [SubtitleCue], service: AppleIntelligenceTranslationService) async throws -> [SubtitleCue] {
-        let baseLocaleIdentifier = job.transcriptionLocale
-        let sourceLocale = Locale(identifier: baseLocaleIdentifier)
-
-        let sourceMinimal = Locale.Language(identifier: sourceLocale.identifier(.bcp47)).minimalIdentifier
-
-        let lang1BCP47 = Locale(identifier: job.language1Locale).identifier(.bcp47)
-        let lang1Target = Locale.Language(identifier: lang1BCP47)
-        let lang1NeedsTranslation = lang1Target.minimalIdentifier != sourceMinimal
-
-        var lang2Target: Locale.Language?
-        var lang2NeedsTranslation = false
-        if job.subtitleMode == .bilingual, let lang2ID = job.translationTargetLocale {
-            let lang2BCP47 = Locale(identifier: lang2ID).identifier(.bcp47)
-            let target = Locale.Language(identifier: lang2BCP47)
-            lang2Target = target
-            lang2NeedsTranslation = target.minimalIdentifier != sourceMinimal
-        }
-
-        var primaryCues = sourceCues
-        var secondaryCues = sourceCues
-
-        var translationTargets: [Locale.Language] = []
-        if lang1NeedsTranslation { translationTargets.append(lang1Target) }
-        if lang2NeedsTranslation, let lang2Target { translationTargets.append(lang2Target) }
-
-        var translatedByTarget: [String: [SubtitleCue]]
-        if translationTargets.isEmpty {
-            translatedByTarget = [:]
-        } else {
-            translatedByTarget = try await service.translate(
-                cues: sourceCues,
-                source: sourceLocale,
-                targets: translationTargets
-            ) { [weak self] completed, total in
-                let frac = total == 0 ? 0 : (Double(completed) / Double(total))
-                self?.updateStageProgress(.translating, value: frac)
-            }
-        }
-
-        if lang1NeedsTranslation {
-            let key = lang1Target.minimalIdentifier
-            if let res = translatedByTarget[key] {
-                primaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: true, showFailureText: true)
-            }
-        }
-
-        if lang2NeedsTranslation, let lang2Target {
-            let key = lang2Target.minimalIdentifier
-            if let res = translatedByTarget[key] {
-                secondaryCues = mapTranslationOutputToPrimary(res, fallbackToSourceTextOnFailure: false, showFailureText: true)
-            }
-        }
-
-        if job.subtitleMode == .bilingual {
-            return zip(primaryCues, secondaryCues).map { p, s in
-                SubtitleCue(
-                    id: p.id,
-                    start: p.start,
-                    end: p.end,
-                    primaryText: p.primaryText,
-                    secondaryText: s.primaryText,
-                    hasTranslationError: p.hasTranslationError || s.hasTranslationError
-                )
-            }
-        }
-
-        return primaryCues
     }
 
     private func runRenderExport(job: JobModel) async {

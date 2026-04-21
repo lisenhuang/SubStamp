@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import FoundationModels
 import Speech
 import Translation
 
@@ -26,8 +25,6 @@ final class AssetReadinessManager: ObservableObject {
 
     func configure(with config: LanguageSelectionConfig) {
         let changed = self.config?.audioLocale.identifier != config.audioLocale.identifier ||
-                      self.config?.translationProvider != config.translationProvider ||
-                      self.config?.fixTranscriptionWithAppleIntelligence != config.fixTranscriptionWithAppleIntelligence ||
                       self.config?.selectedSubtitle1ID != config.selectedSubtitle1ID ||
                       self.config?.subtitle2Enabled != config.subtitle2Enabled ||
                       self.config?.selectedSubtitle2ID != config.selectedSubtitle2ID
@@ -83,113 +80,10 @@ final class AssetReadinessManager: ObservableObject {
         }
         
         if neededTargets.isEmpty {
-            if config.translationProvider == .appleIntelligence && config.fixTranscriptionWithAppleIntelligence {
-                if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                    await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: [])
-                } else {
-                    translationAssetsState = .failed(message: "AI unavailable.")
-                }
-            } else {
-                translationAssetsState = .ready
-            }
+            translationAssetsState = .ready
             return
         }
-
-        switch config.translationProvider {
-        case .translationFramework:
-            await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
-        case .appleIntelligence:
-            if #available(iOS 26.0, *), DevSettings.useModernAPIs {
-                await checkAppleIntelligenceAvailability(source: config.audioLocale, targets: neededTargets)
-            } else {
-                // Apple Intelligence requires iOS 26. Fall back to showing as unavailable.
-                translationAssetsState = .failed(message: "AI unavailable.")
-            }
-        }
-    }
-
-    @available(iOS 26.0, *)
-    private func checkAppleIntelligenceAvailability(source: Locale, targets: [Locale.Language]) async {
-        let model = SystemLanguageModel.default
-
-#if DEBUG
-        let prefix = "[AI-DETECT]"
-        let targetIDs = targets.map { $0.minimalIdentifier }.joined(separator: ", ")
-        AppLog.append("\(prefix) assetCheck(provider=appleIntelligence) isAvailable=\(model.isAvailable) availability=\(model.availability) source=\(source.identifier(.bcp47)) supportsLocale(source)=\(model.supportsLocale(source)) targets=\(targetIDs)")
-#endif
-
-        guard model.isAvailable else {
-#if DEBUG
-            AppLog.append("\(prefix) assetCheck failed: AI unavailable")
-#endif
-            lastError = .translationError(underlying: NSError(
-                domain: "SubStamp",
-                code: -200,
-                userInfo: [NSLocalizedDescriptionKey: "AI is not available on this device."]
-            ))
-            translationAssetsState = .failed(message: "AI unavailable.")
-            return
-        }
-
-#if DEBUG
-        // NOTE (test branch): allow proceeding even if the selected audio/target language isn't in the model's supported list.
-        // We still log the mismatch so we can diagnose failures from the model/session.
-        let supported = Set(model.supportedLanguages.map { $0.minimalIdentifier })
-        let sourceLang = Locale.Language(identifier: source.identifier(.bcp47)).minimalIdentifier
-        if !supported.contains(sourceLang) {
-            let sample = supported.prefix(12).joined(separator: ", ")
-            AppLog.append("\(prefix) assetCheck warning: ignoring unsupported source source=\(sourceLang) supportedCount=\(supported.count) sample=\(sample)")
-        }
-        let unsupportedTargets = targets
-            .map { $0.minimalIdentifier }
-            .filter { !supported.contains($0) }
-        if !unsupportedTargets.isEmpty {
-            let sample = supported.prefix(12).joined(separator: ", ")
-            AppLog.append("\(prefix) assetCheck warning: ignoring unsupported targets targets=\(unsupportedTargets.joined(separator: ", ")) supportedCount=\(supported.count) sample=\(sample)")
-        }
-#endif
-
-        // Treat Apple Intelligence as ready as long as the system model is available.
-        // If translation/repair fails later, we will surface the model/session error to the user.
-        lastError = nil
-        translationAssetsState = .ready
-        return
-
-#if false
-        let sourceLang = Locale.Language(identifier: source.identifier)
-        let supported = model.supportedLanguages.map { $0.minimalIdentifier }
-        guard supported.contains(sourceLang.minimalIdentifier) else {
-#if DEBUG
-            let sample = supported.prefix(12).joined(separator: ", ")
-            AppLog.append("\(prefix) assetCheck failed: source unsupported source=\(sourceLang.minimalIdentifier) supportedCount=\(supported.count) sample=\(sample)")
-#endif
-            lastError = .translationError(underlying: NSError(
-                domain: "SubStamp",
-                code: -201,
-                userInfo: [NSLocalizedDescriptionKey: "AI doesn't support the selected audio language."]
-            ))
-            translationAssetsState = .failed(message: "Audio language unsupported.")
-            return
-        }
-
-        for target in targets {
-            if !supported.contains(target.minimalIdentifier) {
-                let label = target.languageCode?.identifier ?? target.minimalIdentifier
-#if DEBUG
-                let sample = supported.prefix(12).joined(separator: ", ")
-                AppLog.append("\(prefix) assetCheck failed: target unsupported target=\(target.minimalIdentifier) supportedCount=\(supported.count) sample=\(sample)")
-#endif
-                lastError = .unsupportedLanguagePair(from: source.identifier, to: label)
-                translationAssetsState = .failed(message: "Target language unsupported.")
-                return
-            }
-        }
-
-#if DEBUG
-        AppLog.append("\(prefix) assetCheck succeeded: AI ready")
-#endif
-        translationAssetsState = .ready
-#endif
+        await checkAllTranslationAssets(source: config.audioLocale, targets: neededTargets)
     }
 
     func downloadSpeechAssets() async {

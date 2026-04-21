@@ -15,8 +15,6 @@ struct JobModel: Identifiable, Codable {
     var subtitleLayout: SubtitleLayout
     var subtitleStyle: SubtitleStyle
     var exportPreset: ExportPreset
-    var translationProvider: TranslationProvider
-    var fixTranscriptionWithAppleIntelligence: Bool
     var stage: ProcessingStage
     var shouldOfferResume: Bool
     var outputURL: URL?
@@ -38,8 +36,6 @@ struct JobModel: Identifiable, Codable {
         subtitleLayout: SubtitleLayout = .stacked,
         subtitleStyle: SubtitleStyle = SubtitleStyle(),
         exportPreset: ExportPreset = .balanced,
-        translationProvider: TranslationProvider = .translationFramework,
-        fixTranscriptionWithAppleIntelligence: Bool = false,
         stage: ProcessingStage = .idle,
         shouldOfferResume: Bool = true,
         outputURL: URL? = nil,
@@ -60,8 +56,6 @@ struct JobModel: Identifiable, Codable {
         self.subtitleLayout = subtitleLayout
         self.subtitleStyle = subtitleStyle
         self.exportPreset = exportPreset
-        self.translationProvider = translationProvider
-        self.fixTranscriptionWithAppleIntelligence = fixTranscriptionWithAppleIntelligence
         self.stage = stage
         self.shouldOfferResume = shouldOfferResume
         self.outputURL = outputURL
@@ -86,8 +80,6 @@ private extension JobModel {
         case subtitleLayout
         case subtitleStyle
         case exportPreset
-        case translationProvider
-        case fixTranscriptionWithAppleIntelligence
         case stage
         case shouldOfferResume
         case outputURL
@@ -114,8 +106,6 @@ extension JobModel {
         subtitleLayout = try container.decodeIfPresent(SubtitleLayout.self, forKey: .subtitleLayout) ?? .stacked
         subtitleStyle = try container.decodeIfPresent(SubtitleStyle.self, forKey: .subtitleStyle) ?? SubtitleStyle()
         exportPreset = try container.decodeIfPresent(ExportPreset.self, forKey: .exportPreset) ?? .balanced
-        translationProvider = try container.decodeIfPresent(TranslationProvider.self, forKey: .translationProvider) ?? .translationFramework
-        fixTranscriptionWithAppleIntelligence = try container.decodeIfPresent(Bool.self, forKey: .fixTranscriptionWithAppleIntelligence) ?? false
         stage = try container.decodeIfPresent(ProcessingStage.self, forKey: .stage) ?? .idle
         shouldOfferResume = try container.decodeIfPresent(Bool.self, forKey: .shouldOfferResume) ?? (stage != .completed)
         outputURL = try container.decodeIfPresent(URL.self, forKey: .outputURL)
@@ -139,8 +129,6 @@ extension JobModel {
         try container.encode(subtitleLayout, forKey: .subtitleLayout)
         try container.encode(subtitleStyle, forKey: .subtitleStyle)
         try container.encode(exportPreset, forKey: .exportPreset)
-        try container.encode(translationProvider, forKey: .translationProvider)
-        try container.encode(fixTranscriptionWithAppleIntelligence, forKey: .fixTranscriptionWithAppleIntelligence)
         try container.encode(stage, forKey: .stage)
         try container.encode(shouldOfferResume, forKey: .shouldOfferResume)
         try container.encodeIfPresent(outputURL, forKey: .outputURL)

@@ -16,8 +16,6 @@ struct VideoTranscribeView: View {
     let subtitle1Mode: TranslationMode?
     let language2Locale: String?
     let subtitle2Mode: TranslationMode?
-    let translationProvider: TranslationProvider
-    let fixTranscriptionWithAppleIntelligence: Bool
 
     var onBack: () -> Void
     var onNext: () -> Void
@@ -373,8 +371,6 @@ struct VideoTranscribeView: View {
                 existing.subtitleLayout = language2Locale == nil ? .single : .stacked
                 existing.subtitleStyle = savedStyle
                 existing.exportPreset = .balanced
-                existing.translationProvider = translationProvider
-                existing.fixTranscriptionWithAppleIntelligence = fixTranscriptionWithAppleIntelligence
                 existing.stage = .idle
                 existing.shouldOfferResume = true
                 existing.outputURL = nil
@@ -395,8 +391,6 @@ struct VideoTranscribeView: View {
                 subtitleLayout: language2Locale == nil ? .single : .stacked,
                 subtitleStyle: savedStyle,
                 exportPreset: .balanced,
-                translationProvider: translationProvider,
-                fixTranscriptionWithAppleIntelligence: fixTranscriptionWithAppleIntelligence,
                 shouldOfferResume: true,
                 isTestClip: isTestClip
             )
