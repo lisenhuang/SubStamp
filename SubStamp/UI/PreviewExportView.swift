@@ -53,6 +53,7 @@ struct PreviewExportView: View {
     @State private var previewScrollView: UIScrollView?
     @StateObject private var purchaseManager = PurchaseManager()
     @State private var showPremiumFeaturePaywall = false
+    @State private var showExportPresetAlert = false
     @State private var paywallUsedCount = 0
     @State private var subtitleShareItem: ShareFileItem?
     @State private var premiumIntroMessage: String?
@@ -522,6 +523,14 @@ struct PreviewExportView: View {
                 message: Text(alert.message),
                 dismissButton: .default(Text(String(localized: "OK", bundle: .forLocale(locale))))
             )
+        }
+        .alert(String(localized: "Export Quality", bundle: .forLocale(locale)), isPresented: $showExportPresetAlert) {
+            Button(String(localized: "480P – Fast", bundle: .forLocale(locale))) { exportWith(preset: .fast) }
+            Button(String(localized: "720P – Balanced", bundle: .forLocale(locale))) { exportWith(preset: .balanced) }
+            Button(String(localized: "Original – Best Quality", bundle: .forLocale(locale))) { exportWith(preset: .best) }
+            Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
+        } message: {
+            Text(String(localized: "Choose a quality preset for the exported video.", bundle: .forLocale(locale)))
         }
     }
 
@@ -1194,7 +1203,13 @@ struct PreviewExportView: View {
     }
 
     private func startExport() {
-        guard let job else { return }
+        guard job != nil else { return }
+        showExportPresetAlert = true
+    }
+
+    private func exportWith(preset: ExportPreset) {
+        guard var job else { return }
+        job.exportPreset = preset
         orchestrator.startRenderExport(job: job)
     }
 
