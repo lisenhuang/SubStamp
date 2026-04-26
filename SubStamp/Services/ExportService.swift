@@ -150,8 +150,8 @@ final class ExportService {
             if presets.contains(AVAssetExportPreset1280x720) { return AVAssetExportPreset1280x720 }
             if presets.contains(AVAssetExportPresetMediumQuality) { return AVAssetExportPresetMediumQuality }
         case .best:
-            if presets.contains(AVAssetExportPresetHEVCHighestQuality) { return AVAssetExportPresetHEVCHighestQuality }
             if presets.contains(AVAssetExportPresetHighestQuality) { return AVAssetExportPresetHighestQuality }
+            if presets.contains(AVAssetExportPresetHEVCHighestQuality) { return AVAssetExportPresetHEVCHighestQuality }
         }
         return AVAssetExportPresetHighestQuality
     }
@@ -163,7 +163,7 @@ final class ExportService {
     ) -> String {
         let presets = AVAssetExportSession.exportPresets(compatibleWith: asset)
 
-        if estimatedMergedBytes >= largeFileRiskThresholdBytes {
+        if preference != .best, estimatedMergedBytes >= largeFileRiskThresholdBytes {
             if presets.contains(AVAssetExportPresetHEVCHighestQuality) {
                 AppLog.append("[EXPORT] merge preset-adjusted reason=large-estimate estimated=\(ByteCountFormatter.string(fromByteCount: estimatedMergedBytes, countStyle: .file)) chosen=\(AVAssetExportPresetHEVCHighestQuality)")
                 return AVAssetExportPresetHEVCHighestQuality

@@ -527,7 +527,7 @@ struct PreviewExportView: View {
         .alert(String(localized: "Export Quality", bundle: .forLocale(locale)), isPresented: $showExportPresetAlert) {
             Button(String(localized: "480P – Fast", bundle: .forLocale(locale))) { exportWith(preset: .fast) }
             Button(String(localized: "720P – Balanced", bundle: .forLocale(locale))) { exportWith(preset: .balanced) }
-            Button(String(localized: "Original – Best Quality", bundle: .forLocale(locale))) { exportWith(preset: .best) }
+            Button(String(localized: "Original Resolution & FPS", bundle: .forLocale(locale))) { exportWith(preset: .best) }
             Button(String(localized: "Cancel", bundle: .forLocale(locale)), role: .cancel) { }
         } message: {
             Text(String(localized: "Choose a quality preset for the exported video.", bundle: .forLocale(locale)))

@@ -22,10 +22,12 @@ final class SubtitleRenderer {
         mode: SubtitleMode,
         style: SubtitleStyle,
         layout: SubtitleLayout,
-        timeRange: CMTimeRange? = nil
+        timeRange: CMTimeRange? = nil,
+        preserveSourceFrameRate: Bool = false
     ) async throws -> RenderResult {
         let composition = AVMutableComposition()
-        guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard let videoTrack = videoTracks.first else {
             throw SubStampError.exportFailed(underlying: NSError(domain: "SubStamp", code: -4))
         }
 
@@ -33,11 +35,12 @@ final class SubtitleRenderer {
             withMediaType: .video,
             preferredTrackID: kCMPersistentTrackID_Invalid
         )
-        let sourceRange = timeRange ?? CMTimeRange(start: .zero, duration: asset.duration)
+        let assetDuration = try await asset.load(.duration)
+        let sourceRange = timeRange ?? CMTimeRange(start: .zero, duration: assetDuration)
         let timelineRange = CMTimeRange(start: .zero, duration: sourceRange.duration)
         try videoCompositionTrack?.insertTimeRange(sourceRange, of: videoTrack, at: .zero)
 
-        if let audioTrack = asset.tracks(withMediaType: .audio).first {
+        if let audioTrack = try await asset.loadTracks(withMediaType: .audio).first {
             let audioCompositionTrack = composition.addMutableTrack(
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid
@@ -46,10 +49,15 @@ final class SubtitleRenderer {
         }
 
         let videoComposition = AVMutableVideoComposition()
-        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+        let sourceNominalFrameRate = try await videoTrack.load(.nominalFrameRate)
+        let sourceMinFrameDuration = try await videoTrack.load(.minFrameDuration)
+        videoComposition.frameDuration = Self.frameDuration(
+            nominalFrameRate: preserveSourceFrameRate ? sourceNominalFrameRate : 0,
+            minFrameDuration: preserveSourceFrameRate ? sourceMinFrameDuration : .invalid
+        )
 
-        let preferredTransform = videoTrack.preferredTransform
-        let naturalSize = videoTrack.naturalSize
+        let preferredTransform = try await videoTrack.load(.preferredTransform)
+        let naturalSize = try await videoTrack.load(.naturalSize)
         let transformedSize = naturalSize.applying(preferredTransform)
         let transformedWidth = abs(transformedSize.width)
         let transformedHeight = abs(transformedSize.height)
@@ -62,7 +70,7 @@ final class SubtitleRenderer {
 
         let stats = cueStats(for: cues)
         AppLog.append(
-            "[RENDER] start range=\(formatTimeRange(sourceRange)) cues=\(cues.count) mode=\(mode.rawValue) layout=\(layout.rawValue) style=\(describe(style: style)) natural=\(format(size: naturalSize)) transformed=\(format(size: CGSize(width: transformedWidth, height: transformedHeight))) render=\(format(size: renderSize))"
+            "[RENDER] start range=\(formatTimeRange(sourceRange)) cues=\(cues.count) mode=\(mode.rawValue) layout=\(layout.rawValue) style=\(describe(style: style)) natural=\(format(size: naturalSize)) transformed=\(format(size: CGSize(width: transformedWidth, height: transformedHeight))) render=\(format(size: renderSize)) sourceFPS=\(String(format: "%.3f", sourceNominalFrameRate)) preserveFPS=\(preserveSourceFrameRate)"
         )
         AppLog.append(
             "[RENDER] cue-stats primaryChars=\(stats.primaryChars) secondaryChars=\(stats.secondaryChars) bilingualCues=\(stats.bilingualCueCount) maxCueChars=\(stats.maxCueChars) maxCueDuration=\(String(format: "%.2f", stats.maxCueDuration))"
@@ -102,6 +110,33 @@ final class SubtitleRenderer {
         AppLog.append("[RENDER] ready instructions=\(videoComposition.instructions.count) frameDuration=\(String(format: "%.4f", videoComposition.frameDuration.seconds))s")
 
         return RenderResult(composition: composition, videoComposition: videoComposition, renderSize: renderSize)
+    }
+
+    nonisolated static func frameDuration(nominalFrameRate: Float, minFrameDuration: CMTime) -> CMTime {
+        if let duration = frameDuration(forFramesPerSecond: Double(nominalFrameRate)) {
+            return duration
+        }
+
+        if minFrameDuration.isValid,
+           minFrameDuration.isNumeric,
+           minFrameDuration.seconds.isFinite,
+           let duration = frameDuration(forFramesPerSecond: 1 / minFrameDuration.seconds) {
+            return duration
+        }
+
+        return CMTime(value: 1, timescale: 30)
+    }
+
+    nonisolated private static func frameDuration(forFramesPerSecond framesPerSecond: Double) -> CMTime? {
+        guard framesPerSecond.isFinite,
+              framesPerSecond >= 1,
+              framesPerSecond <= 240 else {
+            return nil
+        }
+
+        let timescale: Int32 = 60_000
+        let value = max(1, Int64((Double(timescale) / framesPerSecond).rounded()))
+        return CMTime(value: value, timescale: timescale)
     }
 
     private func normalizeTransform(_ transform: CGAffineTransform, renderSize: CGSize) -> CGAffineTransform {

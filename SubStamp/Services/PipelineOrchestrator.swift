@@ -454,7 +454,8 @@ final class PipelineOrchestrator: ObservableObject {
                         mode: job.subtitleMode,
                         style: job.subtitleStyle,
                         layout: job.subtitleLayout,
-                        timeRange: segmentRange
+                        timeRange: segmentRange,
+                        preserveSourceFrameRate: job.exportPreset == .best
                     )
                     AppLog.append("[EXPORT] segment \(segmentIndex + 1)/\(segmentCount) render(done) renderSize=\(format(size: renderResult.renderSize))")
 
@@ -499,7 +500,8 @@ final class PipelineOrchestrator: ObservableObject {
                     mode: job.subtitleMode,
                     style: job.subtitleStyle,
                     layout: job.subtitleLayout,
-                    timeRange: range
+                    timeRange: range,
+                    preserveSourceFrameRate: job.exportPreset == .best
                 )
                 AppLog.append("[EXPORT] full render(done) renderSize=\(format(size: renderResult.renderSize))")
 
