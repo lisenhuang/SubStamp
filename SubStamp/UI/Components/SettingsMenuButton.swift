@@ -107,6 +107,16 @@ private struct SettingsSheetView: View {
                         value: .dark
                     )
                 }
+
+                Section {
+                    Link(destination: URL(string: "mailto:substamp.app@gmail.com")!) {
+                        Label(
+                            String(localized: "Contact Support: substamp.app@gmail.com", bundle: .forLocale(locale)),
+                            systemImage: "envelope"
+                        )
+                        .foregroundStyle(AppColors.primaryText)
+                    }
+                }
             }
             .listStyle(.insetGrouped)
             .navigationBarTitleDisplayMode(.inline)
