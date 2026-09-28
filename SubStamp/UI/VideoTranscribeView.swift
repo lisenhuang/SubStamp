@@ -65,6 +65,9 @@ struct VideoTranscribeView: View {
                     }
 
                     transcriptionSection
+                    if let end = activeJob?.recoveredAudioEndSeconds {
+                        RecoveredAudioNotice(endSeconds: end)
+                    }
 
                     // Next button (shown when returning from Step 3 with transcription already done)
                     if orchestrator.transcriptionComplete && !orchestrator.isRunning {

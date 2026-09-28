@@ -277,3 +277,19 @@
 "Choose Audio Language" = "音声言語を選択";
 "Choose Subtitle 1" = "字幕 1 を選択";
 "Choose Subtitle 2" = "字幕 2 を選択";
+
+"The video has an unreadable ending. Audio was recovered up to %@; subtitles cover only the recovered audio." = "動画の末尾を読み取れません。%@ までの音声を復元しました。字幕は復元された音声の範囲のみをカバーします。";
+
+"Pay once. No subscription." = "一度の購入で、サブスクリプション不要。";
+
+"Buy Lifetime" = "買い切り版を購入";
+
+"%@ / week" = "%@ / 週";
+
+"Auto-renews weekly. Cancel anytime." = "毎週自動更新。いつでも解約できます。";
+
+"Subscribe Weekly" = "週間プランに登録";
+
+"Reload purchase options" = "購入オプションを再読み込み";
+
+"Price unavailable" = "価格を取得できません";

@@ -278,3 +278,19 @@
 "Choose Audio Language" = "Choose Audio Language";
 "Choose Subtitle 1" = "Choose Subtitle 1";
 "Choose Subtitle 2" = "Choose Subtitle 2";
+
+"The video has an unreadable ending. Audio was recovered up to %@; subtitles cover only the recovered audio." = "The video has an unreadable ending. Audio was recovered up to %@; subtitles cover only the recovered audio.";
+
+"Pay once. No subscription." = "Pay once. No subscription.";
+
+"Buy Lifetime" = "Buy Lifetime";
+
+"%@ / week" = "%@ / week";
+
+"Auto-renews weekly. Cancel anytime." = "Auto-renews weekly. Cancel anytime.";
+
+"Subscribe Weekly" = "Subscribe Weekly";
+
+"Reload purchase options" = "Reload purchase options";
+
+"Price unavailable" = "Price unavailable";

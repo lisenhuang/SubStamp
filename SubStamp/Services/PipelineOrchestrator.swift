@@ -157,7 +157,7 @@ final class PipelineOrchestrator: ObservableObject {
             }
             defer { NotificationCenter.default.removeObserver(observer) }
 
-            let transcriptionResult: (cues: [SubtitleCue], duration: CMTime)
+            let transcriptionResult: (cues: [SubtitleCue], duration: CMTime, recoveredAudio: Bool)
             if #available(iOS 26.0, *), DevSettings.useModernAPIs {
                 let result = try await Task.detached(priority: .userInitiated) { [videoURL = job.videoURL, localeID = job.transcriptionLocale, range, jobID = job.id, transcriptionWeight] in
                     let service = TranscriptionService()
@@ -177,7 +177,7 @@ final class PipelineOrchestrator: ObservableObject {
                         )
                     }
                 }.value
-                transcriptionResult = (cues: result.cues, duration: result.duration)
+                transcriptionResult = (cues: result.cues, duration: result.duration, recoveredAudio: result.recoveredAudio)
             } else {
                 // SFSpeechRecognizer requires the main thread for both init and recognitionTask.
                 // Call directly on the main actor instead of Task.detached.
@@ -196,7 +196,7 @@ final class PipelineOrchestrator: ObservableObject {
                         ]
                     )
                 }
-                transcriptionResult = (cues: result.cues, duration: result.duration)
+                transcriptionResult = (cues: result.cues, duration: result.duration, recoveredAudio: result.recoveredAudio)
             }
 
             try Task.checkCancellation()
@@ -213,6 +213,11 @@ final class PipelineOrchestrator: ObservableObject {
                 return updated
             }
             try jobStore.saveCues(cues, id: job.id, type: .transcribed)
+
+            updatedJob.recoveredAudioEndSeconds = transcriptionResult.recoveredAudio
+                ? (range?.start.seconds ?? 0) + transcriptionResult.duration.seconds : nil
+            try jobStore.save(job: updatedJob)
+            self.job = updatedJob
 
             stageStates[.transcribing] = .done
             stageProgress[.transcribing] = 1

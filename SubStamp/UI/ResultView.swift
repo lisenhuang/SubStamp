@@ -393,6 +393,7 @@ final class PurchaseManager: ObservableObject {
     @Published private(set) var hasCheckedEntitlements = false
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var isProcessingPurchase = false
+    @Published private(set) var purchasingProductID: String?
     @Published var errorMessage: String?
 
     private var transactionUpdatesTask: Task<Void, Never>?
@@ -425,7 +426,7 @@ final class PurchaseManager: ObservableObject {
 
         do {
             let loaded = try await Product.products(for: Array(Self.supportedProductIDs))
-            let order = [Self.weeklyProductID, Self.lifetimeProductID]
+            let order = [Self.lifetimeProductID, Self.weeklyProductID]
             products = loaded.sorted { lhs, rhs in
                 let left = order.firstIndex(of: lhs.id) ?? Int.max
                 let right = order.firstIndex(of: rhs.id) ?? Int.max
@@ -439,8 +440,13 @@ final class PurchaseManager: ObservableObject {
     func purchase(_ product: Product) async {
         guard !isProcessingPurchase else { return }
         isProcessingPurchase = true
+        purchasingProductID = product.id
         errorMessage = nil
-        defer { isProcessingPurchase = false }
+        AppLog.append("[PURCHASE] Starting product=\(product.id)")
+        defer {
+            isProcessingPurchase = false
+            purchasingProductID = nil
+        }
 
         do {
             let result = try await product.purchase()
@@ -448,19 +454,24 @@ final class PurchaseManager: ObservableObject {
             case let .success(verificationResult):
                 switch verificationResult {
                 case let .verified(transaction):
+                    AppLog.append("[PURCHASE] Verified product=\(product.id)")
                     await transaction.finish()
                     await refreshEntitlements()
                 case .unverified:
+                    AppLog.append("[PURCHASE] Verification failed product=\(product.id)")
                     errorMessage = "Purchase could not be verified."
                 }
             case .pending:
+                AppLog.append("[PURCHASE] Pending product=\(product.id)")
                 errorMessage = "Purchase is pending approval."
             case .userCancelled:
-                break
+                AppLog.append("[PURCHASE] Cancelled product=\(product.id)")
             @unknown default:
                 errorMessage = "Purchase did not complete."
             }
         } catch {
+            let nsError = error as NSError
+            AppLog.append("[PURCHASE] Failed product=\(product.id) domain=\(nsError.domain) code=\(nsError.code) description=\(nsError.localizedDescription)")
             errorMessage = "Purchase failed. \(error.localizedDescription)"
         }
     }
@@ -745,85 +756,90 @@ struct PurchasePaywallView: View {
         let lifetime = purchaseManager.product(for: PurchaseManager.lifetimeProductID)
 
         NavigationStack {
-            VStack(alignment: .leading, spacing: AppSpacing.m) {
-                Text(String(localized: "Unlock Pro", bundle: .forLocale(locale)))
-                    .font(AppTypography.title)
-                Text(introMessage ?? String(format: String(localized: "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
-                    .font(AppTypography.body)
-                    .foregroundStyle(AppColors.secondaryText)
-
-                if let featureMessage, !featureMessage.isEmpty {
-                    Text(featureMessage)
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppSpacing.m) {
+                    Text(String(localized: "Unlock Pro", bundle: .forLocale(locale)))
+                        .font(AppTypography.title)
+                    Text(introMessage ?? String(format: String(localized: "Free users can save or share up to %d different videos. Each video counts once. Upgrade to Pro for unlimited saving and sharing.", bundle: .forLocale(locale)), freeLimit))
                         .font(AppTypography.body)
                         .foregroundStyle(AppColors.secondaryText)
-                }
 
-                SubscriptionStoreView(productIDs: [PurchaseManager.weeklyProductID]) {
-                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                        Text(String(localized: "Weekly Subscription", bundle: .forLocale(locale)))
-                            .font(AppTypography.bodyEmphasis)
-                        Text(String(localized: "Unlimited video export, subtitle file export, saving, and sharing. Cancel anytime.", bundle: .forLocale(locale)))
-                            .font(AppTypography.caption)
+                    if let featureMessage, !featureMessage.isEmpty {
+                        Text(featureMessage)
+                            .font(AppTypography.body)
                             .foregroundStyle(AppColors.secondaryText)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .subscriptionStorePolicyDestination(url: AppLegal.termsOfUseURL, for: .termsOfService)
-                .subscriptionStorePolicyDestination(url: AppLegal.privacyPolicyURL, for: .privacyPolicy)
 
-                if purchaseManager.isLoadingProducts {
-                    ProgressView(String(localized: "Loading purchase options...", bundle: .forLocale(locale)))
-                } else if let lifetime {
+                    if purchaseManager.isLoadingProducts {
+                        ProgressView(String(localized: "Loading purchase options...", bundle: .forLocale(locale)))
+                    }
+
                     payButton(
+                        product: lifetime,
                         title: String(localized: "Lifetime Unlock", bundle: .forLocale(locale)),
-                        subtitle: lifetime.displayPrice
-                    ) {
-                        Task { await purchaseManager.purchase(lifetime) }
+                        price: lifetime?.displayPrice,
+                        detail: String(localized: "Pay once. No subscription.", bundle: .forLocale(locale)),
+                        actionTitle: String(localized: "Buy Lifetime", bundle: .forLocale(locale))
+                    )
+
+                    payButton(
+                        product: weekly,
+                        title: String(localized: "Weekly Subscription", bundle: .forLocale(locale)),
+                        price: weekly.map { String(format: String(localized: "%@ / week", bundle: .forLocale(locale)), $0.displayPrice) },
+                        detail: String(localized: "Auto-renews weekly. Cancel anytime.", bundle: .forLocale(locale)),
+                        actionTitle: String(localized: "Subscribe Weekly", bundle: .forLocale(locale))
+                    )
+
+                    if !purchaseManager.isLoadingProducts && (lifetime == nil || weekly == nil) {
+                        Button(String(localized: "Reload purchase options", bundle: .forLocale(locale))) {
+                            Task { await purchaseManager.loadProducts() }
+                        }
+                        .disabled(purchaseManager.isProcessingPurchase)
                     }
-                }
 
-                Button(String(localized: "Restore Purchases", bundle: .forLocale(locale))) {
-                    Task { await purchaseManager.restorePurchases() }
-                }
-                .font(AppTypography.bodyEmphasis)
-                .buttonStyle(.plain)
+                    if let errorMessage = purchaseManager.errorMessage {
+                        Text(errorMessage)
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.error)
+                    }
 
-                VStack(alignment: .leading, spacing: AppSpacing.s) {
-                    Divider()
-                    Text(String(localized: "Subscription details", bundle: .forLocale(locale)))
-                        .font(AppTypography.bodyEmphasis)
+                    Button(String(localized: "Restore Purchases", bundle: .forLocale(locale))) {
+                        Task { await purchaseManager.restorePurchases() }
+                    }
+                    .font(AppTypography.bodyEmphasis)
+                    .buttonStyle(.plain)
 
-                    if let weekly {
-                        Text(String(format: String(localized: "Weekly subscription (1 week): %@ per week. Auto-renewable.", bundle: .forLocale(locale)), weekly.displayPrice))
+                    VStack(alignment: .leading, spacing: AppSpacing.s) {
+                        Divider()
+                        Text(String(localized: "Subscription details", bundle: .forLocale(locale)))
+                            .font(AppTypography.bodyEmphasis)
+
+                        if let weekly {
+                            Text(String(format: String(localized: "Weekly subscription (1 week): %@ per week. Auto-renewable.", bundle: .forLocale(locale)), weekly.displayPrice))
+                                .font(AppTypography.caption)
+                                .foregroundStyle(AppColors.secondaryText)
+                        } else {
+                            Text(String(localized: "Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load.", bundle: .forLocale(locale)))
+                                .font(AppTypography.caption)
+                                .foregroundStyle(AppColors.secondaryText)
+                        }
+
+                        Text(String(localized: "Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions.", bundle: .forLocale(locale)))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.secondaryText)
-                    } else {
-                        Text(String(localized: "Weekly subscription (1 week): billed weekly. Price will appear once the App Store products load.", bundle: .forLocale(locale)))
-                            .font(AppTypography.caption)
-                            .foregroundStyle(AppColors.secondaryText)
-                    }
 
-                    Text(String(localized: "Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings > Apple ID > Subscriptions.", bundle: .forLocale(locale)))
+                        HStack {
+                            Link(String(localized: "Privacy Policy", bundle: .forLocale(locale)), destination: AppLegal.privacyPolicyURL)
+                            Spacer()
+                            Link(String(localized: "Terms of Use (EULA)", bundle: .forLocale(locale)), destination: AppLegal.termsOfUseURL)
+                        }
                         .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.secondaryText)
-
-                    HStack {
-                        Link(String(localized: "Privacy Policy", bundle: .forLocale(locale)), destination: AppLegal.privacyPolicyURL)
-                        Spacer()
-                        Link(String(localized: "Terms of Use (EULA)", bundle: .forLocale(locale)), destination: AppLegal.termsOfUseURL)
                     }
-                    .font(AppTypography.caption)
                 }
-
-                if let errorMessage = purchaseManager.errorMessage {
-                    Text(errorMessage)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.error)
-                }
-
-                Spacer(minLength: 0)
+                .padding(AppSpacing.l)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
-            .padding(AppSpacing.l)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(String(localized: "Close", bundle: .forLocale(locale))) { dismiss() }
@@ -841,36 +857,44 @@ struct PurchasePaywallView: View {
         }
     }
 
-    private func payButton(title: String, subtitle: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text(title)
+    private func payButton(product: Product?, title: String, price: String?, detail: String, actionTitle: String) -> some View {
+        Button {
+            guard let product else { return }
+            Task { await purchaseManager.purchase(product) }
+        } label: {
+            VStack(alignment: .leading, spacing: AppSpacing.m) {
+                Text(title)
+                    .font(AppTypography.bodyEmphasis)
+                Text(price ?? String(localized: "Price unavailable", bundle: .forLocale(locale)))
+                    .font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(detail)
+                    .font(AppTypography.caption)
+
+                HStack {
+                    Text(actionTitle)
                         .font(AppTypography.bodyEmphasis)
-                    Text(subtitle)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.secondaryText)
+                    Spacer()
+                    if let product, purchaseManager.purchasingProductID == product.id {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "arrow.right")
+                    }
                 }
-                Spacer()
-                if purchaseManager.isProcessingPurchase {
-                    ProgressView()
-                } else {
-                    Image(systemName: "lock.open")
-                        .font(AppTypography.bodyEmphasis)
-                }
+                .padding(.top, AppSpacing.xs)
             }
-            .frame(maxWidth: .infinity)
-            .padding(AppSpacing.m)
-            .background(AppColors.cardBackground)
+            .foregroundStyle(.white)
+            .padding(AppSpacing.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.accent)
             .clipShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius)
-                    .stroke(AppColors.cardBorder, lineWidth: 1)
-            )
+            .contentShape(RoundedRectangle(cornerRadius: AppSpacing.controlCornerRadius))
+            .opacity(product == nil ? 0.55 : 1)
         }
         .buttonStyle(.plain)
-        .disabled(purchaseManager.isProcessingPurchase)
+        .disabled(product == nil || purchaseManager.isProcessingPurchase)
     }
+
 }
 
 private enum AppLegal {

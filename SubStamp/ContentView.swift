@@ -77,7 +77,10 @@ struct ContentView: View {
                     language2Locale: language2Locale,
                     subtitle2Mode: subtitle2Mode,
                     onBack: { resetToSetup() },
-                    onNext: { step = .previewAndExport }
+                    onNext: {
+                        activeJob?.recoveredAudioEndSeconds = orchestrator.job?.recoveredAudioEndSeconds
+                        step = .previewAndExport
+                    }
                 )
             case .previewAndExport:
                 if let videoURL = selectedVideoURL {

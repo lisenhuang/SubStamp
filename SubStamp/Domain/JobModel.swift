@@ -20,6 +20,7 @@ struct JobModel: Identifiable, Codable {
     var outputURL: URL?
     var isTestClip: Bool
     var testClipDuration: Double
+    var recoveredAudioEndSeconds: Double? = nil
 
     init(
         id: UUID = UUID(),
@@ -85,6 +86,7 @@ private extension JobModel {
         case outputURL
         case isTestClip
         case testClipDuration
+        case recoveredAudioEndSeconds
     }
 }
 
@@ -111,6 +113,7 @@ extension JobModel {
         outputURL = try container.decodeIfPresent(URL.self, forKey: .outputURL)
         isTestClip = try container.decodeIfPresent(Bool.self, forKey: .isTestClip) ?? false
         testClipDuration = try container.decodeIfPresent(Double.self, forKey: .testClipDuration) ?? 60
+        recoveredAudioEndSeconds = try container.decodeIfPresent(Double.self, forKey: .recoveredAudioEndSeconds)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -134,5 +137,6 @@ extension JobModel {
         try container.encodeIfPresent(outputURL, forKey: .outputURL)
         try container.encode(isTestClip, forKey: .isTestClip)
         try container.encode(testClipDuration, forKey: .testClipDuration)
+        try container.encodeIfPresent(recoveredAudioEndSeconds, forKey: .recoveredAudioEndSeconds)
     }
 }

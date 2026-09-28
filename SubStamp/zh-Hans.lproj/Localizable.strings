@@ -277,3 +277,19 @@
 "Choose Audio Language" = "选择音频语言";
 "Choose Subtitle 1" = "选择字幕 1";
 "Choose Subtitle 2" = "选择字幕 2";
+
+"The video has an unreadable ending. Audio was recovered up to %@; subtitles cover only the recovered audio." = "视频结尾无法读取。已恢复至 %@ 的音频；字幕仅覆盖已恢复的音频。";
+
+"Pay once. No subscription." = "一次购买，无需订阅。";
+
+"Buy Lifetime" = "购买永久版";
+
+"%@ / week" = "%@ / 周";
+
+"Auto-renews weekly. Cancel anytime." = "每周自动续订，可随时取消。";
+
+"Subscribe Weekly" = "订阅周会员";
+
+"Reload purchase options" = "重新加载购买选项";
+
+"Price unavailable" = "价格暂不可用";

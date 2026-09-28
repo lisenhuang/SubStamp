@@ -14,6 +14,7 @@ final class LegacyTranscriptionService {
     struct Result {
         let cues: [SubtitleCue]
         let duration: CMTime
+        let recoveredAudio: Bool
     }
 
     // SFSpeechRecognizer has an ~1 minute on-device limit per request.
@@ -55,6 +56,8 @@ final class LegacyTranscriptionService {
         let chunkCount = max(1, Int(ceil(totalSeconds / chunkDurationSeconds)))
 
         var allCues: [SubtitleCue] = []
+        var recoveredAudio = false
+        var processedDuration = effectiveRange.duration
 
         for chunkIndex in 0..<chunkCount {
             try Task.checkCancellation()
@@ -68,9 +71,24 @@ final class LegacyTranscriptionService {
 
             // Extract audio chunk as WAV (runs off main thread)
             let assetURL = (asset as! AVURLAsset).url
-            let chunkURL = try await Task.detached(priority: .userInitiated) {
-                try await self.extractAudioAsWav(from: assetURL, timeRange: cmRange)
-            }.value
+            let extraction: AudioExtractionService.Result
+            do {
+                extraction = try await Task.detached(priority: .userInitiated) {
+                    try await AudioExtractionService.extract(from: AVURLAsset(url: assetURL), timeRange: cmRange)
+                }.value
+            } catch SubStampError.exportFailed(let underlying) {
+                // A damaged ending can fall exactly between chunks. Keep already
+                // recognized chunks even if this chunk contains no readable samples.
+                guard chunkIndex > 0,
+                      AudioExtractionService.isInvalidSampleCursor(underlying as NSError) else {
+                    throw SubStampError.exportFailed(underlying: underlying)
+                }
+                recoveredAudio = true
+                processedDuration = CMTime(seconds: chunkStart - startOffset, preferredTimescale: 16000)
+                AppLog.append("[AUDIO RECOVERY] Remaining chunk is unreadable; kept audio through \(chunkStart)s")
+                break
+            }
+            let chunkURL = extraction.url
             defer { try? FileManager.default.removeItem(at: chunkURL) }
 
             let chunkCues = try await recognizeAudioFile(
@@ -82,6 +100,12 @@ final class LegacyTranscriptionService {
 
             let progress = Double(chunkIndex + 1) / Double(chunkCount)
             progressHandler(progress, allCues.count)
+            if extraction.recoveredAudio {
+                recoveredAudio = true
+                processedDuration = CMTime(seconds: chunkStart - startOffset + extraction.duration.seconds, preferredTimescale: 16000)
+                // The remaining chunks point beyond the readable end of the source.
+                break
+            }
         }
 
         if allCues.isEmpty {
@@ -93,7 +117,7 @@ final class LegacyTranscriptionService {
         }
 
         let processed = postProcess(cues: allCues)
-        return Result(cues: processed, duration: effectiveRange.duration)
+        return Result(cues: processed, duration: processedDuration, recoveredAudio: recoveredAudio)
     }
 
     // MARK: - Permission
@@ -210,126 +234,6 @@ final class LegacyTranscriptionService {
         buffer = ""
         start = nil
         end = nil
-    }
-
-    // MARK: - Audio Extraction
-    // Extracted from asset as 16 kHz mono PCM WAV — identical to TranscriptionService's helper.
-
-    nonisolated private func extractAudioAsWav(from assetURL: URL, timeRange: CMTimeRange?) async throws -> URL {
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("substamp_legacy_\(UUID().uuidString)")
-            .appendingPathExtension("wav")
-
-        let asset = AVAsset(url: assetURL)
-        guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
-            throw SubStampError.noAudioTrack
-        }
-
-        let sampleRate: Double = 16000
-        let channelCount: AVAudioChannelCount = 1
-
-        guard let audioFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: sampleRate,
-            channels: channelCount,
-            interleaved: true
-        ) else {
-            throw SubStampError.exportFailed(underlying: NSError(
-                domain: "SubStamp", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Could not create audio format"]
-            ))
-        }
-
-        let reader: AVAssetReader
-        do {
-            reader = try AVAssetReader(asset: asset)
-        } catch {
-            throw SubStampError.exportFailed(underlying: error)
-        }
-
-        if let range = timeRange {
-            reader.timeRange = range
-        }
-
-        let outputSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: Int(channelCount),
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsNonInterleaved: false,
-            AVLinearPCMIsBigEndianKey: false
-        ]
-        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
-        output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else {
-            throw SubStampError.exportFailed(underlying: NSError(
-                domain: "SubStamp", code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "Cannot add audio output to reader"]
-            ))
-        }
-        reader.add(output)
-
-        let audioFile: AVAudioFile
-        do {
-            audioFile = try AVAudioFile(
-                forWriting: outputURL,
-                settings: audioFormat.settings,
-                commonFormat: .pcmFormatInt16,
-                interleaved: true
-            )
-        } catch {
-            throw SubStampError.exportFailed(underlying: error)
-        }
-
-        guard reader.startReading() else {
-            throw SubStampError.exportFailed(underlying: reader.error ?? NSError(domain: "SubStamp", code: -3))
-        }
-
-        var totalFrames: Int64 = 0
-        while let sampleBuffer = output.copyNextSampleBuffer() {
-            guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
-            let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
-            guard numSamples > 0 else { continue }
-
-            var length = 0
-            var dataPointer: UnsafeMutablePointer<Int8>?
-            let status = CMBlockBufferGetDataPointer(
-                blockBuffer, atOffset: 0,
-                lengthAtOffsetOut: nil, totalLengthOut: &length,
-                dataPointerOut: &dataPointer
-            )
-            guard status == kCMBlockBufferNoErr, let pointer = dataPointer else { continue }
-
-            let frameCount = AVAudioFrameCount(numSamples)
-            guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else { continue }
-            pcmBuffer.frameLength = frameCount
-            if let int16Data = pcmBuffer.int16ChannelData {
-                memcpy(int16Data[0], pointer, length)
-            }
-            do {
-                try audioFile.write(from: pcmBuffer)
-                totalFrames += Int64(frameCount)
-            } catch {
-                AppLog.append("[Legacy] Error writing audio chunk: \(error.localizedDescription)")
-            }
-        }
-
-        if reader.status == .failed {
-            let error = reader.error ?? NSError(domain: "SubStamp", code: -6)
-            try? FileManager.default.removeItem(at: outputURL)
-            throw SubStampError.exportFailed(underlying: error)
-        }
-
-        guard totalFrames > 0 else {
-            try? FileManager.default.removeItem(at: outputURL)
-            throw SubStampError.speechAnalyzerError(underlying: NSError(
-                domain: "SubStamp", code: -7,
-                userInfo: [NSLocalizedDescriptionKey: "No audio samples extracted from video"]
-            ))
-        }
-
-        return outputURL
     }
 
     // MARK: - Post-Processing

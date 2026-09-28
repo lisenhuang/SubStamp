@@ -305,6 +305,10 @@ struct PreviewExportView: View {
                                 subtitle: "Edit subtitles, translate, and export."
                             )
 
+                            if let end = job?.recoveredAudioEndSeconds {
+                                RecoveredAudioNotice(endSeconds: end)
+                            }
+
                             // Hint for editing before translation
                             if needsTranslation && !orchestrator.translationComplete {
                                 Text(String(localized: "You can review and edit the transcription below before translating. This is optional.", bundle: .forLocale(locale)))

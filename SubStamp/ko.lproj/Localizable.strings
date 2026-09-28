@@ -277,3 +277,19 @@
 "Choose Audio Language" = "오디오 언어 선택";
 "Choose Subtitle 1" = "자막 1 선택";
 "Choose Subtitle 2" = "자막 2 선택";
+
+"The video has an unreadable ending. Audio was recovered up to %@; subtitles cover only the recovered audio." = "동영상의 끝부분을 읽을 수 없습니다. %@까지의 오디오를 복구했습니다. 자막은 복구된 오디오에만 제공됩니다.";
+
+"Pay once. No subscription." = "한 번 결제하면 구독이 필요 없습니다.";
+
+"Buy Lifetime" = "평생 이용권 구매";
+
+"%@ / week" = "%@ / 주";
+
+"Auto-renews weekly. Cancel anytime." = "매주 자동 갱신됩니다. 언제든 취소할 수 있습니다.";
+
+"Subscribe Weekly" = "주간 구독 시작";
+
+"Reload purchase options" = "구매 옵션 다시 불러오기";
+
+"Price unavailable" = "가격을 불러올 수 없습니다.";
